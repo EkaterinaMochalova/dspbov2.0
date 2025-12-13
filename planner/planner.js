@@ -555,8 +555,11 @@ document.getElementById("calc-btn").addEventListener("click", () => {
   try {
     await loadScreens();
   } catch(e){
-    document.getElementById("status").textContent =
-      "Ошибка загрузки данных. Проверь ссылку на CSV (raw.githubusercontent.com) и доступность файла.";
-    console.error(e);
+    document.addEventListener("DOMContentLoaded", async () => {
+  await loadScreens();
+});
   }
 })();
+document.addEventListener("DOMContentLoaded", () => {
+  init();
+});
