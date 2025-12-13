@@ -31,7 +31,12 @@ const state = {
   lastChosen: []
 };
 
+function el(id){
+  return document.getElementById(id);
+}
+
 function cssButtonBase(btn){
+  if(!btn) return;
   btn.classList.add("ux-btn"); // ← ВАЖНО
   btn.style.padding = "8px 10px";
   btn.style.borderRadius = "999px";
@@ -42,71 +47,43 @@ function cssButtonBase(btn){
 }
 
 function getBudgetMode(){
-  return document.querySelector('input[name="budget_mode"]:checked').value;
+  return document.querySelector('input[name="budget_mode"]:checked')?.value || "fixed";
 }
 function getScheduleType(){
-  return document.querySelector('input[name="schedule"]:checked').value;
+  return document.querySelector('input[name="schedule"]:checked')?.value || "all_day";
 }
 
-document.querySelectorAll(".preset").forEach(b => {
-  cssButtonBase(b);
-  b.addEventListener("click", () => {
-    document.getElementById("date-start").value = b.dataset.start;
-    document.getElementById("date-end").value = b.dataset.end;
-  });
-});
-
-document.querySelectorAll('input[name="budget_mode"]').forEach(r => {
-  r.addEventListener("change", () => {
-    const mode = getBudgetMode();
-    document.getElementById("budget-input-wrap").style.display = mode === "fixed" ? "block" : "none";
-  });
-});
-
-document.querySelectorAll('input[name="schedule"]').forEach(r => {
-  r.addEventListener("change", () => {
-    const v = getScheduleType();
-    document.getElementById("custom-time-wrap").style.display = (v === "custom") ? "flex" : "none";
-  });
-});
-
-document.getElementById("grp-enabled").addEventListener("change", (e) => {
-  document.getElementById("grp-wrap").style.display = e.target.checked ? "block" : "none";
-});
-
-document.getElementById("selection-mode").addEventListener("change", renderSelectionExtra);
-
 function renderSelectionExtra(){
-  const mode = document.getElementById("selection-mode").value;
-  const extra = document.getElementById("selection-extra");
+  const mode = el("selection-mode")?.value || "city_even";
+  const extra = el("selection-extra");
+  if(!extra) return;
   extra.innerHTML = "";
 
   if(mode === "near_address"){
     extra.innerHTML = `
-      <input id="addr" type="text" placeholder="Адрес" style="width:90%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-      <input id="radius" type="number" min="50" value="500" placeholder="Радиус, м" style="width:90%; padding:10px; border:1px solid #ddd; border-radius:10px;">
+      <input id="addr" type="text" placeholder="Адрес" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
+      <input id="radius" type="number" min="50" value="500" placeholder="Радиус, м" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
       <div style="font-size:12px; color:#666; margin-top:6px;">MVP: адрес сохраняем в бриф, без геокодинга.</div>
     `;
   } else if(mode === "poi"){
     extra.innerHTML = `
-      <select id="poi-type" style="width:90%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
+      <select id="poi-type" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
         <option value="pet_store">Pet stores</option>
         <option value="supermarket">Супермаркеты</option>
         <option value="mall">ТЦ</option>
       </select>
-      <input id="radius" type="number" min="50" value="500" placeholder="Радиус, м" style="width:90%; padding:10px; border:1px solid #ddd; border-radius:10px;">
+      <input id="radius" type="number" min="50" value="500" placeholder="Радиус, м" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
       <div style="font-size:12px; color:#666; margin-top:6px;">MVP: POI сохраняем в бриф, без POI-базы.</div>
     `;
   } else if(mode === "route"){
     extra.innerHTML = `
-      <input id="route-from" type="text" placeholder="Точка А" style="width:90%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-      <input id="route-to" type="text" placeholder="Точка Б" style="width:90%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-      <input id="radius" type="number" min="50" value="300" placeholder="Радиус от маршрута, м" style="width:90%; padding:10px; border:1px solid #ddd; border-radius:10px;">
+      <input id="route-from" type="text" placeholder="Точка А" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
+      <input id="route-to" type="text" placeholder="Точка Б" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
+      <input id="radius" type="number" min="50" value="300" placeholder="Радиус от маршрута, м" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
       <div style="font-size:12px; color:#666; margin-top:6px;">MVP: маршрут сохраняем в бриф, без построения маршрута.</div>
     `;
   }
 }
-renderSelectionExtra();
 
 function parseCSV(text){
   const res = Papa.parse(text, { header: true, skipEmptyLines: true, dynamicTyping: false });
@@ -139,8 +116,8 @@ function hoursPerDay(schedule){
   if(schedule.type === "all_day") return 15; // 07–22
   if(schedule.type === "peak") return 7;     // 07–10 + 17–21
   if(schedule.type === "custom"){
-    const [fh,fm] = schedule.from.split(":").map(Number);
-    const [th,tm] = schedule.to.split(":").map(Number);
+    const [fh,fm] = (schedule.from || "07:00").split(":").map(Number);
+    const [th,tm] = (schedule.to || "22:00").split(":").map(Number);
     return Math.max(0, (th + tm/60) - (fh + fm/60));
   }
   return 15;
@@ -154,8 +131,8 @@ function formatMeta(fmt){
 }
 
 async function loadScreens(){
-  const status = document.getElementById("status");
-  status.textContent = "Загружаю список экранов…";
+  const status = el("status");
+  if(status) status.textContent = "Загружаю список экранов…";
 
   const res = await fetch(SCREENS_CSV_URL, { cache: "no-store" });
   if(!res.ok) throw new Error("Не удалось загрузить CSV: " + res.status);
@@ -185,17 +162,20 @@ async function loadScreens(){
     };
   });
 
-  state.citiesAll = [...new Set(state.screens.map(s => s.city).filter(Boolean))].sort((a,b)=>a.localeCompare(b, "ru"));
-  state.formatsAll = [...new Set(state.screens.map(s => s.format).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  state.citiesAll = [...new Set(state.screens.map(s => s.city).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b, "ru"));
+  state.formatsAll = [...new Set(state.screens.map(s => s.format).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b));
 
   renderFormats();
   renderSelectedCity();
 
-  status.textContent = `Готово. Экранов: ${state.screens.length}. Городов: ${state.citiesAll.length}. Форматов: ${state.formatsAll.length}.`;
+  if(status) status.textContent = `Готово. Экранов: ${state.screens.length}. Городов: ${state.citiesAll.length}. Форматов: ${state.formatsAll.length}.`;
 }
 
 function renderFormats(){
-  const wrap = document.getElementById("formats-wrap");
+  const wrap = el("formats-wrap");
+  if(!wrap) return;
   wrap.innerHTML = "";
 
   state.formatsAll.forEach(fmt => {
@@ -216,7 +196,7 @@ function renderFormats(){
     sync();
 
     b.addEventListener("click", () => {
-      if(document.getElementById("formats-auto").checked) return;
+      if(el("formats-auto")?.checked) return;
       if(state.selectedFormats.has(fmt)) state.selectedFormats.delete(fmt);
       else state.selectedFormats.add(fmt);
       sync();
@@ -225,7 +205,7 @@ function renderFormats(){
     wrap.appendChild(b);
   });
 
-  document.getElementById("formats-auto").addEventListener("change", (e) => {
+  el("formats-auto")?.addEventListener("change", (e) => {
     if(e.target.checked){
       state.selectedFormats.clear();
       [...wrap.querySelectorAll("button")].forEach(btn => btn.style.borderColor = "#ddd");
@@ -235,8 +215,10 @@ function renderFormats(){
 
 /** ONE city */
 function renderSelectedCity(){
-  const wrap = document.getElementById("city-selected");
+  const wrap = el("city-selected");
+  if(!wrap) return;
   wrap.innerHTML = "";
+
   if(!state.selectedCity){
     wrap.innerHTML = `<div style="font-size:12px; color:#666;">Город не выбран</div>`;
     return;
@@ -252,7 +234,8 @@ function renderSelectedCity(){
 }
 
 function renderCitySuggestions(q){
-  const sug = document.getElementById("city-suggestions");
+  const sug = el("city-suggestions");
+  if(!sug) return;
   sug.innerHTML = "";
   if(!q) return;
 
@@ -265,24 +248,23 @@ function renderCitySuggestions(q){
     b.textContent = "+ " + c;
     b.addEventListener("click", () => {
       state.selectedCity = c;
-      document.getElementById("city-search").value = "";
+      if(el("city-search")) el("city-search").value = "";
       sug.innerHTML = "";
       renderSelectedCity();
     });
     sug.appendChild(b);
   });
 }
-document.getElementById("city-search").addEventListener("input", (e) => renderCitySuggestions(e.target.value));
 
 function buildBrief(){
   const budgetMode = getBudgetMode();
-  const budgetVal = document.getElementById("budget-input").value;
+  const budgetVal = el("budget-input")?.value;
 
   const scheduleType = getScheduleType();
-  const timeFrom = document.getElementById("time-from").value;
-  const timeTo = document.getElementById("time-to").value;
+  const timeFrom = el("time-from")?.value;
+  const timeTo = el("time-to")?.value;
 
-  const selectionMode = document.getElementById("selection-mode").value;
+  const selectionMode = el("selection-mode")?.value || "city_even";
 
   const brief = {
     budget: {
@@ -291,8 +273,8 @@ function buildBrief(){
       currency: "RUB"
     },
     dates: {
-      start: document.getElementById("date-start").value || null,
-      end: document.getElementById("date-end").value || null
+      start: el("date-start")?.value || null,
+      end: el("date-end")?.value || null
     },
     schedule: {
       type: scheduleType,
@@ -301,29 +283,29 @@ function buildBrief(){
     },
     geo: { city: state.selectedCity },
     formats: {
-      mode: document.getElementById("formats-auto").checked ? "auto" : "manual",
-      selected: document.getElementById("formats-auto").checked ? [] : [...state.selectedFormats]
+      mode: el("formats-auto")?.checked ? "auto" : "manual",
+      selected: el("formats-auto")?.checked ? [] : [...state.selectedFormats]
     },
     selection: { mode: selectionMode },
     grp: {
-      enabled: document.getElementById("grp-enabled").checked,
-      min: toNumber(document.getElementById("grp-min")?.value ?? 0),
-      max: toNumber(document.getElementById("grp-max")?.value ?? 9.98)
+      enabled: !!el("grp-enabled")?.checked,
+      min: toNumber(el("grp-min")?.value ?? 0),
+      max: toNumber(el("grp-max")?.value ?? 9.98)
     }
   };
 
   if(selectionMode === "near_address"){
-    brief.selection.address = document.getElementById("addr")?.value || "";
-    brief.selection.radius_m = Number(document.getElementById("radius")?.value || 500);
+    brief.selection.address = el("addr")?.value || "";
+    brief.selection.radius_m = Number(el("radius")?.value || 500);
   }
   if(selectionMode === "poi"){
-    brief.selection.poi_type = document.getElementById("poi-type")?.value || "pet_store";
-    brief.selection.radius_m = Number(document.getElementById("radius")?.value || 500);
+    brief.selection.poi_type = el("poi-type")?.value || "pet_store";
+    brief.selection.radius_m = Number(el("radius")?.value || 500);
   }
   if(selectionMode === "route"){
-    brief.selection.from = document.getElementById("route-from")?.value || "";
-    brief.selection.to = document.getElementById("route-to")?.value || "";
-    brief.selection.radius_m = Number(document.getElementById("radius")?.value || 300);
+    brief.selection.from = el("route-from")?.value || "";
+    brief.selection.to = el("route-to")?.value || "";
+    brief.selection.radius_m = Number(el("radius")?.value || 300);
   }
 
   // защита
@@ -380,11 +362,7 @@ function downloadXLSX(rows){
   XLSX.writeFile(wb, "screens_selected.xlsx");
 }
 
-document.getElementById("download-csv").addEventListener("click", () => {
-  downloadXLSX(state.lastChosen);
-});
-
-document.getElementById("calc-btn").addEventListener("click", () => {
+function onCalcClick(){
   const brief = buildBrief();
 
   // validation
@@ -444,7 +422,7 @@ document.getElementById("calc-btn").addEventListener("click", () => {
     grpWarning = `⚠️ GRP-фильтр включён: экраны без GRP исключены (без GRP: ${grpDroppedNoValue}).`;
   }
 
-  // avg minBid (ignore empty)
+  // avg minBid
   const avgBid = avgNumber(pool.map(s => s.minBid));
   if(avgBid == null){
     alert("Не могу посчитать: у выбранных экранов нет minBid.");
@@ -466,12 +444,11 @@ document.getElementById("calc-btn").addEventListener("click", () => {
   const totalPlaysTheory = Math.floor(budget / bidPlus20);
   const playsPerHourTotalTheory = totalPlaysTheory / days / hpd;
 
-  // screens needed at OPT capacity
+  // screens needed
   const screensNeeded = Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_OPT));
   const screensChosenCount = Math.min(pool.length, screensNeeded);
   const chosen = pickScreensByMinBid(pool, screensChosenCount);
 
-  // capacity check
   const playsPerHourPerScreen = playsPerHourTotalTheory / screensChosenCount;
 
   let warning = "";
@@ -488,7 +465,7 @@ document.getElementById("calc-btn").addEventListener("click", () => {
   const playsPerDay = totalPlaysEffective / days;
   const playsPerHourTotal = totalPlaysEffective / days / hpd;
 
-  // OTS: avg ots ignoring empty
+  // OTS
   const avgOts = avgNumber(pool.map(s => s.ots));
   const otsTotal = (avgOts == null) ? null : totalPlaysEffective * avgOts;
   const otsPerDay = (avgOts == null) ? null : otsTotal / days;
@@ -521,45 +498,89 @@ document.getElementById("calc-btn").addEventListener("click", () => {
   + (warning ? `\n\n${warning}` : "")
   + (grpWarning ? `\n\n${grpWarning}` : "");
 
-  document.getElementById("summary").textContent = summaryText;
+  if(el("summary")) el("summary").textContent = summaryText;
 
-  document.getElementById("download-csv").disabled = chosen.length === 0;
+  if(el("download-csv")) el("download-csv").disabled = chosen.length === 0;
 
-  document.getElementById("results").innerHTML =
-    `<div style="font-size:13px; color:#666;">Показаны первые 10 выбранных экранов.</div>` +
-    `<div style="margin-top:8px; border:1px solid #eee; border-radius:12px; overflow:hidden;">` +
-    `<table style="width:100%; border-collapse:collapse; font-size:13px;">` +
-    `<thead><tr style="background:#fafafa;">` +
-    `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">screen_id</th>` +
-    `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">format</th>` +
-    `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">minBid</th>` +
-    `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">ots</th>` +
-    `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">grp</th>` +
-    `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">address</th>` +
-    `</tr></thead><tbody>` +
-    chosen.slice(0,10).map(r => (
-      `<tr>` +
-      `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.screen_id || ""}</td>` +
-      `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.format || ""}</td>` +
-      `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number.isFinite(r.minBid) ? r.minBid.toFixed(2) : ""}</td>` +
-      `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number.isFinite(r.ots) ? r.ots : ""}</td>` +
-      `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number.isFinite(r.grp) ? r.grp.toFixed(2) : ""}</td>` +
-      `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.address || ""}</td>` +
-      `</tr>`
-    )).join("") +
-    `</tbody></table></div>`;
-});
+  if(el("results")){
+    el("results").innerHTML =
+      `<div style="font-size:13px; color:#666;">Показаны первые 10 выбранных экранов.</div>` +
+      `<div style="margin-top:8px; border:1px solid #eee; border-radius:12px; overflow:hidden;">` +
+      `<table style="width:100%; border-collapse:collapse; font-size:13px;">` +
+      `<thead><tr style="background:#fafafa;">` +
+      `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">screen_id</th>` +
+      `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">format</th>` +
+      `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">minBid</th>` +
+      `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">ots</th>` +
+      `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">grp</th>` +
+      `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">address</th>` +
+      `</tr></thead><tbody>` +
+      chosen.slice(0,10).map(r => (
+        `<tr>` +
+        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.screen_id || ""}</td>` +
+        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.format || ""}</td>` +
+        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number.isFinite(r.minBid) ? r.minBid.toFixed(2) : ""}</td>` +
+        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number.isFinite(r.ots) ? r.ots : ""}</td>` +
+        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number.isFinite(r.grp) ? r.grp.toFixed(2) : ""}</td>` +
+        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.address || ""}</td>` +
+        `</tr>`
+      )).join("") +
+      `</tbody></table></div>`;
+  }
+}
 
-// init
-(async function init(){
+async function init(){
+  // 1) базовый UI
+  renderSelectionExtra();
+  renderSelectedCity();
+
+  // 2) пресеты дат
+  document.querySelectorAll(".preset").forEach(b => {
+    cssButtonBase(b);
+    b.addEventListener("click", () => {
+      if(el("date-start")) el("date-start").value = b.dataset.start;
+      if(el("date-end")) el("date-end").value = b.dataset.end;
+    });
+  });
+
+  // 3) переключатели
+  document.querySelectorAll('input[name="budget_mode"]').forEach(r => {
+    r.addEventListener("change", () => {
+      const mode = getBudgetMode();
+      if(el("budget-input-wrap")) el("budget-input-wrap").style.display = mode === "fixed" ? "block" : "none";
+    });
+  });
+
+  document.querySelectorAll('input[name="schedule"]').forEach(r => {
+    r.addEventListener("change", () => {
+      const v = getScheduleType();
+      if(el("custom-time-wrap")) el("custom-time-wrap").style.display = (v === "custom") ? "flex" : "none";
+    });
+  });
+
+  el("grp-enabled")?.addEventListener("change", (e) => {
+    if(el("grp-wrap")) el("grp-wrap").style.display = e.target.checked ? "block" : "none";
+  });
+
+  el("selection-mode")?.addEventListener("change", renderSelectionExtra);
+
+  // 4) город
+  el("city-search")?.addEventListener("input", (e) => renderCitySuggestions(e.target.value));
+
+  // 5) кнопки
+  el("download-csv")?.addEventListener("click", () => downloadXLSX(state.lastChosen));
+  el("calc-btn")?.addEventListener("click", onCalcClick);
+
+  // 6) данные
   try {
     await loadScreens();
   } catch(e){
-    document.addEventListener("DOMContentLoaded", async () => {
-  await loadScreens();
-});
+    if(el("status")) el("status").textContent = "Ошибка загрузки данных. Проверь ссылку на CSV и доступность файла.";
+    console.error(e);
   }
-})();
+}
+
+/** автозапуск после загрузки DOM */
 document.addEventListener("DOMContentLoaded", () => {
   init();
 });
