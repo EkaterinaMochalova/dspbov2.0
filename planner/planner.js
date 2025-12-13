@@ -529,58 +529,63 @@ function onCalcClick(){
   }
 }
 
-async function init(){
-  // 1) базовый UI
-  renderSelectionExtra();
-  renderSelectedCity();
-
-  // 2) пресеты дат
+function bindPlannerUI() {
+  // все addEventListener — только здесь
   document.querySelectorAll(".preset").forEach(b => {
     cssButtonBase(b);
     b.addEventListener("click", () => {
-      if(el("date-start")) el("date-start").value = b.dataset.start;
-      if(el("date-end")) el("date-end").value = b.dataset.end;
+      document.getElementById("date-start").value = b.dataset.start;
+      document.getElementById("date-end").value = b.dataset.end;
     });
   });
 
-  // 3) переключатели
   document.querySelectorAll('input[name="budget_mode"]').forEach(r => {
     r.addEventListener("change", () => {
       const mode = getBudgetMode();
-      if(el("budget-input-wrap")) el("budget-input-wrap").style.display = mode === "fixed" ? "block" : "none";
+      const el = document.getElementById("budget-input-wrap");
+      if (el) el.style.display = mode === "fixed" ? "block" : "none";
     });
   });
 
   document.querySelectorAll('input[name="schedule"]').forEach(r => {
     r.addEventListener("change", () => {
       const v = getScheduleType();
-      if(el("custom-time-wrap")) el("custom-time-wrap").style.display = (v === "custom") ? "flex" : "none";
+      const el = document.getElementById("custom-time-wrap");
+      if (el) el.style.display = (v === "custom") ? "flex" : "none";
     });
   });
 
-  el("grp-enabled")?.addEventListener("change", (e) => {
-    if(el("grp-wrap")) el("grp-wrap").style.display = e.target.checked ? "block" : "none";
-  });
-
-  el("selection-mode")?.addEventListener("change", renderSelectionExtra);
-
-  // 4) город
-  el("city-search")?.addEventListener("input", (e) => renderCitySuggestions(e.target.value));
-
-  // 5) кнопки
-  el("download-csv")?.addEventListener("click", () => downloadXLSX(state.lastChosen));
-  el("calc-btn")?.addEventListener("click", onCalcClick);
-
-  // 6) данные
-  try {
-    await loadScreens();
-  } catch(e){
-    if(el("status")) el("status").textContent = "Ошибка загрузки данных. Проверь ссылку на CSV и доступность файла.";
-    console.error(e);
+  const grpEnabled = document.getElementById("grp-enabled");
+  if (grpEnabled) {
+    grpEnabled.addEventListener("change", (e) => {
+      const wrap = document.getElementById("grp-wrap");
+      if (wrap) wrap.style.display = e.target.checked ? "block" : "none";
+    });
   }
+
+  const selectionMode = document.getElementById("selection-mode");
+  if (selectionMode) selectionMode.addEventListener("change", renderSelectionExtra);
+
+  const citySearch = document.getElementById("city-search");
+  if (citySearch) citySearch.addEventListener("input", (e) => renderCitySuggestions(e.target.value));
+
+  const downloadBtn = document.getElementById("download-csv");
+  if (downloadBtn) downloadBtn.addEventListener("click", () => downloadXLSX(state.lastChosen));
+
+  const calcBtn = document.getElementById("calc-btn");
+  if (calcBtn) calcBtn.addEventListener("click", onCalcClick);
 }
 
-/** автозапуск после загрузки DOM */
+async function startPlanner() {
+  renderSelectionExtra();
+  bindPlannerUI();
+  await loadScreens();
+}
+
 document.addEventListener("DOMContentLoaded", () => {
-  init();
+  startPlanner().catch(e => {
+    console.error("Planner init failed:", e);
+    const st = document.getElementById("status");
+    if (st) st.textContent = "Ошибка инициализации. Открой консоль — там причина (Planner init failed).";
+  });
 });
