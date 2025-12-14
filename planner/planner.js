@@ -1,7 +1,7 @@
 console.log("planner.js loaded");
 
 /** CSV */
-const SCREENS_CSV_URL = "https://raw.githubusercontent.com/EkaterinaMochalova/dspbov2.0/main/inventories_sync.csv";
+const SCREENS_CSV_URL = "https://raw.githubusercontent.com/EkaterinaMochalova/dspbov2.0/planner/inventories_sync.csv";
 
 /** Форматы */
 const FORMAT_LABELS = {
