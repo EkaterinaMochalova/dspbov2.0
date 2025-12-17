@@ -445,12 +445,24 @@ async function onCalcClick(){
     setStatus("Геокодирую адрес…");
 
     // чтобы Nominatim лучше находил: добавляем город
-    const geo = await GeoUtils.geocodeAddress(`${city}, ${addr}`);
-    if (!geo) {
-      setStatus("");
-      alert("Адрес не найден. Попробуй уточнить (улица, дом) или проверь город.");
-      return;
-    }
+    const query = `${city}, ${addr}`;
+console.log("Geocode query:", query);
+
+const geo = await GeoUtils.geocodeAddress(query);
+console.log("Geocode result:", geo);
+
+if (!geo) {
+  alert("Адрес не найден. Уточните адрес (улица и дом).");
+  const statusEl = document.getElementById("status");
+  if (statusEl) statusEl.textContent = "";
+  return;
+}
+
+const statusEl = document.getElementById("status");
+if (statusEl) {
+  statusEl.textContent =
+    `Адрес найден: ${geo.display_name} (${geo.lat.toFixed(5)}, ${geo.lon.toFixed(5)})`;
+}
 
     // фильтруем только те, у кого есть lat/lon
     const before = pool.length;
