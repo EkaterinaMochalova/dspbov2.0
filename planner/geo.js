@@ -1,67 +1,73 @@
-// ===== GEO / near_address =====
+// geo.js
+console.log("geo.js loaded");
 
-function haversineMeters(lat1, lon1, lat2, lon2) {
-  const R = 6371000;
-  const toRad = d => d * Math.PI / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-    Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
-}
+(function () {
+  const cache = new Map();
 
-function geoCacheKey(addr) {
-  return "geoaddr:" + String(addr || "").trim().toLowerCase();
-}
+  async function geocodeViaMapsCo(q) {
+    const url = "https://geocode.maps.co/search?q=" + encodeURIComponent(q);
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error("maps.co geocode failed: " + res.status);
+    const data = await res.json();
+    if (!Array.isArray(data) || !data.length) return null;
 
-async function geocodeAddress(address) {
-  const addr = String(address || "").trim();
-  if (!addr) return null;
+    const first = data[0];
+    const lat = Number(first.lat);
+    const lon = Number(first.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
 
-  // cache
-  try {
-    const cached = localStorage.getItem(geoCacheKey(addr));
-    if (cached) return JSON.parse(cached);
-  } catch (_) {}
+    return {
+      lat,
+      lon,
+      display_name: first.display_name || "",
+      provider: "maps.co",
+      raw: first
+    };
+  }
 
-  const url =
-    "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=" +
-    encodeURIComponent(addr);
+  async function geocodeAddress(query) {
+    const q = String(query || "").trim();
+    if (!q) return null;
 
-  const res = await fetch(url);
-  if (!res.ok) return null;
+    // нормальный кэш: ключ = полный запрос
+    if (cache.has(q)) return cache.get(q);
 
-  const data = await res.json();
-  if (!data?.length) return null;
+    // мини-защита: слишком короткие запросы почти всегда дают центр города
+    if (q.length < 6) return null;
 
-  const lat = Number(data[0].lat);
-  const lon = Number(data[0].lon);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    const geo = await geocodeViaMapsCo(q);
+    cache.set(q, geo);
+    return geo;
+  }
 
-  const out = { lat, lon };
+  // Haversine distance
+  function haversineMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const toRad = (x) => (x * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
 
-  try {
-    localStorage.setItem(geoCacheKey(addr), JSON.stringify(out));
-  } catch (_) {}
+  function filterByRadius(screens, lat, lon, radiusMeters) {
+    const r = Number(radiusMeters);
+    if (!Number.isFinite(r) || r <= 0) return [];
 
-  return out;
-}
+    return (screens || []).filter((s) => {
+      const slat = Number(s.lat);
+      const slon = Number(s.lon);
+      if (!Number.isFinite(slat) || !Number.isFinite(slon)) return false;
+      return haversineMeters(lat, lon, slat, slon) <= r;
+    });
+  }
 
-function filterByRadius(screens, centerLat, centerLon, radiusMeters) {
-  const r = Number(radiusMeters);
-  if (!Number.isFinite(r) || r <= 0) return screens;
-
-  return screens.filter(s => {
-    if (!Number.isFinite(s.lat) || !Number.isFinite(s.lon)) return false;
-    const d = haversineMeters(centerLat, centerLon, s.lat, s.lon);
-    return d <= r;
-  });
-}
-
-// 👇 экспортируем в глобал (важно для Тильды)
-window.GeoUtils = {
-  geocodeAddress,
-  filterByRadius
-};
+  window.GeoUtils = {
+    geocodeAddress,
+    filterByRadius,
+    haversineMeters
+  };
+})();
