@@ -33,13 +33,16 @@ const state = {
   lastChosen: []
 };
 
-function el(id){
-  return document.getElementById(id);
+function el(id){ return document.getElementById(id); }
+
+function setStatus(msg){
+  const s = el("status");
+  if(s) s.textContent = msg || "";
 }
 
 function cssButtonBase(btn){
   if(!btn) return;
-  btn.classList.add("ux-btn"); // ← ВАЖНО
+  btn.classList.add("ux-btn");
   btn.style.padding = "8px 10px";
   btn.style.borderRadius = "999px";
   btn.style.border = "1px solid #ddd";
@@ -53,38 +56,6 @@ function getBudgetMode(){
 }
 function getScheduleType(){
   return document.querySelector('input[name="schedule"]:checked')?.value || "all_day";
-}
-
-function renderSelectionExtra(){
-  const mode = el("selection-mode")?.value || "city_even";
-  const extra = el("selection-extra");
-  if(!extra) return;
-  extra.innerHTML = "";
-
-  if(mode === "near_address"){
-    extra.innerHTML = `
-      <input id="addr" type="text" placeholder="Адрес" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-      <input id="radius" type="number" min="50" value="500" placeholder="Радиус, м" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
-      <div style="font-size:12px; color:#666; margin-top:6px;">MVP: адрес сохраняем в бриф, без геокодинга.</div>
-    `;
-  } else if(mode === "poi"){
-    extra.innerHTML = `
-      <select id="poi-type" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-        <option value="pet_store">Pet stores</option>
-        <option value="supermarket">Супермаркеты</option>
-        <option value="mall">ТЦ</option>
-      </select>
-      <input id="radius" type="number" min="50" value="500" placeholder="Радиус, м" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
-      <div style="font-size:12px; color:#666; margin-top:6px;">MVP: POI сохраняем в бриф, без POI-базы.</div>
-    `;
-  } else if(mode === "route"){
-    extra.innerHTML = `
-      <input id="route-from" type="text" placeholder="Точка А" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-      <input id="route-to" type="text" placeholder="Точка Б" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-      <input id="radius" type="number" min="50" value="300" placeholder="Радиус от маршрута, м" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
-      <div style="font-size:12px; color:#666; margin-top:6px;">MVP: маршрут сохраняем в бриф, без построения маршрута.</div>
-    `;
-  }
 }
 
 function parseCSV(text){
@@ -132,9 +103,53 @@ function formatMeta(fmt){
   };
 }
 
+// ===== UI: selection extra =====
+
+function renderSelectionExtra(){
+  const mode = el("selection-mode")?.value || "city_even";
+  const extra = el("selection-extra");
+  if(!extra) return;
+  extra.innerHTML = "";
+
+  if(mode === "near_address"){
+    extra.innerHTML = `
+      <input id="addr" type="text" placeholder="Адрес"
+             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
+      <input id="radius" type="number" min="50" value="500" placeholder="Радиус, м"
+             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
+      <div style="font-size:12px; color:#666; margin-top:6px;">
+        Геокодим адрес и выбираем экраны в радиусе.
+      </div>
+    `;
+  } else if(mode === "poi"){
+    extra.innerHTML = `
+      <select id="poi-type"
+              style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
+        <option value="pet_store">Pet stores</option>
+        <option value="supermarket">Супермаркеты</option>
+        <option value="mall">ТЦ</option>
+      </select>
+      <input id="radius" type="number" min="50" value="500" placeholder="Радиус, м"
+             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
+      <div style="font-size:12px; color:#666; margin-top:6px;">MVP: POI сохраняем в бриф (без POI-базы).</div>
+    `;
+  } else if(mode === "route"){
+    extra.innerHTML = `
+      <input id="route-from" type="text" placeholder="Точка А"
+             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
+      <input id="route-to" type="text" placeholder="Точка Б"
+             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
+      <input id="radius" type="number" min="50" value="300" placeholder="Радиус от маршрута, м"
+             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
+      <div style="font-size:12px; color:#666; margin-top:6px;">MVP: маршрут сохраняем в бриф (без построения).</div>
+    `;
+  }
+}
+
+// ===== Data load =====
+
 async function loadScreens(){
-  const status = el("status");
-  if(status) status.textContent = "Загружаю список экранов…";
+  setStatus("Загружаю список экранов…");
 
   const res = await fetch(SCREENS_CSV_URL, { cache: "no-store" });
   if(!res.ok) throw new Error("Не удалось загрузить CSV: " + res.status);
@@ -158,22 +173,31 @@ async function loadScreens(){
       city,
       format,
       address,
+
+      // числа
       minBid: toNumber(r.minBid ?? r.min_bid ?? r.MINBID ?? r.minbid),
       ots: toNumber(r.ots ?? r.OTS),
-      grp: toNumber(r.grp ?? r.GRP)
+      grp: toNumber(r.grp ?? r.GRP),
+
+      // lat/lon (для near_address)
+      lat: toNumber(r.lat ?? r.Lat ?? r.LAT),
+      lon: toNumber(r.lon ?? r.Lon ?? r.LON ?? r.lng ?? r.Lng ?? r.LNG)
     };
   });
 
   state.citiesAll = [...new Set(state.screens.map(s => s.city).filter(Boolean))]
     .sort((a,b)=>a.localeCompare(b, "ru"));
+
   state.formatsAll = [...new Set(state.screens.map(s => s.format).filter(Boolean))]
     .sort((a,b)=>a.localeCompare(b));
 
   renderFormats();
   renderSelectedCity();
 
-  if(status) status.textContent = `Готово. Экранов: ${state.screens.length}. Городов: ${state.citiesAll.length}. Форматов: ${state.formatsAll.length}.`;
+  setStatus(`Готово. Экранов: ${state.screens.length}. Городов: ${state.citiesAll.length}. Форматов: ${state.formatsAll.length}.`);
 }
+
+// ===== UI: formats =====
 
 function renderFormats(){
   const wrap = el("formats-wrap");
@@ -206,16 +230,10 @@ function renderFormats(){
 
     wrap.appendChild(b);
   });
-
-  el("formats-auto")?.addEventListener("change", (e) => {
-    if(e.target.checked){
-      state.selectedFormats.clear();
-      [...wrap.querySelectorAll("button")].forEach(btn => btn.style.borderColor = "#ddd");
-    }
-  });
 }
 
-/** ONE city */
+// ===== UI: city =====
+
 function renderSelectedCity(){
   const wrap = el("city-selected");
   if(!wrap) return;
@@ -225,6 +243,7 @@ function renderSelectedCity(){
     wrap.innerHTML = `<div style="font-size:12px; color:#666;">Город не выбран</div>`;
     return;
   }
+
   const chip = document.createElement("button");
   cssButtonBase(chip);
   chip.textContent = "✕ " + state.selectedCity;
@@ -257,6 +276,8 @@ function renderCitySuggestions(q){
     sug.appendChild(b);
   });
 }
+
+// ===== Brief =====
 
 function buildBrief(){
   const budgetMode = getBudgetMode();
@@ -311,7 +332,6 @@ function buildBrief(){
   }
 
   // защита
-  if(!brief.formats) brief.formats = { mode: "auto", selected: [] };
   if(!Array.isArray(brief.formats.selected)) brief.formats.selected = [];
   if(!brief.formats.mode) brief.formats.mode = "auto";
 
@@ -323,6 +343,8 @@ function buildBrief(){
 
   return brief;
 }
+
+// ===== Calc helpers =====
 
 function pickScreensByMinBid(screens, n){
   const sorted = [...screens].sort((a,b) => {
@@ -364,7 +386,9 @@ function downloadXLSX(rows){
   XLSX.writeFile(wb, "screens_selected.xlsx");
 }
 
-function onCalcClick(){
+// ===== MAIN click handler =====
+
+async function onCalcClick(){
   const brief = buildBrief();
 
   // validation
@@ -401,6 +425,44 @@ function onCalcClick(){
   if(pool.length === 0){
     alert("Нет экранов под выбранные условия (город/форматы).");
     return;
+  }
+
+  // ===== near_address filter (NEW) =====
+  if (brief.selection.mode === "near_address") {
+    if (!window.GeoUtils?.geocodeAddress || !window.GeoUtils?.filterByRadius) {
+      alert("GeoUtils не найден. Проверь, что geo.js подключён ПЕРЕД planner.js");
+      return;
+    }
+
+    const addr = String(brief.selection.address || "").trim();
+    const radius = Number(brief.selection.radius_m || 500);
+
+    if (!addr) {
+      alert("Введите адрес.");
+      return;
+    }
+
+    setStatus("Геокодирую адрес…");
+
+    // чтобы Nominatim лучше находил: добавляем город
+    const geo = await GeoUtils.geocodeAddress(`${city}, ${addr}`);
+    if (!geo) {
+      setStatus("");
+      alert("Адрес не найден. Попробуй уточнить (улица, дом) или проверь город.");
+      return;
+    }
+
+    // фильтруем только те, у кого есть lat/lon
+    const before = pool.length;
+    pool = GeoUtils.filterByRadius(pool, geo.lat, geo.lon, radius);
+
+    if (!pool.length) {
+      setStatus("");
+      alert("В этом радиусе нет экранов (или у них нет координат lat/lon).");
+      return;
+    }
+
+    setStatus(`Экраны в радиусе: ${pool.length} из ${before}.`);
   }
 
   // GRP filter (optional)
@@ -501,7 +563,6 @@ function onCalcClick(){
   + (grpWarning ? `\n\n${grpWarning}` : "");
 
   if(el("summary")) el("summary").textContent = summaryText;
-
   if(el("download-csv")) el("download-csv").disabled = chosen.length === 0;
 
   if(el("results")){
@@ -531,52 +592,75 @@ function onCalcClick(){
   }
 }
 
+// ===== BIND UI =====
+
 function bindPlannerUI() {
-  // все addEventListener — только здесь
+  // preset buttons
   document.querySelectorAll(".preset").forEach(b => {
     cssButtonBase(b);
     b.addEventListener("click", () => {
-      document.getElementById("date-start").value = b.dataset.start;
-      document.getElementById("date-end").value = b.dataset.end;
+      if (el("date-start")) el("date-start").value = b.dataset.start;
+      if (el("date-end")) el("date-end").value = b.dataset.end;
     });
   });
 
+  // budget mode
   document.querySelectorAll('input[name="budget_mode"]').forEach(r => {
     r.addEventListener("change", () => {
       const mode = getBudgetMode();
-      const el = document.getElementById("budget-input-wrap");
-      if (el) el.style.display = mode === "fixed" ? "block" : "none";
+      const wrap = el("budget-input-wrap");
+      if (wrap) wrap.style.display = mode === "fixed" ? "block" : "none";
     });
   });
 
+  // schedule
   document.querySelectorAll('input[name="schedule"]').forEach(r => {
     r.addEventListener("change", () => {
       const v = getScheduleType();
-      const el = document.getElementById("custom-time-wrap");
-      if (el) el.style.display = (v === "custom") ? "flex" : "none";
+      const wrap = el("custom-time-wrap");
+      if (wrap) wrap.style.display = (v === "custom") ? "flex" : "none";
     });
   });
 
-  const grpEnabled = document.getElementById("grp-enabled");
+  // grp
+  const grpEnabled = el("grp-enabled");
   if (grpEnabled) {
     grpEnabled.addEventListener("change", (e) => {
-      const wrap = document.getElementById("grp-wrap");
+      const wrap = el("grp-wrap");
       if (wrap) wrap.style.display = e.target.checked ? "block" : "none";
     });
   }
 
-  const selectionMode = document.getElementById("selection-mode");
+  // formats auto
+  const formatsAuto = el("formats-auto");
+  if (formatsAuto) {
+    formatsAuto.addEventListener("change", (e) => {
+      const wrap = el("formats-wrap");
+      if(e.target.checked){
+        state.selectedFormats.clear();
+        if (wrap) [...wrap.querySelectorAll("button")].forEach(btn => btn.style.borderColor = "#ddd");
+      }
+    });
+  }
+
+  // selection mode
+  const selectionMode = el("selection-mode");
   if (selectionMode) selectionMode.addEventListener("change", renderSelectionExtra);
 
-  const citySearch = document.getElementById("city-search");
+  // city search
+  const citySearch = el("city-search");
   if (citySearch) citySearch.addEventListener("input", (e) => renderCitySuggestions(e.target.value));
 
-  const downloadBtn = document.getElementById("download-csv");
+  // download
+  const downloadBtn = el("download-csv");
   if (downloadBtn) downloadBtn.addEventListener("click", () => downloadXLSX(state.lastChosen));
 
-  const calcBtn = document.getElementById("calc-btn");
-  if (calcBtn) calcBtn.addEventListener("click", onCalcClick);
+  // calc
+  const calcBtn = el("calc-btn");
+  if (calcBtn) calcBtn.addEventListener("click", () => onCalcClick());
 }
+
+// ===== START =====
 
 async function startPlanner() {
   renderSelectionExtra();
@@ -587,7 +671,6 @@ async function startPlanner() {
 document.addEventListener("DOMContentLoaded", () => {
   startPlanner().catch(e => {
     console.error("Planner init failed:", e);
-    const st = document.getElementById("status");
-    if (st) st.textContent = "Ошибка инициализации. Открой консоль — там причина (Planner init failed).";
+    setStatus("Ошибка инициализации. Открой консоль — там причина (Planner init failed).");
   });
 });
