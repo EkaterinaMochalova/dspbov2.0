@@ -570,10 +570,10 @@ if (brief.selection.mode === "near_address") {
 — Подбор: ${brief.selection.mode}
 ${selectionLine}
 — GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${brief.grp.max.toFixed(2)}` : "не учитываем"}
-— Адрес: ${
+const addrLine =
   brief.selection.mode === "near_address"
-    ? (brief.selection.address_display || brief.selection.address || "—")
-    : "—"
+    ? `— Адрес: ${brief.selection.address || "—"} (радиус: ${brief.selection.radius_m || 500} м)`
+    : "";
 }
 
 Расчёт через minBid:
