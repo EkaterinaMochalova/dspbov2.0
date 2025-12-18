@@ -427,55 +427,59 @@ async function onCalcClick(){
     return;
   }
 
-  // ===== near_address filter (NEW) =====
-  if (brief.selection.mode === "near_address") {
-    if (!window.GeoUtils?.geocodeAddress || !window.GeoUtils?.filterByRadius) {
-      alert("GeoUtils не найден. Проверь, что geo.js подключён ПЕРЕД planner.js");
-      return;
-    }
+// ===== near_address filter =====
+if (brief.selection.mode === "near_address") {
 
-    const addr = String(brief.selection.address || "").trim();
-    const radius = Number(brief.selection.radius_m || 500);
-
-    if (!addr) {
-      alert("Введите адрес.");
-      return;
-    }
-
-    setStatus("Геокодирую адрес…");
-
-    // чтобы Nominatim лучше находил: добавляем город
-    const query = `${city}, ${addr}`;
-console.log("Geocode query:", query);
-
-const geo = await GeoUtils.geocodeAddress(query);
-console.log("Geocode result:", geo);
-
-if (!geo) {
-  alert("Адрес не найден. Уточните адрес (улица и дом).");
-  const statusEl = document.getElementById("status");
-  if (statusEl) statusEl.textContent = "";
-  return;
-}
-
-const statusEl = document.getElementById("status");
-if (statusEl) {
-  statusEl.textContent =
-    `Адрес найден: ${geo.display_name} (${geo.lat.toFixed(5)}, ${geo.lon.toFixed(5)})`;
-}
-
-    // фильтруем только те, у кого есть lat/lon
-    const before = pool.length;
-    pool = GeoUtils.filterByRadius(pool, geo.lat, geo.lon, radius);
-
-    if (!pool.length) {
-      setStatus("");
-      alert("В этом радиусе нет экранов (или у них нет координат lat/lon).");
-      return;
-    }
-
-    setStatus(`Экраны в радиусе: ${pool.length} из ${before}.`);
+  if (!window.GeoUtils?.geocodeAddress || !window.GeoUtils?.filterByRadius) {
+    alert("GeoUtils не найден. Проверь подключение geo.js");
+    return;
   }
+
+  const addr = String(brief.selection.address || "").trim();
+  const radius = Number(brief.selection.radius_m || 500);
+
+  if (!addr) {
+    alert("Введите адрес.");
+    return;
+  }
+
+  // ⬅️ ВОТ ОНО: ПЕРЕД ГЕОКОДИНГОМ
+  const query = `${city}, ${addr}`;
+
+  console.log("[geo] query:", query);
+  setStatus(`Ищу адрес: ${query}`);
+
+  let geo;
+  try {
+    geo = await GeoUtils.geocodeAddress(query);
+  } catch (e) {
+    console.error("[geo] error:", e);
+    alert("Ошибка геокодинга (сервис недоступен).");
+    setStatus("");
+    return;
+  }
+
+  console.log("[geo] result:", geo);
+
+  if (!geo || !Number.isFinite(geo.lat) || !Number.isFinite(geo.lon)) {
+    alert("Адрес не найден. Уточните улицу и дом.");
+    setStatus("");
+    return;
+  }
+
+  setStatus(`Найдено: ${geo.display_name}`);
+
+  const before = pool.length;
+  pool = GeoUtils.filterByRadius(pool, geo.lat, geo.lon, radius);
+
+  if (!pool.length) {
+    alert("В этом радиусе нет экранов.");
+    setStatus("");
+    return;
+  }
+
+  setStatus(`Экраны в радиусе: ${pool.length} из ${before}`);
+}
 
   brief.selection.address_display = geo.display_name;
   brief.selection.address_lat = geo.lat;
