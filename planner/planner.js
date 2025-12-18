@@ -560,6 +560,7 @@ if (statusEl) {
 — Город: ${city}
 — Форматы: ${selectedFormatsText}
 — Подбор: ${brief.selection.mode}
+${selectionLine}
 — GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${brief.grp.max.toFixed(2)}` : "не учитываем"}
 — Адрес: ${brief.selection.address} (радиус ${brief.selection.radius_m} м)
 
@@ -681,9 +682,15 @@ async function startPlanner() {
   await loadScreens();
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+function bootPlanner(){
   startPlanner().catch(e => {
     console.error("Planner init failed:", e);
     setStatus("Ошибка инициализации. Открой консоль — там причина (Planner init failed).");
   });
-});
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", bootPlanner);
+} else {
+  bootPlanner(); // DOM уже готов (часто в Tilda)
+}
