@@ -566,7 +566,11 @@ if (statusEl) {
 — Подбор: ${brief.selection.mode}
 ${selectionLine}
 — GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${brief.grp.max.toFixed(2)}` : "не учитываем"}
-— Адрес: ${brief.selection.address} (радиус ${brief.selection.radius_m} м)
+— Адрес: ${
+  brief.selection.mode === "near_address"
+    ? (brief.selection.address_display || brief.selection.address || "—")
+    : "—"
+}
 
 Расчёт через minBid:
 — Средний minBid: ${bidPlus20.toFixed(2)} ₽
