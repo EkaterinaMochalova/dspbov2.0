@@ -477,6 +477,10 @@ if (statusEl) {
     setStatus(`Экраны в радиусе: ${pool.length} из ${before}.`);
   }
 
+  brief.selection.address_display = geo.display_name;
+  brief.selection.address_lat = geo.lat;
+  brief.selection.address_lon = geo.lon;
+  
   // GRP filter (optional)
   let grpWarning = "";
   let grpDroppedNoValue = 0;
