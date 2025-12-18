@@ -94,4 +94,7 @@ console.log("geo.js loaded (Nominatim)");
     geocodeAddress: geocodeViaNominatim,
     filterByRadius
   };
+
+  console.log("GeoUtils provider =", window.GeoUtils?.provider, window.GeoUtils);
+  
 })();
