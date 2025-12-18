@@ -1,5 +1,4 @@
-// geo.js
-console.log("geo.js loaded");
+console.log("geo.js loaded (nominatim)");
 
 (function () {
   const cache = new Map();
@@ -7,17 +6,18 @@ console.log("geo.js loaded");
   async function geocodeAddress(query) {
     const q = String(query || "").trim();
     if (!q) return null;
+
+    // кэш (чтобы не дергать Nominatim по 10 раз)
     if (cache.has(q)) return cache.get(q);
 
-    // Nominatim
     const url =
       "https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=1&q=" +
       encodeURIComponent(q);
 
     const res = await fetch(url, {
       headers: {
-        // важно: Nominatim просит идентифицировать приложение
-        "Accept": "application/json",
+        "Accept": "application/json"
+        // User-Agent с браузера выставить нельзя — это ок
       }
     });
 
