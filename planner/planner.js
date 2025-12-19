@@ -615,6 +615,114 @@ function filterByRouteCorridor(screens, aLat, aLon, bLat, bLon, radiusMeters) {
   });
 }
 
+/** Overpass */
+const OVERPASS_URLS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.nchc.org.tw/api/interpreter"
+];
+
+const _poiCache = new Map(); // key -> { ts, data }
+
+/** достаём центр города по экранам (чтобы не городить Nominatim для границ) */
+function cityCenterFromScreens(screensInCity){
+  const pts = (screensInCity || [])
+    .map(s => ({ lat: Number(s.lat), lon: Number(s.lon) }))
+    .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+  if (!pts.length) return null;
+
+  let latMin=Infinity, latMax=-Infinity, lonMin=Infinity, lonMax=-Infinity;
+  for (const p of pts){
+    if (p.lat < latMin) latMin = p.lat;
+    if (p.lat > latMax) latMax = p.lat;
+    if (p.lon < lonMin) lonMin = p.lon;
+    if (p.lon > lonMax) lonMax = p.lon;
+  }
+  return { lat: (latMin+latMax)/2, lon: (lonMin+lonMax)/2 };
+}
+
+function _fillTemplate(q, vars){
+  return q
+    .replaceAll("{LAT}", String(vars.LAT))
+    .replaceAll("{LON}", String(vars.LON))
+    .replaceAll("{R}", String(vars.R));
+}
+
+async function fetchPOIsOverpass(poiType, lat, lon, radiusMeters, limit = 200){
+  const t = String(poiType || "").trim();
+  if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
+
+  const R = Math.max(100, Number(radiusMeters || 0));
+  const cacheKey = `${t}|${lat.toFixed(5)}|${lon.toFixed(5)}|${R}|${limit}`;
+
+  // кэш на 10 минут (чтобы не долбить Overpass)
+  const cached = _poiCache.get(cacheKey);
+  if (cached && (Date.now() - cached.ts) < 10 * 60 * 1000) return cached.data;
+
+  const body = `
+    [out:json][timeout:25];
+    (
+      ${_fillTemplate(POI_QUERIES[t], { LAT: lat, LON: lon, R })}
+    );
+    out center ${limit};
+  `;
+
+  let lastErr = null;
+
+  for (const url of OVERPASS_URLS){
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+        body: "data=" + encodeURIComponent(body)
+      });
+
+      if (!res.ok) throw new Error(`Overpass ${res.status} @ ${url}`);
+
+      const json = await res.json();
+      const els = Array.isArray(json.elements) ? json.elements : [];
+
+      const pois = els.map(el => {
+        const name = el.tags?.name || "";
+        const lat0 = Number(el.lat ?? el.center?.lat);
+        const lon0 = Number(el.lon ?? el.center?.lon);
+        if (!Number.isFinite(lat0) || !Number.isFinite(lon0)) return null;
+        return { id: `${el.type}/${el.id}`, name, lat: lat0, lon: lon0, raw: el };
+      }).filter(Boolean);
+
+      _poiCache.set(cacheKey, { ts: Date.now(), data: pois });
+      return pois;
+    } catch (e) {
+      lastErr = e;
+      console.warn("[poi] overpass fail:", String(e));
+    }
+  }
+
+  throw lastErr || new Error("Overpass failed");
+}
+
+/** выбираем экраны, попадающие в радиус вокруг хотя бы одного POI */
+function pickScreensNearPOIs(screens, pois, radiusMeters){
+  const r = Number(radiusMeters || 0);
+  if (!r || !Array.isArray(pois) || !pois.length) return [];
+
+  const dist = window.GeoUtils?.haversineMeters;
+  if (!dist) throw new Error("GeoUtils.haversineMeters is missing");
+
+  const picked = [];
+  for (const s of (screens || [])){
+    const slat = Number(s.lat), slon = Number(s.lon);
+    if (!Number.isFinite(slat) || !Number.isFinite(slon)) continue;
+
+    let ok = false;
+    for (const p of pois){
+      if (dist(slat, slon, p.lat, p.lon) <= r) { ok = true; break; }
+    }
+    if (ok) picked.push(s);
+  }
+  return picked;
+}
+
 // ===== MAIN click handler =====
 
 async function onCalcClick(){
@@ -717,7 +825,60 @@ async function onCalcClick(){
     brief.selection.address_lon = geoResult.lon;
   }
 
+// ===== POI filter =====
+if (brief.selection.mode === "poi") {
+  if (!window.GeoUtils?.haversineMeters) {
+    alert("GeoUtils не найден. Проверь подключение geo.js");
+    return;
+  }
 
+  const poiType = String(brief.selection.poi_type || "").trim();
+  const radius = Number(brief.selection.radius_m || 500);
+
+  // центр берём по экранам города (быстро и без Nominatim)
+  const center = cityCenterFromScreens(pool);
+  if (!center) {
+    alert("Для POI-подбора нужны координаты экранов (lat/lon) в этом городе.");
+    return;
+  }
+
+  setStatus(`Ищу POI: ${POI_LABELS[poiType] || poiType}…`);
+
+  let pois = [];
+  try {
+    // радиус поиска POI можно сделать шире, чем радиус “вокруг POI”
+    const searchR = Math.max(2000, Math.min(15000, radius * 10));
+    pois = await fetchPOIsOverpass(poiType, center.lat, center.lon, searchR, 200);
+  } catch (e) {
+    console.error("[poi] error:", e);
+    alert("Ошибка Overpass (OSM). Попробуй ещё раз.");
+    setStatus("");
+    return;
+  }
+
+  // сохраняем для summary/брфа
+  brief.selection.poi_found = pois.length;
+  brief.selection.poi_center_lat = center.lat;
+  brief.selection.poi_center_lon = center.lon;
+
+  if (!pois.length) {
+    alert("POI не найдены в зоне поиска. Попробуй другой тип или увеличь радиус.");
+    setStatus("");
+    return;
+  }
+
+  const before = pool.length;
+  pool = pickScreensNearPOIs(pool, pois, radius);
+
+  if (!pool.length) {
+    alert("В радиусе вокруг найденных POI нет экранов (или нет lat/lon).");
+    setStatus("");
+    return;
+  }
+
+  setStatus(`Экраны у POI: ${pool.length} из ${before} (POI: ${pois.length})`);
+}
+  
 // ===== route filter =====
 if (brief.selection.mode === "route") {
 
