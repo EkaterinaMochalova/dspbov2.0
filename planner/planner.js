@@ -19,6 +19,93 @@ const FORMAT_LABELS = {
   "SUPERSITE": { label: "Суперсайты", desc: "крупные конструкции с высокой дальностью видимости" }
 };
 
+/** POI queries for Overpass (OpenStreetMap)
+ *  nwr = node + way + relation
+ */
+const POI_QUERIES = {
+
+  // 🏋️ ФИТНЕС
+  fitness: `
+    nwr(around:{R},{LAT},{LON})["leisure"="fitness_centre"];
+    nwr(around:{R},{LAT},{LON})["amenity"="gym"];
+    nwr(around:{R},{LAT},{LON})["sport"="fitness"];
+    nwr(around:{R},{LAT},{LON})["leisure"="sports_centre"]["sport"="fitness"];
+  `,
+
+  // 🐶 PET
+  pet_store: `
+    nwr(around:{R},{LAT},{LON})["shop"="pet"];
+    nwr(around:{R},{LAT},{LON})["shop"="pet_grooming"];
+    nwr(around:{R},{LAT},{LON})["amenity"="veterinary"];
+  `,
+
+  // 🛒 СУПЕРМАРКЕТЫ
+  supermarket: `
+    nwr(around:{R},{LAT},{LON})["shop"="supermarket"];
+    nwr(around:{R},{LAT},{LON})["shop"="convenience"];
+    nwr(around:{R},{LAT},{LON})["shop"="hypermarket"];
+  `,
+
+  // 🏬 ТОРГОВЫЕ ЦЕНТРЫ
+  mall: `
+    nwr(around:{R},{LAT},{LON})["shop"="mall"];
+  `,
+
+  // ☕ КАФЕ / КОФЕЙНИ
+  cafe: `
+    nwr(around:{R},{LAT},{LON})["amenity"="cafe"];
+    nwr(around:{R},{LAT},{LON})["amenity"="coffee_shop"];
+  `,
+
+  // 🍽 РЕСТОРАНЫ
+  restaurant: `
+    nwr(around:{R},{LAT},{LON})["amenity"="restaurant"];
+    nwr(around:{R},{LAT},{LON})["amenity"="fast_food"];
+    nwr(around:{R},{LAT},{LON})["amenity"="food_court"];
+  `,
+
+  // 💊 АПТЕКИ
+  pharmacy: `
+    nwr(around:{R},{LAT},{LON})["amenity"="pharmacy"];
+  `,
+
+  // 🏫 ШКОЛЫ
+  school: `
+    nwr(around:{R},{LAT},{LON})["amenity"="school"];
+  `,
+
+  // 🎓 ВУЗЫ
+  university: `
+    nwr(around:{R},{LAT},{LON})["amenity"="university"];
+    nwr(around:{R},{LAT},{LON})["amenity"="college"];
+  `,
+
+  // 🏥 БОЛЬНИЦЫ / КЛИНИКИ
+  hospital: `
+    nwr(around:{R},{LAT},{LON})["amenity"="hospital"];
+    nwr(around:{R},{LAT},{LON})["amenity"="clinic"];
+  `,
+
+  // ⛽ АЗС
+  gas_station: `
+    nwr(around:{R},{LAT},{LON})["amenity"="fuel"];
+  `,
+
+  // 🏦 БАНКИ
+  bank: `
+    nwr(around:{R},{LAT},{LON})["amenity"="bank"];
+    nwr(around:{R},{LAT},{LON})["amenity"="atm"];
+  `,
+
+  // 🚇 МЕТРО / ТРАНСПОРТ
+  transport: `
+    nwr(around:{R},{LAT},{LON})["public_transport"];
+    nwr(around:{R},{LAT},{LON})["railway"="station"];
+    nwr(around:{R},{LAT},{LON})["railway"="subway_entrance"];
+  `
+};
+
+
 // модель
 const BID_MULTIPLIER = 1.2; // +20%
 const SC_OPT = 30;          // оптимум: 30 выходов/час/экран
