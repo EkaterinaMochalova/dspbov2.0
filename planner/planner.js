@@ -32,6 +32,7 @@ const state = {
   selectedFormats: new Set(),
   lastChosen: []
 };
+window.state = state;
 
 function el(id){ return document.getElementById(id); }
 
