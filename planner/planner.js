@@ -561,6 +561,17 @@ if (brief.selection.mode === "near_address") {
   const of = (n) => Math.round(n).toLocaleString("ru-RU");
 
   const summaryText =
+// ДО summaryText (выше)
+const addrLine =
+  brief.selection.mode === "near_address"
+    ? `— Адрес: ${brief.selection.address || "—"} (радиус: ${brief.selection.radius_m || 500} м)`
+    : "";
+
+// если хочешь на будущее (poi/route), лучше универсально:
+const selectionLine = addrLine ? `${addrLine}\n` : "";
+
+// ТЕПЕРЬ summaryText
+const summaryText =
 `Бриф:
 — Бюджет: ${budget.toLocaleString("ru-RU")} ₽
 — Даты: ${brief.dates.start} → ${brief.dates.end} (дней: ${days})
@@ -568,13 +579,7 @@ if (brief.selection.mode === "near_address") {
 — Город: ${city}
 — Форматы: ${selectedFormatsText}
 — Подбор: ${brief.selection.mode}
-${selectionLine}
-— GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${brief.grp.max.toFixed(2)}` : "не учитываем"}
-const addrLine =
-  brief.selection.mode === "near_address"
-    ? `— Адрес: ${brief.selection.address || "—"} (радиус: ${brief.selection.radius_m || 500} м)`
-    : "";
-}
+${selectionLine}— GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${brief.grp.max.toFixed(2)}` : "не учитываем"}
 
 Расчёт через minBid:
 — Средний minBid: ${bidPlus20.toFixed(2)} ₽
@@ -585,8 +590,8 @@ const addrLine =
 — OTS всего: ${otsTotal == null ? "—" : of(otsTotal)}
 — OTS/день: ${otsTotal == null ? "—" : of(otsPerDay)}
 — OTS/час: ${otsTotal == null ? "—" : of(otsPerHour)}`
-  + (warning ? `\n\n${warning}` : "")
-  + (grpWarning ? `\n\n${grpWarning}` : "");
++ (warning ? `\n\n${warning}` : "")
++ (grpWarning ? `\n\n${grpWarning}` : "");
 
   if(el("summary")) el("summary").textContent = summaryText;
   if(el("download-csv")) el("download-csv").disabled = chosen.length === 0;
