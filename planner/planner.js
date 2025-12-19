@@ -906,3 +906,22 @@ if (document.readyState === "loading") {
 } else {
   bootPlanner(); // DOM уже готов (часто в Tilda)
 }
+
+// === DEBUG/INTEGRATION EXPORTS (для консоли и внешних модулей) ===
+window.PLANNER = window.PLANNER || {};
+window.PLANNER.state = state;
+window.PLANNER.loadScreens = loadScreens;
+window.PLANNER.startPlanner = startPlanner;
+window.PLANNER.bootPlanner = bootPlanner;
+
+// простой флаг "готово"
+window.PLANNER.ready = false;
+
+// помечаем готовность после успешной загрузки CSV
+const _origLoadScreens = loadScreens;
+loadScreens = async function () {
+  const res = await _origLoadScreens();
+  window.PLANNER.ready = true;
+  window.dispatchEvent(new CustomEvent("planner:screens-ready", { detail: { count: state.screens.length } }));
+  return res;
+};
