@@ -104,7 +104,6 @@ function formatMeta(fmt){
 }
 
 // ===== UI: selection extra =====
-
 function renderSelectionExtra(){
   const mode = el("selection-mode")?.value || "city_even";
   const extra = el("selection-extra");
@@ -113,15 +112,16 @@ function renderSelectionExtra(){
 
   if(mode === "near_address"){
     extra.innerHTML = `
-      <input id="addr" type="text" placeholder="Адрес"
+      <input id="planner-addr" type="text" placeholder="Адрес"
              style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-      <input id="radius" type="number" min="50" value="500" placeholder="Радиус, м"
+      <input id="planner-radius" type="number" min="50" value="500" placeholder="Радиус, м"
              style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
       <div style="font-size:12px; color:#666; margin-top:6px;">
         Геокодим адрес и выбираем экраны в радиусе.
       </div>
     `;
-  } else if(mode === "poi"){
+  }
+  else if(mode === "poi"){
     extra.innerHTML = `
       <select id="poi-type"
               style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
@@ -129,23 +129,27 @@ function renderSelectionExtra(){
         <option value="supermarket">Супермаркеты</option>
         <option value="mall">ТЦ</option>
       </select>
-      <input id="radius" type="number" min="50" value="500" placeholder="Радиус, м"
+      <input id="planner-radius" type="number" min="50" value="500" placeholder="Радиус, м"
              style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
-      <div style="font-size:12px; color:#666; margin-top:6px;">MVP: POI сохраняем в бриф (без POI-базы).</div>
+      <div style="font-size:12px; color:#666; margin-top:6px;">
+        MVP: POI сохраняем в бриф (без POI-базы).
+      </div>
     `;
-  } else if(mode === "route"){
+  }
+  else if(mode === "route"){
     extra.innerHTML = `
       <input id="route-from" type="text" placeholder="Точка А"
              style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
       <input id="route-to" type="text" placeholder="Точка Б"
              style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-      <input id="radius" type="number" min="50" value="300" placeholder="Радиус от маршрута, м"
+      <input id="planner-radius" type="number" min="50" value="300" placeholder="Радиус от маршрута, м"
              style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
-      <div style="font-size:12px; color:#666; margin-top:6px;">MVP: маршрут сохраняем в бриф (без построения).</div>
+      <div style="font-size:12px; color:#666; margin-top:6px;">
+        MVP: маршрут сохраняем в бриф (без построения).
+      </div>
     `;
   }
 }
-
 // ===== Data load =====
 
 async function loadScreens(){
@@ -278,8 +282,9 @@ function renderCitySuggestions(q){
 }
 
 // ===== Brief =====
-
 function buildBrief(){
+  const root = document.getElementById("planner-widget") || document; // scoped для Тильды
+
   const budgetMode = getBudgetMode();
   const budgetVal = el("budget-input")?.value;
 
@@ -317,18 +322,40 @@ function buildBrief(){
     }
   };
 
+  // helpers: берём значения внутри виджета (и поддерживаем старые id)
+  const qsVal = (sel) => (root.querySelector(sel)?.value ?? "");
+  const pickAnyVal = (...sels) => {
+    for (const s of sels) {
+      const v = qsVal(s);
+      if (String(v).trim()) return String(v).trim();
+    }
+    return "";
+  };
+  const pickAnyNum = (fallback, ...sels) => {
+    for (const s of sels) {
+      const v = qsVal(s);
+      if (v !== "" && v != null) {
+        const n = Number(v);
+        if (Number.isFinite(n)) return n;
+      }
+    }
+    return fallback;
+  };
+
   if(selectionMode === "near_address"){
-    brief.selection.address = el("addr")?.value || "";
-    brief.selection.radius_m = Number(el("radius")?.value || 500);
+    brief.selection.address = pickAnyVal("#planner-addr", "#addr");
+    brief.selection.radius_m = pickAnyNum(500, "#planner-radius", "#radius");
   }
+
   if(selectionMode === "poi"){
-    brief.selection.poi_type = el("poi-type")?.value || "pet_store";
-    brief.selection.radius_m = Number(el("radius")?.value || 500);
+    brief.selection.poi_type = String(qsVal("#poi-type") || "pet_store").trim();
+    brief.selection.radius_m = pickAnyNum(500, "#planner-radius", "#radius");
   }
+
   if(selectionMode === "route"){
-    brief.selection.from = el("route-from")?.value || "";
-    brief.selection.to = el("route-to")?.value || "";
-    brief.selection.radius_m = Number(el("radius")?.value || 300);
+    brief.selection.from = String(qsVal("#route-from") || "").trim();
+    brief.selection.to   = String(qsVal("#route-to") || "").trim();
+    brief.selection.radius_m = pickAnyNum(300, "#planner-radius", "#radius");
   }
 
   // защита
