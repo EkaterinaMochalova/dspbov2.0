@@ -1,4 +1,4 @@
-console.log("geo.js loaded (nominatim)");
+console.log("🔥 GEO NOMINATIM ACTIVE 🔥", location.href);
 
 (function () {
   const cache = new Map();
