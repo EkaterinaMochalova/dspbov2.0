@@ -454,63 +454,66 @@ async function onCalcClick(){
     return;
   }
 
-// ===== near_address filter =====
-if (brief.selection.mode === "near_address") {
+  // ===== near_address filter =====
+  let geoResult = null;
 
-  if (!window.GeoUtils?.geocodeAddress || !window.GeoUtils?.filterByRadius) {
-    alert("GeoUtils не найден. Проверь подключение geo.js");
-    return;
+  if (brief.selection.mode === "near_address") {
+
+    if (!window.GeoUtils?.geocodeAddress || !window.GeoUtils?.filterByRadius) {
+      alert("GeoUtils не найден. Проверь подключение geo.js");
+      return;
+    }
+
+    const addr = String(brief.selection.address || "").trim();
+    const radius = Number(brief.selection.radius_m || 500);
+
+    if (!addr) {
+      alert("Введите адрес.");
+      return;
+    }
+
+    const query = `${city}, ${addr}`;
+
+    console.log("[geo] query:", query);
+    setStatus(`Ищу адрес: ${query}`);
+
+    try {
+      geoResult = await GeoUtils.geocodeAddress(query);
+    } catch (e) {
+      console.error("[geo] error:", e);
+      alert("Ошибка геокодинга (сервис недоступен).");
+      setStatus("");
+      return;
+    }
+
+    console.log("[geo] result:", geoResult);
+
+    if (!geoResult || !Number.isFinite(geoResult.lat) || !Number.isFinite(geoResult.lon)) {
+      alert("Адрес не найден. Уточните улицу и дом.");
+      setStatus("");
+      return;
+    }
+
+    setStatus(`Найдено: ${geoResult.display_name}`);
+
+    const before = pool.length;
+    pool = GeoUtils.filterByRadius(pool, geoResult.lat, geoResult.lon, radius);
+
+    if (!pool.length) {
+      alert("В этом радиусе нет экранов (или у них нет координат lat/lon).");
+      setStatus("");
+      return;
+    }
+
+    setStatus(`Экраны в радиусе: ${pool.length} из ${before}`);
   }
 
-  const addr = String(brief.selection.address || "").trim();
-  const radius = Number(brief.selection.radius_m || 500);
-
-  if (!addr) {
-    alert("Введите адрес.");
-    return;
+  // сохраняем результаты геокодинга в бриф (только если был geo)
+  if (geoResult) {
+    brief.selection.address_display = geoResult.display_name;
+    brief.selection.address_lat = geoResult.lat;
+    brief.selection.address_lon = geoResult.lon;
   }
-
-  // ⬅️ ВОТ ОНО: ПЕРЕД ГЕОКОДИНГОМ
-  const query = `${city}, ${addr}`;
-
-  console.log("[geo] query:", query);
-  setStatus(`Ищу адрес: ${query}`);
-
-  let geo;
-  try {
-    geo = await GeoUtils.geocodeAddress(query);
-  } catch (e) {
-    console.error("[geo] error:", e);
-    alert("Ошибка геокодинга (сервис недоступен).");
-    setStatus("");
-    return;
-  }
-
-  console.log("[geo] result:", geo);
-
-  if (!geo || !Number.isFinite(geo.lat) || !Number.isFinite(geo.lon)) {
-    alert("Адрес не найден. Уточните улицу и дом.");
-    setStatus("");
-    return;
-  }
-
-  setStatus(`Найдено: ${geo.display_name}`);
-
-  const before = pool.length;
-  pool = GeoUtils.filterByRadius(pool, geo.lat, geo.lon, radius);
-
-  if (!pool.length) {
-    alert("В этом радиусе нет экранов.");
-    setStatus("");
-    return;
-  }
-
-  setStatus(`Экраны в радиусе: ${pool.length} из ${before}`);
-}
-
-  brief.selection.address_display = geo.display_name;
-  brief.selection.address_lat = geo.lat;
-  brief.selection.address_lon = geo.lon;
   
   // GRP filter (optional)
   let grpWarning = "";
@@ -587,17 +590,11 @@ if (brief.selection.mode === "near_address") {
   const nf = (n) => Math.floor(n).toLocaleString("ru-RU");
   const of = (n) => Math.round(n).toLocaleString("ru-RU");
 
-  const summaryText =
-// ДО summaryText (выше)
-const addrLine =
+const selectionLine =
   brief.selection.mode === "near_address"
-    ? `— Адрес: ${brief.selection.address || "—"} (радиус: ${brief.selection.radius_m || 500} м)`
+    ? `— Адрес: ${brief.selection.address || "—"} (радиус: ${brief.selection.radius_m || 500} м)\n`
     : "";
 
-// если хочешь на будущее (poi/route), лучше универсально:
-const selectionLine = addrLine ? `${addrLine}\n` : "";
-
-// ТЕПЕРЬ summaryText
 const summaryText =
 `Бриф:
 — Бюджет: ${budget.toLocaleString("ru-RU")} ₽
@@ -617,9 +614,9 @@ ${selectionLine}— GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${
 — OTS всего: ${otsTotal == null ? "—" : of(otsTotal)}
 — OTS/день: ${otsTotal == null ? "—" : of(otsPerDay)}
 — OTS/час: ${otsTotal == null ? "—" : of(otsPerHour)}`
-+ (warning ? `\n\n${warning}` : "")
-+ (grpWarning ? `\n\n${grpWarning}` : "");
-
+  + (warning ? `\n\n${warning}` : "")
+  + (grpWarning ? `\n\n${grpWarning}` : "");
+  
   if(el("summary")) el("summary").textContent = summaryText;
   if(el("download-csv")) el("download-csv").disabled = chosen.length === 0;
 
