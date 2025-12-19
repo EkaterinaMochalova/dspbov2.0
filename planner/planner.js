@@ -53,8 +53,8 @@ const POI_QUERIES = {
 
   // ☕ КАФЕ / КОФЕЙНИ
   cafe: `
-    nwr(around:{R},{LAT},{LON})["amenity"="cafe"];
-    nwr(around:{R},{LAT},{LON})["amenity"="coffee_shop"];
+  nwr(around:{R},{LAT},{LON})["amenity"="cafe"];
+  nwr(around:{R},{LAT},{LON})["shop"="coffee"];
   `,
 
   // 🍽 РЕСТОРАНЫ
@@ -105,6 +105,21 @@ const POI_QUERIES = {
   `
 };
 
+const POI_LABELS = {
+  fitness: "Фитнес-клубы",
+  pet_store: "Pet stores / Vet",
+  supermarket: "Супермаркеты",
+  mall: "Торговые центры",
+  cafe: "Кафе / кофе",
+  restaurant: "Рестораны / фастфуд",
+  pharmacy: "Аптеки",
+  school: "Школы",
+  university: "ВУЗы",
+  hospital: "Больницы / клиники",
+  gas_station: "АЗС",
+  bank: "Банки / банкоматы",
+  transport: "Транспорт (метро/станции)"
+};
 
 // модель
 const BID_MULTIPLIER = 1.2; // +20%
@@ -210,20 +225,26 @@ function renderSelectionExtra(){
     `;
   }
   else if(mode === "poi"){
-    extra.innerHTML = `
-      <select id="poi-type"
-              style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-        <option value="pet_store">Pet stores</option>
-        <option value="supermarket">Супермаркеты</option>
-        <option value="mall">ТЦ</option>
-      </select>
-      <input id="planner-radius" type="number" min="50" value="500" placeholder="Радиус, м"
-             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
-      <div style="font-size:12px; color:#666; margin-top:6px;">
-        MVP: POI сохраняем в бриф (без POI-базы).
-      </div>
-    `;
-  }
+  const keys = Object.keys(POI_QUERIES || {});
+  const options = keys.map(k => {
+    const label = POI_LABELS[k] || k;
+    return `<option value="${k}">${label}</option>`;
+  }).join("");
+
+  extra.innerHTML = `
+    <select id="poi-type"
+            style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
+      ${options}
+    </select>
+
+    <input id="planner-radius" type="number" min="50" value="500" placeholder="Радиус вокруг POI, м"
+           style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
+
+    <div style="font-size:12px; color:#666; margin-top:6px;">
+      POI-тип берём из OpenStreetMap (Overpass), затем выбираем экраны вокруг POI.
+    </div>
+  `;
+}
   else if(mode === "route"){
     extra.innerHTML = `
       <input id="route-from" type="text" placeholder="Точка А"
