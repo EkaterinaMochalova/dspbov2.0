@@ -412,39 +412,88 @@ function downloadXLSX(rows){
   XLSX.utils.book_append_sheet(wb, ws, "Screens");
   XLSX.writeFile(wb, "screens_selected.xlsx");
 }
-function pointToSegmentMeters(lat, lon, lat1, lon1, lat2, lon2) {
-  // Equirectangular projection around middle latitude (достаточно точно для города)
+
+// ===== Route corridor helpers (единственная версия) =====
+
+// lat/lon -> XY метры (плоская аппроксимация вокруг lat0)
+function _llToXYMeters(lat, lon, lat0) {
   const R = 6371000;
-  const toRad = (x) => (x * Math.PI) / 180;
+  const toRad = (x) => x * Math.PI / 180;
+  return {
+    x: R * toRad(lon) * Math.cos(toRad(lat0)),
+    y: R * toRad(lat)
+  };
+}
 
-  const phi = toRad((lat1 + lat2) / 2); // средняя широта
-  const x  = R * toRad(lon)  * Math.cos(phi);
-  const y  = R * toRad(lat);
+// расстояние от точки P до отрезка AB (в метрах)
+function _distPointToSegmentMeters(pLat, pLon, aLat, aLon, bLat, bLon) {
+  const lat0 = (aLat + bLat) / 2;
 
-  const x1 = R * toRad(lon1) * Math.cos(phi);
-  const y1 = R * toRad(lat1);
+  const A = _llToXYMeters(aLat, aLon, lat0);
+  const B = _llToXYMeters(bLat, bLon, lat0);
+  const P = _llToXYMeters(pLat, pLon, lat0);
 
-  const x2 = R * toRad(lon2) * Math.cos(phi);
-  const y2 = R * toRad(lat2);
+  const ABx = B.x - A.x, ABy = B.y - A.y;
+  const APx = P.x - A.x, APy = P.y - A.y;
 
-  const dx = x2 - x1;
-  const dy = y2 - y1;
+  const ab2 = ABx*ABx + ABy*ABy;
+  if (ab2 === 0) return Math.hypot(P.x - A.x, P.y - A.y);
 
-  if (dx === 0 && dy === 0) {
-    // A и B совпали — просто расстояние до точки
-    const ddx = x - x1, ddy = y - y1;
-    return Math.sqrt(ddx*ddx + ddy*ddy);
-  }
-
-  // проекция точки на отрезок
-  let t = ((x - x1)*dx + (y - y1)*dy) / (dx*dx + dy*dy);
+  let t = (APx*ABx + APy*ABy) / ab2;
   t = Math.max(0, Math.min(1, t));
 
-  const px = x1 + t*dx;
-  const py = y1 + t*dy;
+  const Cx = A.x + t*ABx;
+  const Cy = A.y + t*ABy;
 
-  const ddx = x - px, ddy = y - py;
-  return Math.sqrt(ddx*ddx + ddy*ddy);
+  return Math.hypot(P.x - Cx, P.y - Cy);
+}
+
+// фильтр экранов по коридору маршрута A->B
+function filterByRouteCorridor(screens, aLat, aLon, bLat, bLon, radiusMeters) {
+  const r = Number(radiusMeters || 0);
+  return (screens || []).filter(s => {
+    const slat = Number(s.lat);
+    const slon = Number(s.lon);
+    if (!Number.isFinite(slat) || !Number.isFinite(slon)) return false;
+    return _distPointToSegmentMeters(slat, slon, aLat, aLon, bLat, bLon) <= r;
+  });
+}
+
+// ===== Geo helpers for ROUTE =====
+// перевод lat/lon -> локальные метры (плоская аппроксимация вокруг lat0)
+function _llToXYMeters(lat, lon, lat0) {
+  const R = 6371000;
+  const toRad = (x) => x * Math.PI / 180;
+  const x = R * toRad(lon) * Math.cos(toRad(lat0));
+  const y = R * toRad(lat);
+  return { x, y };
+}
+
+// расстояние от точки P до отрезка AB (в метрах)
+function _distPointToSegmentMeters(pLat, pLon, aLat, aLon, bLat, bLon) {
+  const lat0 = (aLat + bLat) / 2;
+
+  const A = _llToXYMeters(aLat, aLon, lat0);
+  const B = _llToXYMeters(bLat, bLon, lat0);
+  const P = _llToXYMeters(pLat, pLon, lat0);
+
+  const ABx = B.x - A.x, ABy = B.y - A.y;
+  const APx = P.x - A.x, APy = P.y - A.y;
+
+  const ab2 = ABx*ABx + ABy*ABy;
+  if (ab2 === 0) {
+    // A и B совпали
+    const dx = P.x - A.x, dy = P.y - A.y;
+    return Math.hypot(dx, dy);
+  }
+
+  let t = (APx*ABx + APy*ABy) / ab2;
+  t = Math.max(0, Math.min(1, t));
+
+  const Cx = A.x + t*ABx;
+  const Cy = A.y + t*ABy;
+
+  return Math.hypot(P.x - Cx, P.y - Cy);
 }
 
 function filterByRouteCorridor(screens, aLat, aLon, bLat, bLon, radiusMeters) {
@@ -453,10 +502,9 @@ function filterByRouteCorridor(screens, aLat, aLon, bLat, bLon, radiusMeters) {
     const slat = Number(s.lat);
     const slon = Number(s.lon);
     if (!Number.isFinite(slat) || !Number.isFinite(slon)) return false;
-    return pointToSegmentMeters(slat, slon, aLat, aLon, bLat, bLon) <= r;
+    return _distPointToSegmentMeters(slat, slon, aLat, aLon, bLat, bLon) <= r;
   });
 }
-
 
 // ===== MAIN click handler =====
 
@@ -561,8 +609,9 @@ async function onCalcClick(){
   }
 
 
-  // ===== route filter =====
+// ===== route filter =====
 if (brief.selection.mode === "route") {
+
   if (!window.GeoUtils?.geocodeAddress) {
     alert("GeoUtils не найден. Проверь подключение geo.js");
     return;
@@ -573,52 +622,59 @@ if (brief.selection.mode === "route") {
   const radius = Number(brief.selection.radius_m || 300);
 
   if (!from || !to) {
-    alert("Введите точку А и точку Б.");
+    alert("Введите обе точки маршрута (А и Б).");
     return;
   }
 
-  // Чтобы лучше находило внутри выбранного города
   const qFrom = `${city}, ${from}`;
   const qTo   = `${city}, ${to}`;
 
-  console.log("[route] from:", qFrom);
-  console.log("[route] to:", qTo);
-  setStatus(`Геокодирую маршрут: ${from} → ${to}`);
+  console.log("[route] qFrom:", qFrom);
+  console.log("[route] qTo:", qTo);
 
-  let gFrom, gTo;
+  setStatus("Геокодирую маршрут…");
+
+  let geoA, geoB;
   try {
-    gFrom = await GeoUtils.geocodeAddress(qFrom);
-    gTo   = await GeoUtils.geocodeAddress(qTo);
+    geoA = await GeoUtils.geocodeAddress(qFrom);
+    geoB = await GeoUtils.geocodeAddress(qTo);
   } catch (e) {
     console.error("[route] geocode error:", e);
-    alert("Ошибка геокодинга (сервис недоступен).");
+    alert("Ошибка геокодинга маршрута (сервис недоступен).");
     setStatus("");
     return;
   }
 
-  if (!gFrom || !Number.isFinite(gFrom.lat) || !Number.isFinite(gFrom.lon)) {
+  console.log("[route] A:", geoA);
+  console.log("[route] B:", geoB);
+
+  if (!geoA || !Number.isFinite(geoA.lat) || !Number.isFinite(geoA.lon)) {
     alert("Точка А не найдена. Уточните адрес.");
     setStatus("");
     return;
   }
-  if (!gTo || !Number.isFinite(gTo.lat) || !Number.isFinite(gTo.lon)) {
+  if (!geoB || !Number.isFinite(geoB.lat) || !Number.isFinite(geoB.lon)) {
     alert("Точка Б не найдена. Уточните адрес.");
     setStatus("");
     return;
   }
 
   const before = pool.length;
-  pool = filterByRouteCorridor(pool, gFrom.lat, gFrom.lon, gTo.lat, gTo.lon, radius);
+  pool = filterByRouteCorridor(pool, geoA.lat, geoA.lon, geoB.lat, geoB.lon, radius);
+
+  // сохраним для summary (красиво)
+  brief.selection.route_from_display = geoA.display_name || from;
+  brief.selection.route_to_display   = geoB.display_name || to;
+  brief.selection.route_from_lat = geoA.lat;
+  brief.selection.route_from_lon = geoA.lon;
+  brief.selection.route_to_lat   = geoB.lat;
+  brief.selection.route_to_lon   = geoB.lon;
 
   if (!pool.length) {
-    alert("В этом коридоре маршрута нет экранов (или у них нет координат lat/lon).");
+    alert("В коридоре маршрута нет экранов (или у них нет lat/lon).");
     setStatus("");
     return;
   }
-
-  // сохраним в brief (для summary)
-  brief.selection.from_display = gFrom.display_name || from;
-  brief.selection.to_display   = gTo.display_name || to;
 
   setStatus(`Экраны вдоль маршрута: ${pool.length} из ${before}`);
 }
@@ -703,9 +759,9 @@ if (brief.selection.mode === "route") {
 
 const selectionLine =
   brief.selection.mode === "near_address"
-    ? `— Адрес: ${brief.selection.address || "—"} (радиус: ${brief.selection.radius_m || 500} м)\n`
+    ? `— Адрес: ${(brief.selection.address_display || brief.selection.address || "—")} (радиус: ${brief.selection.radius_m || 500} м)\n`
     : brief.selection.mode === "route"
-      ? `— Маршрут: ${brief.selection.from || "—"} → ${brief.selection.to || "—"} (коридор: ${brief.selection.radius_m || 300} м)\n`
+      ? `— Маршрут: ${(brief.selection.route_from_display || brief.selection.from || "—")} → ${(brief.selection.route_to_display || brief.selection.to || "—")} (коридор: ${brief.selection.radius_m || 300} м)\n`
       : "";
 
 const summaryText =
