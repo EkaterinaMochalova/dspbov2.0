@@ -654,6 +654,60 @@ function _fillTemplate(q, vars){
     .replaceAll("{R}", String(vars.R));
 }
 
+async function fetchPOIsOverpassInCity(poiType, cityName, limit = 400) {
+  const t = String(poiType || "").trim();
+  if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
+
+  const body = `
+    [out:json][timeout:30];
+    area["name"="${cityName}"]["boundary"="administrative"]->.a;
+    (
+      ${POI_QUERIES[t].replaceAll(
+        /nwr$begin:math:text$around\:\\\{R\\\}\,\\\{LAT\\\}\,\\\{LON\\\}$end:math:text$/g,
+        "nwr(area.a)"
+      )}
+    );
+    out center ${limit};
+  `;
+
+  let lastErr = null;
+
+  for (const url of OVERPASS_URLS) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+        body: "data=" + encodeURIComponent(body)
+      });
+
+      if (!res.ok) throw new Error(`Overpass ${res.status}`);
+
+      const json = await res.json();
+      const els = Array.isArray(json.elements) ? json.elements : [];
+
+      return els
+        .map(el => {
+          const lat = Number(el.lat ?? el.center?.lat);
+          const lon = Number(el.lon ?? el.center?.lon);
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+          return {
+            id: `${el.type}/${el.id}`,
+            name: el.tags?.name || "",
+            lat,
+            lon,
+            raw: el
+          };
+        })
+        .filter(Boolean);
+    } catch (e) {
+      lastErr = e;
+      console.warn("[poi city] fail:", e.message);
+    }
+  }
+
+  throw lastErr || new Error("Overpass failed");
+}
+
 async function fetchPOIsOverpass(poiType, lat, lon, radiusMeters, limit = 200){
   const t = String(poiType || "").trim();
   if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
@@ -861,10 +915,9 @@ if (brief.selection.mode === "poi") {
   setStatus(`Ищу POI: ${POI_LABELS?.[poiType] || poiType}…`);
 
   let pois = [];
-  try {
-    // лимит лучше держать повыше, но без фанатизма
-    pois = await fetchPOIsOverpass(poiType, center.lat, center.lon, poiSearchR, 400);
-  } catch (e) {
+try {
+  pois = await fetchPOIsOverpassInCity(poiType, city, 500);
+} catch (e) {
     console.error("[poi] error:", e);
     alert("Ошибка Overpass (OSM). Попробуй ещё раз.");
     setStatus("");
