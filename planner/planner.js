@@ -839,7 +839,7 @@ if (brief.selection.mode === "poi") {
   }
 
   const poiType = String(brief.selection.poi_type || "").trim();
-  const radius = Number(brief.selection.radius_m || 500);
+  const screenRadius = Number(brief.selection.radius_m || 500); // ✅ радиус вокруг POI (для экранов)
 
   // центр берём по экранам города (быстро и без Nominatim)
   const center = cityCenterFromScreens(pool);
@@ -848,13 +848,22 @@ if (brief.selection.mode === "poi") {
     return;
   }
 
-  setStatus(`Ищу POI: ${POI_LABELS[poiType] || poiType}…`);
+  // ✅ радиус поиска POI (по городу), НЕ зависит от screenRadius
+  const CITY_POI_RADIUS_M = {
+    "Москва": 25000,
+    "Санкт-Петербург": 25000,
+    "Казань": 15000,
+    "Екатеринбург": 15000,
+    "Новосибирск": 15000
+  };
+  const poiSearchR = CITY_POI_RADIUS_M[city] || 15000;
+
+  setStatus(`Ищу POI: ${POI_LABELS?.[poiType] || poiType}…`);
 
   let pois = [];
   try {
-    // радиус поиска POI можно сделать шире, чем радиус “вокруг POI”
-    const searchR = Math.max(2000, Math.min(15000, radius * 10));
-    pois = await fetchPOIsOverpass(poiType, center.lat, center.lon, searchR, 200);
+    // лимит лучше держать повыше, но без фанатизма
+    pois = await fetchPOIsOverpass(poiType, center.lat, center.lon, poiSearchR, 400);
   } catch (e) {
     console.error("[poi] error:", e);
     alert("Ошибка Overpass (OSM). Попробуй ещё раз.");
@@ -862,22 +871,26 @@ if (brief.selection.mode === "poi") {
     return;
   }
 
-  // сохраняем для summary/брфа
+  // сохраняем для summary/брифа
   brief.selection.poi_found = pois.length;
   brief.selection.poi_center_lat = center.lat;
   brief.selection.poi_center_lon = center.lon;
+  brief.selection.poi_search_radius_m = poiSearchR;     // ✅ чтобы было прозрачно
+  brief.selection.poi_screen_radius_m = screenRadius;   // ✅
 
   if (!pois.length) {
-    alert("POI не найдены в зоне поиска. Попробуй другой тип или увеличь радиус.");
+    alert("POI не найдены в городе (по радиусу поиска). Попробуй другой тип.");
     setStatus("");
     return;
   }
 
   const before = pool.length;
-  pool = pickScreensNearPOIs(pool, pois, radius);
+
+  // ✅ экраны вокруг POI — по screenRadius
+  pool = pickScreensNearPOIs(pool, pois, screenRadius);
 
   if (!pool.length) {
-    alert("В радиусе вокруг найденных POI нет экранов (или нет lat/lon).");
+    alert("В радиусе вокруг найденных POI нет экранов (или у экранов нет lat/lon).");
     setStatus("");
     return;
   }
