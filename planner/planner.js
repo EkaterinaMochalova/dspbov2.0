@@ -654,58 +654,64 @@ function _fillTemplate(q, vars){
     .replaceAll("{R}", String(vars.R));
 }
 
-async function fetchPOIsOverpassInCity(poiType, cityName, limit = 400) {
+async function fetchPOIsOverpassInCity(poiType, cityName, limit = 400){
   const t = String(poiType || "").trim();
   if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
 
+  const city = String(cityName || "").trim();
+  if (!city) throw new Error("City is empty");
+
+  // Важно: это НЕ around. Это выборка по границе города (area).
   const body = `
-    [out:json][timeout:30];
-    area["name"="${cityName}"]["boundary"="administrative"]->.a;
-    (
-      ${POI_QUERIES[t].replaceAll(
-        /nwr$begin:math:text$around\:\\\{R\\\}\,\\\{LAT\\\}\,\\\{LON\\\}$end:math:text$/g,
-        "nwr(area.a)"
-      )}
-    );
-    out center ${limit};
-  `;
+  [out:json][timeout:40];
+
+  rel["boundary"="administrative"]["name"="${city}"]["admin_level"~"8|6"];
+  map_to_area -> .a;
+
+  (
+    ${String(POI_QUERIES[t]).replace(/nwr\(around:\{R\},\{LAT\},\{LON\}\)/g, "nwr(area.a)")
+  );
+  out center ${limit};
+`;
 
   let lastErr = null;
-
-  for (const url of OVERPASS_URLS) {
+  for (const url of OVERPASS_URLS){
     try {
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
         body: "data=" + encodeURIComponent(body)
       });
-
-      if (!res.ok) throw new Error(`Overpass ${res.status}`);
+      if (!res.ok) throw new Error(`Overpass ${res.status} @ ${url}`);
 
       const json = await res.json();
       const els = Array.isArray(json.elements) ? json.elements : [];
 
-      return els
-        .map(el => {
-          const lat = Number(el.lat ?? el.center?.lat);
-          const lon = Number(el.lon ?? el.center?.lon);
-          if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-          return {
-            id: `${el.type}/${el.id}`,
-            name: el.tags?.name || "",
-            lat,
-            lon,
-            raw: el
-          };
-        })
-        .filter(Boolean);
+      const pois = els.map(el => {
+        const name = el.tags?.name || "";
+        const lat0 = Number(el.lat ?? el.center?.lat);
+        const lon0 = Number(el.lon ?? el.center?.lon);
+        if (!Number.isFinite(lat0) || !Number.isFinite(lon0)) return null;
+        return { id: `${el.type}/${el.id}`, name, lat: lat0, lon: lon0, raw: el };
+      }).filter(Boolean);
+
+      return pois;
     } catch (e) {
       lastErr = e;
-      console.warn("[poi city] fail:", e.message);
+      console.warn("[poi] overpass city fail:", String(e));
     }
   }
+  throw lastErr || new Error("Overpass city failed");
+}
 
-  throw lastErr || new Error("Overpass failed");
+async function fetchPOIsForCity(poiType, cityName, centerLat, centerLon, fallbackRadiusMeters, limit = 400) {
+  try {
+    const poisCity = await fetchPOIsOverpassInCity(poiType, cityName, limit);
+    if (poisCity && poisCity.length) return poisCity;
+  } catch (e) {
+    console.warn("[poi] city-area failed, fallback to around:", e?.message || e);
+  }
+  return await fetchPOIsOverpass(poiType, centerLat, centerLon, fallbackRadiusMeters, limit);
 }
 
 async function fetchPOIsOverpass(poiType, lat, lon, radiusMeters, limit = 200){
@@ -893,53 +899,42 @@ if (brief.selection.mode === "poi") {
   }
 
   const poiType = String(brief.selection.poi_type || "").trim();
-  const screenRadius = Number(brief.selection.radius_m || 500); // ✅ радиус вокруг POI (для экранов)
+  const screenRadius = Number(brief.selection.radius_m || 500); // вокруг POI для экранов
 
-  // центр берём по экранам города (быстро и без Nominatim)
   const center = cityCenterFromScreens(pool);
   if (!center) {
     alert("Для POI-подбора нужны координаты экранов (lat/lon) в этом городе.");
     return;
   }
 
-  // ✅ радиус поиска POI (по городу), НЕ зависит от screenRadius
-  const CITY_POI_RADIUS_M = {
-    "Москва": 25000,
-    "Санкт-Петербург": 25000,
-    "Казань": 15000,
-    "Екатеринбург": 15000,
-    "Новосибирск": 15000
-  };
-  const poiSearchR = CITY_POI_RADIUS_M[city] || 15000;
+  const CITY_POI_RADIUS_M = { "Москва": 25000, "Санкт-Петербург": 25000, "Казань": 15000 };
+  const poiSearchR = CITY_POI_RADIUS_M[city] || 15000; // fallback around
 
   setStatus(`Ищу POI: ${POI_LABELS?.[poiType] || poiType}…`);
 
   let pois = [];
-try {
-  pois = await fetchPOIsOverpassInCity(poiType, city, 500);
-} catch (e) {
+  try {
+    pois = await fetchPOIsForCity(poiType, city, center.lat, center.lon, poiSearchR, 500);
+  } catch (e) {
     console.error("[poi] error:", e);
     alert("Ошибка Overpass (OSM). Попробуй ещё раз.");
     setStatus("");
     return;
   }
 
-  // сохраняем для summary/брифа
   brief.selection.poi_found = pois.length;
   brief.selection.poi_center_lat = center.lat;
   brief.selection.poi_center_lon = center.lon;
-  brief.selection.poi_search_radius_m = poiSearchR;     // ✅ чтобы было прозрачно
-  brief.selection.poi_screen_radius_m = screenRadius;   // ✅
+  brief.selection.poi_search_radius_m = poiSearchR;
+  brief.selection.poi_screen_radius_m = screenRadius;
 
   if (!pois.length) {
-    alert("POI не найдены в городе (по радиусу поиска). Попробуй другой тип.");
+    alert("POI не найдены. Попробуй другой тип.");
     setStatus("");
     return;
   }
 
   const before = pool.length;
-
-  // ✅ экраны вокруг POI — по screenRadius
   pool = pickScreensNearPOIs(pool, pois, screenRadius);
 
   if (!pool.length) {
