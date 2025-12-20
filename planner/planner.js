@@ -105,6 +105,12 @@ const POI_QUERIES = {
   `
 };
 
+const OVERPASS_ENDPOINTS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.nchc.org.tw/api/interpreter"
+];
+
 const POI_LABELS = {
   fitness: "Фитнес-клубы",
   pet_store: "Pet stores / Vet",
