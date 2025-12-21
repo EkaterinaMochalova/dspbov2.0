@@ -710,57 +710,50 @@ async function fetchPOIsOverpassInCity(poiType, cityName, limit = 400){
   const city = String(cityName || "").trim();
   if (!city) throw new Error("City is empty");
 
-  // Важно: это НЕ around. Это выборка по границе города (area).
+  // берём шаблон и превращаем around-запросы в запросы по area
+  const qArea = String(POI_QUERIES[t])
+    .replaceAll("nwr(around:{R},{LAT},{LON})", "nwr(area.a)");
+
   const body = `
-  [out:json][timeout:40];
+    [out:json][timeout:40];
+    {{geocodeArea:${city}}}->.a;
+    (
+      ${qArea}
+    );
+    out center ${limit};
+  `;
 
-  rel["boundary"="administrative"]["name"="${city}"]["admin_level"~"8|6"];
-  map_to_area -> .a;
+  let lastErr = null;
+  let attempt = 0;
 
-  (
-    ${String(POI_QUERIES[t]).replace(/nwr\(around:\{R\},\{LAT\},\{LON\}\)/g, "nwr(area.a)")
-  );
-  out center ${limit};
-`;
+  for (const url of OVERPASS_URLS){
+    attempt++;
+    try {
+      const res = await _fetchOverpass(url, body, 45000);
+      if (!res.ok) throw new Error(\`Overpass \${res.status} @ \${url}\`);
 
-let lastErr = null;
-let attempt = 0;
+      const json = await res.json();
+      const els = Array.isArray(json.elements) ? json.elements : [];
 
-for (const url of OVERPASS_URLS) {
-  attempt++;
+      const pois = els.map(el => {
+        const name = el.tags?.name || "";
+        const lat0 = Number(el.lat ?? el.center?.lat);
+        const lon0 = Number(el.lon ?? el.center?.lon);
+        if (!Number.isFinite(lat0) || !Number.isFinite(lon0)) return null;
+        return { id: `${el.type}/${el.id}`, name, lat: lat0, lon: lon0, raw: el };
+      }).filter(Boolean);
 
-  try {
-    const res = await _fetchOverpass(url, body, 45000);
-
-    if (!res.ok) {
-      throw new Error(`Overpass ${res.status} @ ${url}`);
+      return pois;
+    } catch (e) {
+      lastErr = e;
+      console.warn("[poi] overpass city fail:", String(e));
+      const wait = 400 * attempt + Math.floor(Math.random() * 400);
+      await _sleep(wait);
     }
-
-    const json = await res.json();
-    const els = Array.isArray(json.elements) ? json.elements : [];
-
-    const pois = els.map(el => {
-      const name = el.tags?.name || "";
-      const lat0 = Number(el.lat ?? el.center?.lat);
-      const lon0 = Number(el.lon ?? el.center?.lon);
-      if (!Number.isFinite(lat0) || !Number.isFinite(lon0)) return null;
-      return { id: `${el.type}/${el.id}`, name, lat: lat0, lon: lon0, raw: el };
-    }).filter(Boolean);
-
-    _poiCache.set(cacheKey, { ts: Date.now(), data: pois });
-    return pois;
-
-  } catch (e) {
-    lastErr = e;
-    console.warn("[poi] overpass fail:", String(e));
-
-    // ✅ backoff перед следующим endpoint'ом
-    const wait = 400 * attempt + Math.floor(Math.random() * 400);
-    await _sleep(wait);
   }
-}
 
-throw lastErr || new Error("Overpass failed");
+  throw lastErr || new Error("Overpass city failed");
+}
 
 async function fetchPOIsForCity(poiType, cityName, centerLat, centerLon, fallbackRadiusMeters, limit = 400) {
   try {
