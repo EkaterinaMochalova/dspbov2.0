@@ -105,12 +105,6 @@ const POI_QUERIES = {
   `
 };
 
-const OVERPASS_ENDPOINTS = [
-  "https://overpass-api.de/api/interpreter",
-  "https://overpass.kumi.systems/api/interpreter",
-  "https://overpass.nchc.org.tw/api/interpreter"
-];
-
 const POI_LABELS = {
   fitness: "Фитнес-клубы",
   pet_store: "Pet stores / Vet",
@@ -528,52 +522,6 @@ function downloadXLSX(rows){
   XLSX.writeFile(wb, "screens_selected.xlsx");
 }
 
-// ===== Route corridor helpers (единственная версия) =====
-
-// lat/lon -> XY метры (плоская аппроксимация вокруг lat0)
-function _llToXYMeters(lat, lon, lat0) {
-  const R = 6371000;
-  const toRad = (x) => x * Math.PI / 180;
-  return {
-    x: R * toRad(lon) * Math.cos(toRad(lat0)),
-    y: R * toRad(lat)
-  };
-}
-
-// расстояние от точки P до отрезка AB (в метрах)
-function _distPointToSegmentMeters(pLat, pLon, aLat, aLon, bLat, bLon) {
-  const lat0 = (aLat + bLat) / 2;
-
-  const A = _llToXYMeters(aLat, aLon, lat0);
-  const B = _llToXYMeters(bLat, bLon, lat0);
-  const P = _llToXYMeters(pLat, pLon, lat0);
-
-  const ABx = B.x - A.x, ABy = B.y - A.y;
-  const APx = P.x - A.x, APy = P.y - A.y;
-
-  const ab2 = ABx*ABx + ABy*ABy;
-  if (ab2 === 0) return Math.hypot(P.x - A.x, P.y - A.y);
-
-  let t = (APx*ABx + APy*ABy) / ab2;
-  t = Math.max(0, Math.min(1, t));
-
-  const Cx = A.x + t*ABx;
-  const Cy = A.y + t*ABy;
-
-  return Math.hypot(P.x - Cx, P.y - Cy);
-}
-
-// фильтр экранов по коридору маршрута A->B
-function filterByRouteCorridor(screens, aLat, aLon, bLat, bLon, radiusMeters) {
-  const r = Number(radiusMeters || 0);
-  return (screens || []).filter(s => {
-    const slat = Number(s.lat);
-    const slon = Number(s.lon);
-    if (!Number.isFinite(slat) || !Number.isFinite(slon)) return false;
-    return _distPointToSegmentMeters(slat, slon, aLat, aLon, bLat, bLon) <= r;
-  });
-}
-
 // ===== Geo helpers for ROUTE =====
 // перевод lat/lon -> локальные метры (плоская аппроксимация вокруг lat0)
 function _llToXYMeters(lat, lon, lat0) {
@@ -628,48 +576,19 @@ const OVERPASS_URLS = [
   "https://overpass.nchc.org.tw/api/interpreter"
 ];
 
-// ===== Overpass utils =====
+const _poiCache = new Map(); // key -> { ts, data }
 
-// sleep / backoff
-function _sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// fetch с таймаутом (Overpass часто виснет без ответа)
-async function _fetchOverpass(url, body, timeoutMs = 45000) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
-      },
-      body: "data=" + encodeURIComponent(body),
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(id);
-  }
-}
-
-/* =========================
-   Overpass utils (ADD HERE)
-   ========================= */
-
+// backoff
 const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+// fetch с таймаутом
 async function _fetchOverpass(url, body, timeoutMs = 45000) {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), timeoutMs);
-
   try {
     return await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
-      },
+      headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
       body: "data=" + encodeURIComponent(body),
       signal: ac.signal
     });
@@ -677,6 +596,7 @@ async function _fetchOverpass(url, body, timeoutMs = 45000) {
     clearTimeout(t);
   }
 }
+
 const _poiCache = new Map(); // key -> { ts, data }
 
 /** достаём центр города по экранам (чтобы не городить Nominatim для границ) */
