@@ -627,6 +627,33 @@ const OVERPASS_URLS = [
   "https://overpass.kumi.systems/api/interpreter",
   "https://overpass.nchc.org.tw/api/interpreter"
 ];
+
+// ===== Overpass utils =====
+
+// sleep / backoff
+function _sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// fetch с таймаутом (Overpass часто виснет без ответа)
+async function _fetchOverpass(url, body, timeoutMs = 45000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+      },
+      body: "data=" + encodeURIComponent(body),
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 /* =========================
    Overpass utils (ADD HERE)
    ========================= */
