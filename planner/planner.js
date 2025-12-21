@@ -576,15 +576,15 @@ const OVERPASS_URLS = [
   "https://overpass.nchc.org.tw/api/interpreter"
 ];
 
+// ===== Overpass utils (ONE TIME) =====
 const _poiCache = new Map(); // key -> { ts, data }
 
-// backoff
 const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-// fetch с таймаутом
 async function _fetchOverpass(url, body, timeoutMs = 45000) {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), timeoutMs);
+
   try {
     return await fetch(url, {
       method: "POST",
@@ -596,8 +596,6 @@ async function _fetchOverpass(url, body, timeoutMs = 45000) {
     clearTimeout(t);
   }
 }
-
-const _poiCache = new Map(); // key -> { ts, data }
 
 /** достаём центр города по экранам (чтобы не городить Nominatim для границ) */
 function cityCenterFromScreens(screensInCity){
@@ -623,6 +621,10 @@ function _fillTemplate(q, vars){
     .replaceAll("{R}", String(vars.R));
 }
 
+/**
+ * POI по городу через area (БЕЗ Turbo-макроса geocodeArea)
+ * Важно: area-поиск по name может быть неоднозначным, но для MVP ок.
+ */
 async function fetchPOIsOverpassInCity(poiType, cityName, limit = 400){
   const t = String(poiType || "").trim();
   if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
@@ -630,13 +632,16 @@ async function fetchPOIsOverpassInCity(poiType, cityName, limit = 400){
   const city = String(cityName || "").trim();
   if (!city) throw new Error("City is empty");
 
-  // берём шаблон и превращаем around-запросы в запросы по area
+  // превратим around-запросы в запросы внутри area
   const qArea = String(POI_QUERIES[t])
     .replaceAll("nwr(around:{R},{LAT},{LON})", "nwr(area.a)");
 
   const body = `
     [out:json][timeout:40];
-    {{geocodeArea:${city}}}->.a;
+    (
+      area["boundary"="administrative"]["name"="${city}"];
+      area["place"="city"]["name"="${city}"];
+    )->.a;
     (
       ${qArea}
     );
@@ -650,7 +655,7 @@ async function fetchPOIsOverpassInCity(poiType, cityName, limit = 400){
     attempt++;
     try {
       const res = await _fetchOverpass(url, body, 45000);
-      if (!res.ok) throw new Error(\`Overpass \${res.status} @ \${url}\`);
+      if (!res.ok) throw new Error(`Overpass ${res.status} @ ${url}`);
 
       const json = await res.json();
       const els = Array.isArray(json.elements) ? json.elements : [];
@@ -674,8 +679,6 @@ async function fetchPOIsOverpassInCity(poiType, cityName, limit = 400){
 
   throw lastErr || new Error("Overpass city failed");
 }
-// 👇 экспорт в window для отладки из консоли
-window.fetchPOIsOverpassInCity = fetchPOIsOverpassInCity;
 
 async function fetchPOIsForCity(poiType, cityName, centerLat, centerLon, fallbackRadiusMeters, limit = 400) {
   try {
@@ -687,6 +690,9 @@ async function fetchPOIsForCity(poiType, cityName, centerLat, centerLon, fallbac
   return await fetchPOIsOverpass(poiType, centerLat, centerLon, fallbackRadiusMeters, limit);
 }
 
+/**
+ * POI around (fallback) — с кэшем, таймаутом, перебором endpoint'ов и backoff
+ */
 async function fetchPOIsOverpass(poiType, lat, lon, radiusMeters, limit = 200){
   const t = String(poiType || "").trim();
   if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
@@ -694,7 +700,6 @@ async function fetchPOIsOverpass(poiType, lat, lon, radiusMeters, limit = 200){
   const R = Math.max(100, Number(radiusMeters || 0));
   const cacheKey = `${t}|${lat.toFixed(5)}|${lon.toFixed(5)}|${R}|${limit}`;
 
-  // кэш на 10 минут (чтобы не долбить Overpass)
   const cached = _poiCache.get(cacheKey);
   if (cached && (Date.now() - cached.ts) < 10 * 60 * 1000) return cached.data;
 
@@ -707,15 +712,12 @@ async function fetchPOIsOverpass(poiType, lat, lon, radiusMeters, limit = 200){
   `;
 
   let lastErr = null;
+  let attempt = 0;
 
   for (const url of OVERPASS_URLS){
+    attempt++;
     try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
-        body: "data=" + encodeURIComponent(body)
-      });
-
+      const res = await _fetchOverpass(url, body, 45000);
       if (!res.ok) throw new Error(`Overpass ${res.status} @ ${url}`);
 
       const json = await res.json();
@@ -734,6 +736,8 @@ async function fetchPOIsOverpass(poiType, lat, lon, radiusMeters, limit = 200){
     } catch (e) {
       lastErr = e;
       console.warn("[poi] overpass fail:", String(e));
+      const wait = 400 * attempt + Math.floor(Math.random() * 400);
+      await _sleep(wait);
     }
   }
 
@@ -761,6 +765,16 @@ function pickScreensNearPOIs(screens, pois, radiusMeters){
   }
   return picked;
 }
+
+// ===== DEBUG EXPORTS (чтобы тестить из консоли даже если planner.js module) =====
+window.PLANNER = window.PLANNER || {};
+window.PLANNER._sleep = _sleep;
+window.PLANNER._fetchOverpass = _fetchOverpass;
+window.PLANNER.fetchPOIsOverpassInCity = fetchPOIsOverpassInCity;
+window.PLANNER.fetchPOIsForCity = fetchPOIsForCity;
+window.PLANNER.fetchPOIsOverpass = fetchPOIsOverpass;
+window.PLANNER.pickScreensNearPOIs = pickScreensNearPOIs;
+window.PLANNER.cityCenterFromScreens = cityCenterFromScreens;
 
 // ===== MAIN click handler =====
 
