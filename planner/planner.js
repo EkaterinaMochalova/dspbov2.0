@@ -766,16 +766,6 @@ function pickScreensNearPOIs(screens, pois, radiusMeters){
   return picked;
 }
 
-// ===== DEBUG EXPORTS (чтобы тестить из консоли даже если planner.js module) =====
-window.PLANNER = window.PLANNER || {};
-window.PLANNER._sleep = _sleep;
-window.PLANNER._fetchOverpass = _fetchOverpass;
-window.PLANNER.fetchPOIsOverpassInCity = fetchPOIsOverpassInCity;
-window.PLANNER.fetchPOIsForCity = fetchPOIsForCity;
-window.PLANNER.fetchPOIsOverpass = fetchPOIsOverpass;
-window.PLANNER.pickScreensNearPOIs = pickScreensNearPOIs;
-window.PLANNER.cityCenterFromScreens = cityCenterFromScreens;
-
 // ===== MAIN click handler =====
 
 async function onCalcClick(){
@@ -1248,3 +1238,13 @@ loadScreens = async function () {
   window.dispatchEvent(new CustomEvent("planner:screens-ready", { detail: { count: state.screens.length } }));
   return res;
 };
+
+// ===== DEBUG EXPORTS (чтобы тестить из консоли даже если planner.js module) =====
+window.PLANNER = window.PLANNER || {};
+window.PLANNER._sleep = _sleep;
+window.PLANNER._fetchOverpass = _fetchOverpass;
+window.PLANNER.fetchPOIsOverpassInCity = fetchPOIsOverpassInCity;
+window.PLANNER.fetchPOIsForCity = fetchPOIsForCity;
+window.PLANNER.fetchPOIsOverpass = fetchPOIsOverpass;
+window.PLANNER.pickScreensNearPOIs = pickScreensNearPOIs;
+window.PLANNER.cityCenterFromScreens = cityCenterFromScreens;
