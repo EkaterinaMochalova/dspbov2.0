@@ -754,6 +754,8 @@ async function fetchPOIsOverpassInCity(poiType, cityName, limit = 400){
 
   throw lastErr || new Error("Overpass city failed");
 }
+// 👇 экспорт в window для отладки из консоли
+window.fetchPOIsOverpassInCity = fetchPOIsOverpassInCity;
 
 async function fetchPOIsForCity(poiType, cityName, centerLat, centerLon, fallbackRadiusMeters, limit = 400) {
   try {
