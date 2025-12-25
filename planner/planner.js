@@ -580,14 +580,32 @@ async function _runOverpassWithFailover(body, timeoutMs = 45000) {
     attempt++;
     try {
       const res = await _fetchOverpass(url, body, timeoutMs);
-      if (!res.ok) throw new Error(`Overpass ${res.status} @ ${url}`);
-      return await res.json();
+
+      // читаем как текст ВСЕГДА, потому что иногда приходит HTML/XML
+      const txt = await res.text();
+
+      if (!res.ok) {
+        // покажем кусочек ответа — сильно помогает дебажить 429/504/503
+        throw new Error(`Overpass ${res.status} @ ${url} :: ${txt.slice(0, 180)}`);
+      }
+
+      // иногда content-type врёт, поэтому парсим “вручную”
+      let json;
+      try {
+        json = JSON.parse(txt);
+      } catch {
+        throw new Error(`Overpass non-JSON @ ${url} :: ${txt.slice(0, 180)}`);
+      }
+
+      return json;
+
     } catch (e) {
       lastErr = e;
       console.warn("[poi] overpass fail:", String(e));
       await _sleep(350 * attempt + Math.floor(Math.random() * 500));
     }
   }
+
   throw lastErr || new Error("Overpass failed (all endpoints)");
 }
 
@@ -1125,20 +1143,20 @@ if (document.readyState === "loading") {
 // ===== EXPORTS =====
 window.PLANNER = window.PLANNER || {};
 Object.assign(window.PLANNER, {
-  ready: false,
+  // state / init
   state,
   loadScreens,
   startPlanner,
   bootPlanner,
 
-  // POI exports
+  // poi
   fetchPOIsOverpassInCity,
-  fetchPOIsForCity,
   fetchPOIsOverpass,
+  fetchPOIsForCity,
   pickScreensNearPOIs,
   cityCenterFromScreens,
 
-  // Overpass internals (debug)
+  // debug
   _sleep,
   _fetchOverpass,
   _runOverpassWithFailover
