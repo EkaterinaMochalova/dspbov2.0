@@ -543,11 +543,13 @@ function filterByRouteCorridor(screens, aLat, aLon, bLat, bLon, radiusMeters) {
   });
 }
 
-// ===== Overpass (ONE TIME) =====
+/** Overpass (ONE TIME) */
 const OVERPASS_URLS = [
-  "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
-  "https://overpass.nchc.org.tw/api/interpreter"
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.nchc.org.tw/api/interpreter",
+  "https://overpass.openstreetmap.ru/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter"
 ];
 
 const _poiCache = new Map(); // key -> { ts, data }
@@ -559,7 +561,9 @@ async function _fetchOverpass(url, body, timeoutMs = 45000) {
   try {
     return await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+      },
       body: "data=" + encodeURIComponent(body),
       signal: ac.signal
     });
@@ -581,8 +585,7 @@ async function _runOverpassWithFailover(body, timeoutMs = 45000) {
     } catch (e) {
       lastErr = e;
       console.warn("[poi] overpass fail:", String(e));
-      const wait = 400 * attempt + Math.floor(Math.random() * 600);
-      await _sleep(wait);
+      await _sleep(350 * attempt + Math.floor(Math.random() * 500));
     }
   }
   throw lastErr || new Error("Overpass failed (all endpoints)");
@@ -595,22 +598,18 @@ function _fillTemplate(q, vars){
     .replaceAll("{R}", String(vars.R));
 }
 
-function cityCenterFromScreens(screensInCity){
-  const pts = (screensInCity || [])
-    .map(s => ({ lat: Number(s.lat), lon: Number(s.lon) }))
-    .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
-  if (!pts.length) return null;
-
-  let latMin=Infinity, latMax=-Infinity, lonMin=Infinity, lonMax=-Infinity;
-  for (const p of pts){
-    if (p.lat < latMin) latMin = p.lat;
-    if (p.lat > latMax) latMax = p.lat;
-    if (p.lon < lonMin) lonMin = p.lon;
-    if (p.lon > lonMax) lonMax = p.lon;
-  }
-  return { lat: (latMin+latMax)/2, lon: (lonMin+lonMax)/2 };
+function _normalizePOIs(json){
+  const els = Array.isArray(json?.elements) ? json.elements : [];
+  return els.map(el => {
+    const name = el.tags?.name || "";
+    const lat0 = Number(el.lat ?? el.center?.lat);
+    const lon0 = Number(el.lon ?? el.center?.lon);
+    if (!Number.isFinite(lat0) || !Number.isFinite(lon0)) return null;
+    return { id: `${el.type}/${el.id}`, name, lat: lat0, lon: lon0, raw: el };
+  }).filter(Boolean);
 }
 
+/** POI in CITY AREA (без Turbo-макросов) */
 async function fetchPOIsOverpassInCity(poiType, cityName, limit = 400){
   const t = String(poiType || "").trim();
   if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
@@ -623,67 +622,74 @@ async function fetchPOIsOverpassInCity(poiType, cityName, limit = 400){
     "nwr(area.a)"
   );
 
+  // admin_level добавил чтобы сузить неоднозначности и ускорить
   const body = `
-    [out:json][timeout:40];
-    {{geocodeArea:${city}}}->.a;
+    [out:json][timeout:60];
+    (
+      area["boundary"="administrative"]["name"="${city}"]["admin_level"~"^(6|8)$"];
+      area["boundary"="administrative"]["name"="${city}"];
+      area["place"="city"]["name"="${city}"];
+    )->.a;
     (
       ${qArea}
     );
-    out center ${limit};
+    out center qt ${Math.max(50, Math.min(800, Number(limit) || 400))};
   `;
 
-  const json = await _runOverpassWithFailover(body, 55000);
-  const els = Array.isArray(json.elements) ? json.elements : [];
-
-  return els.map(el => {
-    const name = el.tags?.name || "";
-    const lat0 = Number(el.lat ?? el.center?.lat);
-    const lon0 = Number(el.lon ?? el.center?.lon);
-    if (!Number.isFinite(lat0) || !Number.isFinite(lon0)) return null;
-    return { id: `${el.type}/${el.id}`, name, lat: lat0, lon: lon0, raw: el };
-  }).filter(Boolean);
+  const json = await _runOverpassWithFailover(body, 60000);
+  return _normalizePOIs(json);
 }
 
+/** POI around (fallback) — с кэшем */
 async function fetchPOIsOverpass(poiType, lat, lon, radiusMeters, limit = 200){
   const t = String(poiType || "").trim();
   if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
 
   const R = Math.max(100, Number(radiusMeters || 0));
-  const cacheKey = `${t}|${lat.toFixed(5)}|${lon.toFixed(5)}|${R}|${limit}`;
+  const L = Math.max(50, Math.min(800, Number(limit) || 200));
+  const cacheKey = `${t}|${lat.toFixed(5)}|${lon.toFixed(5)}|${R}|${L}`;
 
   const cached = _poiCache.get(cacheKey);
   if (cached && (Date.now() - cached.ts) < 10 * 60 * 1000) return cached.data;
 
   const body = `
-    [out:json][timeout:25];
+    [out:json][timeout:35];
     (
       ${_fillTemplate(POI_QUERIES[t], { LAT: lat, LON: lon, R })}
     );
-    out center ${limit};
+    out center qt ${L};
   `;
 
   const json = await _runOverpassWithFailover(body, 45000);
-  const els = Array.isArray(json.elements) ? json.elements : [];
-
-  const pois = els.map(el => {
-    const name = el.tags?.name || "";
-    const lat0 = Number(el.lat ?? el.center?.lat);
-    const lon0 = Number(el.lon ?? el.center?.lon);
-    if (!Number.isFinite(lat0) || !Number.isFinite(lon0)) return null;
-    return { id: `${el.type}/${el.id}`, name, lat: lat0, lon: lon0, raw: el };
-  }).filter(Boolean);
+  const pois = _normalizePOIs(json);
 
   _poiCache.set(cacheKey, { ts: Date.now(), data: pois });
   return pois;
 }
 
+/** city-area -> если ошибка/пусто, fallback to around
+ *  ВАЖНО: для больших городов (Москва/СПб) сначала around — быстрее и стабильнее
+ */
 async function fetchPOIsForCity(poiType, cityName, centerLat, centerLon, fallbackRadiusMeters, limit = 400) {
+  const city = String(cityName || "").trim();
+  const preferAround = (city === "Москва" || city === "Санкт-Петербург");
+
+  if (preferAround) {
+    try {
+      const pois = await fetchPOIsOverpass(poiType, centerLat, centerLon, fallbackRadiusMeters, limit);
+      if (pois && pois.length) return pois;
+    } catch (e) {
+      console.warn("[poi] prefer-around failed, try city-area:", e?.message || e);
+    }
+  }
+
   try {
-    const poisCity = await fetchPOIsOverpassInCity(poiType, cityName, limit);
+    const poisCity = await fetchPOIsOverpassInCity(poiType, city, limit);
     if (poisCity && poisCity.length) return poisCity;
   } catch (e) {
     console.warn("[poi] city-area failed, fallback to around:", e?.message || e);
   }
+
   return await fetchPOIsOverpass(poiType, centerLat, centerLon, fallbackRadiusMeters, limit);
 }
 
