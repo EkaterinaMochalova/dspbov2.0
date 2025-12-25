@@ -1,103 +1,78 @@
 console.log("planner.js loaded");
 
 /** CSV */
-const SCREENS_CSV_URL = "https://raw.githubusercontent.com/EkaterinaMochalova/dspbov2.0/planner/inventories_sync.csv";
+const SCREENS_CSV_URL =
+  "https://raw.githubusercontent.com/EkaterinaMochalova/dspbov2.0/planner/inventories_sync.csv";
 
 /** Форматы */
 const FORMAT_LABELS = {
-  "BILLBOARD": { label: "Билборды", desc: "экраны 3×6 м вдоль трасс" },
-  "CITY_BOARD": { label: "City Board", desc: "небольшие экраны в центре города, видимые и авто-, и пешеходному траффику" },
-  "CITY_FORMAT": { label: "Ситиформаты", desc: "вертикальные экраны, остановки/пешеходные зоны" },
-  "CITY_FORMAT_RC": { label: "Ситиформаты на МЦК", desc: "экраны на МЦК" },
-  "CITY_FORMAT_RD": { label: "Ситиформаты на вокзалах", desc: "экраны на вокзале" },
-  "CITY_FORMAT_WD": { label: "Ситиформаты в метро", desc: "экраны в метро" },
-  "MEDIAFACADE": { label: "Медиафасады", desc: "огромные экраны на стенах домов" },
-  "METRO_LIGHTBOX": { label: "Metro Lightbox", desc: "экраны в метро, горизонтальные" },
-  "OTHER": { label: "Indoor-экраны", desc: "экраны внутри БЦ, ТЦ и иных помещений" },
-  "PVZ_SCREEN": { label: "Экраны в ПВЗ", desc: "экраны в пунктах выдачи заказов" },
-  "SKY_DIGITAL": { label: "Аэропорты", desc: "экраны в аэропортах" },
-  "SUPERSITE": { label: "Суперсайты", desc: "крупные конструкции с высокой дальностью видимости" }
+  BILLBOARD: { label: "Билборды", desc: "экраны 3×6 м вдоль трасс" },
+  CITY_BOARD: { label: "City Board", desc: "небольшие экраны в центре города, видимые и авто-, и пешеходному траффику" },
+  CITY_FORMAT: { label: "Ситиформаты", desc: "вертикальные экраны, остановки/пешеходные зоны" },
+  CITY_FORMAT_RC: { label: "Ситиформаты на МЦК", desc: "экраны на МЦК" },
+  CITY_FORMAT_RD: { label: "Ситиформаты на вокзалах", desc: "экраны на вокзале" },
+  CITY_FORMAT_WD: { label: "Ситиформаты в метро", desc: "экраны в метро" },
+  MEDIAFACADE: { label: "Медиафасады", desc: "огромные экраны на стенах домов" },
+  METRO_LIGHTBOX: { label: "Metro Lightbox", desc: "экраны в метро, горизонтальные" },
+  OTHER: { label: "Indoor-экраны", desc: "экраны внутри БЦ, ТЦ и иных помещений" },
+  PVZ_SCREEN: { label: "Экраны в ПВЗ", desc: "экраны в пунктах выдачи заказов" },
+  SKY_DIGITAL: { label: "Аэропорты", desc: "экраны в аэропортах" },
+  SUPERSITE: { label: "Суперсайты", desc: "крупные конструкции с высокой дальностью видимости" }
 };
 
 /** POI queries for Overpass (OpenStreetMap)
  *  nwr = node + way + relation
  */
 const POI_QUERIES = {
-
-  // 🏋️ ФИТНЕС
   fitness: `
     nwr(around:{R},{LAT},{LON})["leisure"="fitness_centre"];
     nwr(around:{R},{LAT},{LON})["amenity"="gym"];
     nwr(around:{R},{LAT},{LON})["sport"="fitness"];
     nwr(around:{R},{LAT},{LON})["leisure"="sports_centre"]["sport"="fitness"];
   `,
-
-  // 🐶 PET
   pet_store: `
     nwr(around:{R},{LAT},{LON})["shop"="pet"];
     nwr(around:{R},{LAT},{LON})["shop"="pet_grooming"];
     nwr(around:{R},{LAT},{LON})["amenity"="veterinary"];
   `,
-
-  // 🛒 СУПЕРМАРКЕТЫ
   supermarket: `
     nwr(around:{R},{LAT},{LON})["shop"="supermarket"];
     nwr(around:{R},{LAT},{LON})["shop"="convenience"];
     nwr(around:{R},{LAT},{LON})["shop"="hypermarket"];
   `,
-
-  // 🏬 ТОРГОВЫЕ ЦЕНТРЫ
   mall: `
     nwr(around:{R},{LAT},{LON})["shop"="mall"];
   `,
-
-  // ☕ КАФЕ / КОФЕЙНИ
   cafe: `
-  nwr(around:{R},{LAT},{LON})["amenity"="cafe"];
-  nwr(around:{R},{LAT},{LON})["shop"="coffee"];
+    nwr(around:{R},{LAT},{LON})["amenity"="cafe"];
+    nwr(around:{R},{LAT},{LON})["shop"="coffee"];
   `,
-
-  // 🍽 РЕСТОРАНЫ
   restaurant: `
     nwr(around:{R},{LAT},{LON})["amenity"="restaurant"];
     nwr(around:{R},{LAT},{LON})["amenity"="fast_food"];
     nwr(around:{R},{LAT},{LON})["amenity"="food_court"];
   `,
-
-  // 💊 АПТЕКИ
   pharmacy: `
     nwr(around:{R},{LAT},{LON})["amenity"="pharmacy"];
   `,
-
-  // 🏫 ШКОЛЫ
   school: `
     nwr(around:{R},{LAT},{LON})["amenity"="school"];
   `,
-
-  // 🎓 ВУЗЫ
   university: `
     nwr(around:{R},{LAT},{LON})["amenity"="university"];
     nwr(around:{R},{LAT},{LON})["amenity"="college"];
   `,
-
-  // 🏥 БОЛЬНИЦЫ / КЛИНИКИ
   hospital: `
     nwr(around:{R},{LAT},{LON})["amenity"="hospital"];
     nwr(around:{R},{LAT},{LON})["amenity"="clinic"];
   `,
-
-  // ⛽ АЗС
   gas_station: `
     nwr(around:{R},{LAT},{LON})["amenity"="fuel"];
   `,
-
-  // 🏦 БАНКИ
   bank: `
     nwr(around:{R},{LAT},{LON})["amenity"="bank"];
     nwr(around:{R},{LAT},{LON})["amenity"="atm"];
   `,
-
-  // 🚇 МЕТРО / ТРАНСПОРТ
   transport: `
     nwr(around:{R},{LAT},{LON})["public_transport"];
     nwr(around:{R},{LAT},{LON})["railway"="station"];
@@ -121,11 +96,12 @@ const POI_LABELS = {
   transport: "Транспорт (метро/станции)"
 };
 
-// модель
+// ===== Model =====
 const BID_MULTIPLIER = 1.2; // +20%
 const SC_OPT = 30;          // оптимум: 30 выходов/час/экран
 const SC_MAX = 60;          // максимум: 60 выходов/час/экран
 
+// ===== State =====
 const state = {
   screens: [],
   citiesAll: [],
@@ -136,6 +112,7 @@ const state = {
 };
 window.state = state;
 
+// ===== Small utils =====
 function el(id){ return document.getElementById(id); }
 
 function setStatus(msg){
@@ -223,29 +200,33 @@ function renderSelectionExtra(){
         Геокодим адрес и выбираем экраны в радиусе.
       </div>
     `;
+    return;
   }
-  else if(mode === "poi"){
-  const keys = Object.keys(POI_QUERIES || {});
-  const options = keys.map(k => {
-    const label = POI_LABELS[k] || k;
-    return `<option value="${k}">${label}</option>`;
-  }).join("");
 
-  extra.innerHTML = `
-    <select id="poi-type"
-            style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-      ${options}
-    </select>
+  if(mode === "poi"){
+    const keys = Object.keys(POI_QUERIES || {});
+    const options = keys.map(k => {
+      const label = POI_LABELS[k] || k;
+      return `<option value="${k}">${label}</option>`;
+    }).join("");
 
-    <input id="planner-radius" type="number" min="50" value="500" placeholder="Радиус вокруг POI, м"
-           style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
+    extra.innerHTML = `
+      <select id="poi-type"
+              style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
+        ${options}
+      </select>
 
-    <div style="font-size:12px; color:#666; margin-top:6px;">
-      POI-тип берём из OpenStreetMap (Overpass), затем выбираем экраны вокруг POI.
-    </div>
-  `;
-}
-  else if(mode === "route"){
+      <input id="planner-radius" type="number" min="50" value="500" placeholder="Радиус вокруг POI, м"
+             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
+
+      <div style="font-size:12px; color:#666; margin-top:6px;">
+        POI-тип берём из OpenStreetMap (Overpass), затем выбираем экраны вокруг POI.
+      </div>
+    `;
+    return;
+  }
+
+  if(mode === "route"){
     extra.innerHTML = `
       <input id="route-from" type="text" placeholder="Точка А"
              style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
@@ -257,10 +238,11 @@ function renderSelectionExtra(){
         MVP: маршрут сохраняем в бриф (без построения).
       </div>
     `;
+    return;
   }
 }
-// ===== Data load =====
 
+// ===== Data load =====
 async function loadScreens(){
   setStatus("Загружаю список экранов…");
 
@@ -287,12 +269,12 @@ async function loadScreens(){
       format,
       address,
 
-      // числа
+      // numbers
       minBid: toNumber(r.minBid ?? r.min_bid ?? r.MINBID ?? r.minbid),
       ots: toNumber(r.ots ?? r.OTS),
       grp: toNumber(r.grp ?? r.GRP),
 
-      // lat/lon (для near_address)
+      // geo
       lat: toNumber(r.lat ?? r.Lat ?? r.LAT),
       lon: toNumber(r.lon ?? r.Lon ?? r.LON ?? r.lng ?? r.Lng ?? r.LNG)
     };
@@ -308,10 +290,13 @@ async function loadScreens(){
   renderSelectedCity();
 
   setStatus(`Готово. Экранов: ${state.screens.length}. Городов: ${state.citiesAll.length}. Форматов: ${state.formatsAll.length}.`);
+
+  // readiness signal
+  window.PLANNER.ready = true;
+  window.dispatchEvent(new CustomEvent("planner:screens-ready", { detail: { count: state.screens.length } }));
 }
 
 // ===== UI: formats =====
-
 function renderFormats(){
   const wrap = el("formats-wrap");
   if(!wrap) return;
@@ -325,6 +310,7 @@ function renderFormats(){
     b.style.padding = "10px 12px";
     b.style.textAlign = "left";
     b.style.maxWidth = "240px";
+
     b.innerHTML = `
       <div style="font-weight:700;">${meta.label}</div>
       <div style="font-size:12px; color:#666;">${meta.desc}</div>
@@ -346,7 +332,6 @@ function renderFormats(){
 }
 
 // ===== UI: city =====
-
 function renderSelectedCity(){
   const wrap = el("city-selected");
   if(!wrap) return;
@@ -392,7 +377,7 @@ function renderCitySuggestions(q){
 
 // ===== Brief =====
 function buildBrief(){
-  const root = document.getElementById("planner-widget") || document; // scoped для Тильды
+  const root = document.getElementById("planner-widget") || document;
 
   const budgetMode = getBudgetMode();
   const budgetVal = el("budget-input")?.value;
@@ -431,7 +416,6 @@ function buildBrief(){
     }
   };
 
-  // helpers: берём значения внутри виджета (и поддерживаем старые id)
   const qsVal = (sel) => (root.querySelector(sel)?.value ?? "");
   const pickAnyVal = (...sels) => {
     for (const s of sels) {
@@ -455,19 +439,16 @@ function buildBrief(){
     brief.selection.address = pickAnyVal("#planner-addr", "#addr");
     brief.selection.radius_m = pickAnyNum(500, "#planner-radius", "#radius");
   }
-
   if(selectionMode === "poi"){
     brief.selection.poi_type = String(qsVal("#poi-type") || "pet_store").trim();
     brief.selection.radius_m = pickAnyNum(500, "#planner-radius", "#radius");
   }
-
   if(selectionMode === "route"){
     brief.selection.from = String(qsVal("#route-from") || "").trim();
     brief.selection.to   = String(qsVal("#route-to") || "").trim();
     brief.selection.radius_m = pickAnyNum(300, "#planner-radius", "#radius");
   }
 
-  // защита
   if(!Array.isArray(brief.formats.selected)) brief.formats.selected = [];
   if(!brief.formats.mode) brief.formats.mode = "auto";
 
@@ -481,7 +462,6 @@ function buildBrief(){
 }
 
 // ===== Calc helpers =====
-
 function pickScreensByMinBid(screens, n){
   const sorted = [...screens].sort((a,b) => {
     const aa = Number.isFinite(a.minBid) ? a.minBid : 1e18;
@@ -523,7 +503,6 @@ function downloadXLSX(rows){
 }
 
 // ===== Geo helpers for ROUTE =====
-// перевод lat/lon -> локальные метры (плоская аппроксимация вокруг lat0)
 function _llToXYMeters(lat, lon, lat0) {
   const R = 6371000;
   const toRad = (x) => x * Math.PI / 180;
@@ -532,7 +511,6 @@ function _llToXYMeters(lat, lon, lat0) {
   return { x, y };
 }
 
-// расстояние от точки P до отрезка AB (в метрах)
 function _distPointToSegmentMeters(pLat, pLon, aLat, aLon, bLat, bLon) {
   const lat0 = (aLat + bLat) / 2;
 
@@ -544,11 +522,7 @@ function _distPointToSegmentMeters(pLat, pLon, aLat, aLon, bLat, bLon) {
   const APx = P.x - A.x, APy = P.y - A.y;
 
   const ab2 = ABx*ABx + ABy*ABy;
-  if (ab2 === 0) {
-    // A и B совпали
-    const dx = P.x - A.x, dy = P.y - A.y;
-    return Math.hypot(dx, dy);
-  }
+  if (ab2 === 0) return Math.hypot(P.x - A.x, P.y - A.y);
 
   let t = (APx*ABx + APy*ABy) / ab2;
   t = Math.max(0, Math.min(1, t));
@@ -569,22 +543,16 @@ function filterByRouteCorridor(screens, aLat, aLon, bLat, bLon, radiusMeters) {
   });
 }
 
-/** Overpass */
+// ===== Overpass (ONE TIME) =====
 const OVERPASS_URLS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
   "https://overpass.nchc.org.tw/api/interpreter"
 ];
 
-// cache: key -> { ts, data }
-const _poiCache = new Map();
+const _poiCache = new Map(); // key -> { ts, data }
+const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-// backoff
-function _sleep(ms) {
-  return new Promise(r => setTimeout(r, ms));
-}
-
-// fetch с таймаутом (Overpass часто виснет)
 async function _fetchOverpass(url, body, timeoutMs = 45000) {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), timeoutMs);
@@ -600,31 +568,6 @@ async function _fetchOverpass(url, body, timeoutMs = 45000) {
   }
 }
 
-function _fillTemplate(q, vars){
-  return q
-    .replaceAll("{LAT}", String(vars.LAT))
-    .replaceAll("{LON}", String(vars.LON))
-    .replaceAll("{R}", String(vars.R));
-}
-
-/** центр города по экранам (fallback для around) */
-function cityCenterFromScreens(screensInCity){
-  const pts = (screensInCity || [])
-    .map(s => ({ lat: Number(s.lat), lon: Number(s.lon) }))
-    .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
-  if (!pts.length) return null;
-
-  let latMin=Infinity, latMax=-Infinity, lonMin=Infinity, lonMax=-Infinity;
-  for (const p of pts){
-    if (p.lat < latMin) latMin = p.lat;
-    if (p.lat > latMax) latMax = p.lat;
-    if (p.lon < lonMin) lonMin = p.lon;
-    if (p.lon > lonMax) lonMax = p.lon;
-  }
-  return { lat: (latMin+latMax)/2, lon: (lonMin+lonMax)/2 };
-}
-
-/** общая функция: прогнать запрос по всем endpoint'ам с backoff */
 async function _runOverpassWithFailover(body, timeoutMs = 45000) {
   let lastErr = null;
   let attempt = 0;
@@ -642,11 +585,32 @@ async function _runOverpassWithFailover(body, timeoutMs = 45000) {
       await _sleep(wait);
     }
   }
-
   throw lastErr || new Error("Overpass failed (all endpoints)");
 }
 
-/** POI по city area (лучше для Москвы/СПб, чем around) */
+function _fillTemplate(q, vars){
+  return q
+    .replaceAll("{LAT}", String(vars.LAT))
+    .replaceAll("{LON}", String(vars.LON))
+    .replaceAll("{R}", String(vars.R));
+}
+
+function cityCenterFromScreens(screensInCity){
+  const pts = (screensInCity || [])
+    .map(s => ({ lat: Number(s.lat), lon: Number(s.lon) }))
+    .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+  if (!pts.length) return null;
+
+  let latMin=Infinity, latMax=-Infinity, lonMin=Infinity, lonMax=-Infinity;
+  for (const p of pts){
+    if (p.lat < latMin) latMin = p.lat;
+    if (p.lat > latMax) latMax = p.lat;
+    if (p.lon < lonMin) lonMin = p.lon;
+    if (p.lon > lonMax) lonMax = p.lon;
+  }
+  return { lat: (latMin+latMax)/2, lon: (lonMin+lonMax)/2 };
+}
+
 async function fetchPOIsOverpassInCity(poiType, cityName, limit = 400){
   const t = String(poiType || "").trim();
   if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
@@ -654,8 +618,10 @@ async function fetchPOIsOverpassInCity(poiType, cityName, limit = 400){
   const city = String(cityName || "").trim();
   if (!city) throw new Error("City is empty");
 
-  const qArea = String(POI_QUERIES[t])
-    .replaceAll("nwr(around:{R},{LAT},{LON})", "nwr(area.a)");
+  const qArea = String(POI_QUERIES[t]).replaceAll(
+    "nwr(around:{R},{LAT},{LON})",
+    "nwr(area.a)"
+  );
 
   const body = `
     [out:json][timeout:40];
@@ -678,7 +644,6 @@ async function fetchPOIsOverpassInCity(poiType, cityName, limit = 400){
   }).filter(Boolean);
 }
 
-/** POI around (fallback) */
 async function fetchPOIsOverpass(poiType, lat, lon, radiusMeters, limit = 200){
   const t = String(poiType || "").trim();
   if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
@@ -712,7 +677,6 @@ async function fetchPOIsOverpass(poiType, lat, lon, radiusMeters, limit = 200){
   return pois;
 }
 
-/** city-area -> если пусто/ошибка, fallback to around */
 async function fetchPOIsForCity(poiType, cityName, centerLat, centerLon, fallbackRadiusMeters, limit = 400) {
   try {
     const poisCity = await fetchPOIsOverpassInCity(poiType, cityName, limit);
@@ -723,7 +687,6 @@ async function fetchPOIsForCity(poiType, cityName, centerLat, centerLon, fallbac
   return await fetchPOIsOverpass(poiType, centerLat, centerLon, fallbackRadiusMeters, limit);
 }
 
-/** экраны в радиусе от POI */
 function pickScreensNearPOIs(screens, pois, radiusMeters){
   const r = Number(radiusMeters || 0);
   if (!r || !Array.isArray(pois) || !pois.length) return [];
@@ -745,19 +708,10 @@ function pickScreensNearPOIs(screens, pois, radiusMeters){
   return picked;
 }
 
-// Экспорт для консоли/тестов
-window.PLANNER = window.PLANNER || {};
-window.PLANNER.fetchPOIsOverpassInCity = fetchPOIsOverpassInCity;
-window.PLANNER.fetchPOIsOverpass = fetchPOIsOverpass;
-window.PLANNER.fetchPOIsForCity = fetchPOIsForCity;
-window.PLANNER._runOverpassWithFailover = _runOverpassWithFailover;
-
 // ===== MAIN click handler =====
-
 async function onCalcClick(){
   const brief = buildBrief();
 
-  // validation
   if(!brief.dates.start || !brief.dates.end){
     alert("Выберите даты начала и окончания.");
     return;
@@ -773,10 +727,8 @@ async function onCalcClick(){
 
   const city = brief.geo.city;
 
-  // pool by city
   let pool = state.screens.filter(s => s.city === city);
 
-  // formats filter (manual)
   let selectedFormatsText = "—";
   if(brief.formats.mode === "manual" && brief.formats.selected.length > 0){
     const fset = new Set(brief.formats.selected);
@@ -793,11 +745,9 @@ async function onCalcClick(){
     return;
   }
 
-  // ===== near_address filter =====
+  // ===== near_address =====
   let geoResult = null;
-
   if (brief.selection.mode === "near_address") {
-
     if (!window.GeoUtils?.geocodeAddress || !window.GeoUtils?.filterByRadius) {
       alert("GeoUtils не найден. Проверь подключение geo.js");
       return;
@@ -806,14 +756,9 @@ async function onCalcClick(){
     const addr = String(brief.selection.address || "").trim();
     const radius = Number(brief.selection.radius_m || 500);
 
-    if (!addr) {
-      alert("Введите адрес.");
-      return;
-    }
+    if (!addr) { alert("Введите адрес."); return; }
 
     const query = `${city}, ${addr}`;
-
-    console.log("[geo] query:", query);
     setStatus(`Ищу адрес: ${query}`);
 
     try {
@@ -824,8 +769,6 @@ async function onCalcClick(){
       setStatus("");
       return;
     }
-
-    console.log("[geo] result:", geoResult);
 
     if (!geoResult || !Number.isFinite(geoResult.lat) || !Number.isFinite(geoResult.lon)) {
       alert("Адрес не найден. Уточните улицу и дом.");
@@ -845,144 +788,127 @@ async function onCalcClick(){
     }
 
     setStatus(`Экраны в радиусе: ${pool.length} из ${before}`);
-  }
 
-  // сохраняем результаты геокодинга в бриф (только если был geo)
-  if (geoResult) {
     brief.selection.address_display = geoResult.display_name;
     brief.selection.address_lat = geoResult.lat;
     brief.selection.address_lon = geoResult.lon;
   }
 
-// ===== POI filter =====
-if (brief.selection.mode === "poi") {
-  if (!window.GeoUtils?.haversineMeters) {
-    alert("GeoUtils не найден. Проверь подключение geo.js");
-    return;
+  // ===== POI =====
+  if (brief.selection.mode === "poi") {
+    if (!window.GeoUtils?.haversineMeters) {
+      alert("GeoUtils не найден. Проверь подключение geo.js");
+      return;
+    }
+
+    const poiType = String(brief.selection.poi_type || "").trim();
+    const screenRadius = Number(brief.selection.radius_m || 500);
+
+    const center = cityCenterFromScreens(pool);
+    if (!center) {
+      alert("Для POI-подбора нужны координаты экранов (lat/lon) в этом городе.");
+      return;
+    }
+
+    const CITY_POI_RADIUS_M = { "Москва": 25000, "Санкт-Петербург": 25000, "Казань": 15000 };
+    const poiSearchR = CITY_POI_RADIUS_M[city] || 15000;
+
+    setStatus(`Ищу POI: ${POI_LABELS?.[poiType] || poiType}…`);
+
+    let pois = [];
+    try {
+      pois = await fetchPOIsForCity(poiType, city, center.lat, center.lon, poiSearchR, 500);
+    } catch (e) {
+      console.error("[poi] error:", e);
+      alert("Ошибка Overpass (OSM). Попробуй ещё раз.");
+      setStatus("");
+      return;
+    }
+
+    brief.selection.poi_found = pois.length;
+    brief.selection.poi_center_lat = center.lat;
+    brief.selection.poi_center_lon = center.lon;
+    brief.selection.poi_search_radius_m = poiSearchR;
+    brief.selection.poi_screen_radius_m = screenRadius;
+
+    if (!pois.length) {
+      alert("POI не найдены. Попробуй другой тип.");
+      setStatus("");
+      return;
+    }
+
+    const before = pool.length;
+    pool = pickScreensNearPOIs(pool, pois, screenRadius);
+
+    if (!pool.length) {
+      alert("В радиусе вокруг найденных POI нет экранов (или у экранов нет lat/lon).");
+      setStatus("");
+      return;
+    }
+
+    setStatus(`Экраны у POI: ${pool.length} из ${before} (POI: ${pois.length})`);
   }
 
-  const poiType = String(brief.selection.poi_type || "").trim();
-  const screenRadius = Number(brief.selection.radius_m || 500); // вокруг POI для экранов
+  // ===== route =====
+  if (brief.selection.mode === "route") {
+    if (!window.GeoUtils?.geocodeAddress) {
+      alert("GeoUtils не найден. Проверь подключение geo.js");
+      return;
+    }
 
-  const center = cityCenterFromScreens(pool);
-  if (!center) {
-    alert("Для POI-подбора нужны координаты экранов (lat/lon) в этом городе.");
-    return;
+    const from = String(brief.selection.from || "").trim();
+    const to   = String(brief.selection.to || "").trim();
+    const radius = Number(brief.selection.radius_m || 300);
+
+    if (!from || !to) {
+      alert("Введите обе точки маршрута (А и Б).");
+      return;
+    }
+
+    setStatus("Геокодирую маршрут…");
+
+    let geoA, geoB;
+    try {
+      geoA = await GeoUtils.geocodeAddress(`${city}, ${from}`);
+      geoB = await GeoUtils.geocodeAddress(`${city}, ${to}`);
+    } catch (e) {
+      console.error("[route] geocode error:", e);
+      alert("Ошибка геокодинга маршрута (сервис недоступен).");
+      setStatus("");
+      return;
+    }
+
+    if (!geoA || !Number.isFinite(geoA.lat) || !Number.isFinite(geoA.lon)) {
+      alert("Точка А не найдена. Уточните адрес.");
+      setStatus("");
+      return;
+    }
+    if (!geoB || !Number.isFinite(geoB.lat) || !Number.isFinite(geoB.lon)) {
+      alert("Точка Б не найдена. Уточните адрес.");
+      setStatus("");
+      return;
+    }
+
+    const before = pool.length;
+    pool = filterByRouteCorridor(pool, geoA.lat, geoA.lon, geoB.lat, geoB.lon, radius);
+
+    brief.selection.route_from_display = geoA.display_name || from;
+    brief.selection.route_to_display   = geoB.display_name || to;
+    brief.selection.route_from_lat = geoA.lat;
+    brief.selection.route_from_lon = geoA.lon;
+    brief.selection.route_to_lat   = geoB.lat;
+    brief.selection.route_to_lon   = geoB.lon;
+
+    if (!pool.length) {
+      alert("В коридоре маршрута нет экранов (или у них нет lat/lon).");
+      setStatus("");
+      return;
+    }
+
+    setStatus(`Экраны вдоль маршрута: ${pool.length} из ${before}`);
   }
 
-  const CITY_POI_RADIUS_M = { "Москва": 25000, "Санкт-Петербург": 25000, "Казань": 15000 };
-  const poiSearchR = CITY_POI_RADIUS_M[city] || 15000; // fallback around
-
-  setStatus(`Ищу POI: ${POI_LABELS?.[poiType] || poiType}…`);
-
-  let pois = [];
-  try {
-    pois = await fetchPOIsForCity(poiType, city, center.lat, center.lon, poiSearchR, 500);
-  } catch (e) {
-    console.error("[poi] error:", e);
-    alert("Ошибка Overpass (OSM). Попробуй ещё раз.");
-    setStatus("");
-    return;
-  }
-
-  brief.selection.poi_found = pois.length;
-  brief.selection.poi_center_lat = center.lat;
-  brief.selection.poi_center_lon = center.lon;
-  brief.selection.poi_search_radius_m = poiSearchR;
-  brief.selection.poi_screen_radius_m = screenRadius;
-
-  if (!pois.length) {
-    alert("POI не найдены. Попробуй другой тип.");
-    setStatus("");
-    return;
-  }
-
-  const before = pool.length;
-  pool = pickScreensNearPOIs(pool, pois, screenRadius);
-
-  if (!pool.length) {
-    alert("В радиусе вокруг найденных POI нет экранов (или у экранов нет lat/lon).");
-    setStatus("");
-    return;
-  }
-
-  setStatus(`Экраны у POI: ${pool.length} из ${before} (POI: ${pois.length})`);
-}
-  
-// ===== route filter =====
-if (brief.selection.mode === "route") {
-
-  if (!window.GeoUtils?.geocodeAddress) {
-    alert("GeoUtils не найден. Проверь подключение geo.js");
-    return;
-  }
-
-  const from = String(brief.selection.from || "").trim();
-  const to   = String(brief.selection.to || "").trim();
-  const radius = Number(brief.selection.radius_m || 300);
-
-  if (!from || !to) {
-    alert("Введите обе точки маршрута (А и Б).");
-    return;
-  }
-
-  const qFrom = `${city}, ${from}`;
-  const qTo   = `${city}, ${to}`;
-
-  console.log("[route] qFrom:", qFrom);
-  console.log("[route] qTo:", qTo);
-
-  setStatus("Геокодирую маршрут…");
-
-  let geoA, geoB;
-  try {
-    geoA = await GeoUtils.geocodeAddress(qFrom);
-    geoB = await GeoUtils.geocodeAddress(qTo);
-  } catch (e) {
-    console.error("[route] geocode error:", e);
-    alert("Ошибка геокодинга маршрута (сервис недоступен).");
-    setStatus("");
-    return;
-  }
-
-  console.log("[route] A:", geoA);
-  console.log("[route] B:", geoB);
-
-  if (!geoA || !Number.isFinite(geoA.lat) || !Number.isFinite(geoA.lon)) {
-    alert("Точка А не найдена. Уточните адрес.");
-    setStatus("");
-    return;
-  }
-  if (!geoB || !Number.isFinite(geoB.lat) || !Number.isFinite(geoB.lon)) {
-    alert("Точка Б не найдена. Уточните адрес.");
-    setStatus("");
-    return;
-  }
-
-  const before = pool.length;
-  pool = filterByRouteCorridor(pool, geoA.lat, geoA.lon, geoB.lat, geoB.lon, radius);
-
-  // сохраним для summary (красиво)
-  brief.selection.route_from_display = geoA.display_name || from;
-  brief.selection.route_to_display   = geoB.display_name || to;
-  brief.selection.route_from_lat = geoA.lat;
-  brief.selection.route_from_lon = geoA.lon;
-  brief.selection.route_to_lat   = geoB.lat;
-  brief.selection.route_to_lon   = geoB.lon;
-
-  if (!pool.length) {
-    alert("В коридоре маршрута нет экранов (или у них нет lat/lon).");
-    setStatus("");
-    return;
-  }
-
-  setStatus(`Экраны вдоль маршрута: ${pool.length} из ${before}`);
-}
-
-
-
-  
-  // GRP filter (optional)
+  // ===== GRP filter (optional) =====
   let grpWarning = "";
   let grpDroppedNoValue = 0;
 
@@ -1003,7 +929,6 @@ if (brief.selection.mode === "route") {
     grpWarning = `⚠️ GRP-фильтр включён: экраны без GRP исключены (без GRP: ${grpDroppedNoValue}).`;
   }
 
-  // avg minBid
   const avgBid = avgNumber(pool.map(s => s.minBid));
   if(avgBid == null){
     alert("Не могу посчитать: у выбранных экранов нет minBid.");
@@ -1021,11 +946,9 @@ if (brief.selection.mode === "route") {
     return;
   }
 
-  // theory plays
   const totalPlaysTheory = Math.floor(budget / bidPlus20);
   const playsPerHourTotalTheory = totalPlaysTheory / days / hpd;
 
-  // screens needed
   const screensNeeded = Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_OPT));
   const screensChosenCount = Math.min(pool.length, screensNeeded);
   const chosen = pickScreensByMinBid(pool, screensChosenCount);
@@ -1046,7 +969,6 @@ if (brief.selection.mode === "route") {
   const playsPerDay = totalPlaysEffective / days;
   const playsPerHourTotal = totalPlaysEffective / days / hpd;
 
-  // OTS
   const avgOts = avgNumber(pool.map(s => s.ots));
   const otsTotal = (avgOts == null) ? null : totalPlaysEffective * avgOts;
   const otsPerDay = (avgOts == null) ? null : otsTotal / days;
@@ -1057,14 +979,14 @@ if (brief.selection.mode === "route") {
   const nf = (n) => Math.floor(n).toLocaleString("ru-RU");
   const of = (n) => Math.round(n).toLocaleString("ru-RU");
 
-const selectionLine =
-  brief.selection.mode === "near_address"
-    ? `— Адрес: ${(brief.selection.address_display || brief.selection.address || "—")} (радиус: ${brief.selection.radius_m || 500} м)\n`
-    : brief.selection.mode === "route"
-      ? `— Маршрут: ${(brief.selection.route_from_display || brief.selection.from || "—")} → ${(brief.selection.route_to_display || brief.selection.to || "—")} (коридор: ${brief.selection.radius_m || 300} м)\n`
-      : "";
+  const selectionLine =
+    brief.selection.mode === "near_address"
+      ? `— Адрес: ${(brief.selection.address_display || brief.selection.address || "—")} (радиус: ${brief.selection.radius_m || 500} м)\n`
+      : brief.selection.mode === "route"
+        ? `— Маршрут: ${(brief.selection.route_from_display || brief.selection.from || "—")} → ${(brief.selection.route_to_display || brief.selection.to || "—")} (коридор: ${brief.selection.radius_m || 300} м)\n`
+        : "";
 
-const summaryText =
+  const summaryText =
 `Бриф:
 — Бюджет: ${budget.toLocaleString("ru-RU")} ₽
 — Даты: ${brief.dates.start} → ${brief.dates.end} (дней: ${days})
@@ -1073,7 +995,6 @@ const summaryText =
 — Форматы: ${selectedFormatsText}
 — Подбор: ${brief.selection.mode}
 ${selectionLine}— GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${brief.grp.max.toFixed(2)}` : "не учитываем"}
-
 
 Расчёт через minBid:
 — Средний minBid: ${bidPlus20.toFixed(2)} ₽
@@ -1084,9 +1005,9 @@ ${selectionLine}— GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${
 — OTS всего: ${otsTotal == null ? "—" : of(otsTotal)}
 — OTS/день: ${otsTotal == null ? "—" : of(otsPerDay)}
 — OTS/час: ${otsTotal == null ? "—" : of(otsPerHour)}`
-  + (warning ? `\n\n${warning}` : "")
-  + (grpWarning ? `\n\n${grpWarning}` : "");
-  
+    + (warning ? `\n\n${warning}` : "")
+    + (grpWarning ? `\n\n${grpWarning}` : "");
+
   if(el("summary")) el("summary").textContent = summaryText;
   if(el("download-csv")) el("download-csv").disabled = chosen.length === 0;
 
@@ -1118,9 +1039,7 @@ ${selectionLine}— GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${
 }
 
 // ===== BIND UI =====
-
 function bindPlannerUI() {
-  // preset buttons
   document.querySelectorAll(".preset").forEach(b => {
     cssButtonBase(b);
     b.addEventListener("click", () => {
@@ -1129,7 +1048,6 @@ function bindPlannerUI() {
     });
   });
 
-  // budget mode
   document.querySelectorAll('input[name="budget_mode"]').forEach(r => {
     r.addEventListener("change", () => {
       const mode = getBudgetMode();
@@ -1138,7 +1056,6 @@ function bindPlannerUI() {
     });
   });
 
-  // schedule
   document.querySelectorAll('input[name="schedule"]').forEach(r => {
     r.addEventListener("change", () => {
       const v = getScheduleType();
@@ -1147,7 +1064,6 @@ function bindPlannerUI() {
     });
   });
 
-  // grp
   const grpEnabled = el("grp-enabled");
   if (grpEnabled) {
     grpEnabled.addEventListener("change", (e) => {
@@ -1156,7 +1072,6 @@ function bindPlannerUI() {
     });
   }
 
-  // formats auto
   const formatsAuto = el("formats-auto");
   if (formatsAuto) {
     formatsAuto.addEventListener("change", (e) => {
@@ -1168,25 +1083,20 @@ function bindPlannerUI() {
     });
   }
 
-  // selection mode
   const selectionMode = el("selection-mode");
   if (selectionMode) selectionMode.addEventListener("change", renderSelectionExtra);
 
-  // city search
   const citySearch = el("city-search");
   if (citySearch) citySearch.addEventListener("input", (e) => renderCitySuggestions(e.target.value));
 
-  // download
   const downloadBtn = el("download-csv");
   if (downloadBtn) downloadBtn.addEventListener("click", () => downloadXLSX(state.lastChosen));
 
-  // calc
   const calcBtn = el("calc-btn");
   if (calcBtn) calcBtn.addEventListener("click", () => onCalcClick());
 }
 
 // ===== START =====
-
 async function startPlanner() {
   renderSelectionExtra();
   bindPlannerUI();
@@ -1203,34 +1113,27 @@ function bootPlanner(){
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", bootPlanner);
 } else {
-  bootPlanner(); // DOM уже готов (часто в Tilda)
+  bootPlanner();
 }
 
-// === DEBUG/INTEGRATION EXPORTS (для консоли и внешних модулей) ===
+// ===== EXPORTS =====
 window.PLANNER = window.PLANNER || {};
-window.PLANNER.state = state;
-window.PLANNER.loadScreens = loadScreens;
-window.PLANNER.startPlanner = startPlanner;
-window.PLANNER.bootPlanner = bootPlanner;
+Object.assign(window.PLANNER, {
+  ready: false,
+  state,
+  loadScreens,
+  startPlanner,
+  bootPlanner,
 
-// простой флаг "готово"
-window.PLANNER.ready = false;
+  // POI exports
+  fetchPOIsOverpassInCity,
+  fetchPOIsForCity,
+  fetchPOIsOverpass,
+  pickScreensNearPOIs,
+  cityCenterFromScreens,
 
-// помечаем готовность после успешной загрузки CSV
-const _origLoadScreens = loadScreens;
-loadScreens = async function () {
-  const res = await _origLoadScreens();
-  window.PLANNER.ready = true;
-  window.dispatchEvent(new CustomEvent("planner:screens-ready", { detail: { count: state.screens.length } }));
-  return res;
-};
-
-// ===== DEBUG EXPORTS (чтобы тестить из консоли даже если planner.js module) =====
-window.PLANNER = window.PLANNER || {};
-window.PLANNER._sleep = _sleep;
-window.PLANNER._fetchOverpass = _fetchOverpass;
-window.PLANNER.fetchPOIsOverpassInCity = fetchPOIsOverpassInCity;
-window.PLANNER.fetchPOIsForCity = fetchPOIsForCity;
-window.PLANNER.fetchPOIsOverpass = fetchPOIsOverpass;
-window.PLANNER.pickScreensNearPOIs = pickScreensNearPOIs;
-window.PLANNER.cityCenterFromScreens = cityCenterFromScreens;
+  // Overpass internals (debug)
+  _sleep,
+  _fetchOverpass,
+  _runOverpassWithFailover
+});
