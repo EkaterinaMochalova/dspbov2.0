@@ -576,15 +576,18 @@ const OVERPASS_URLS = [
   "https://overpass.nchc.org.tw/api/interpreter"
 ];
 
-// ===== Overpass utils (ONE TIME) =====
-const _poiCache = new Map(); // key -> { ts, data }
+// cache: key -> { ts, data }
+const _poiCache = new Map();
 
-const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
+// backoff
+function _sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
 
+// fetch с таймаутом (Overpass часто виснет)
 async function _fetchOverpass(url, body, timeoutMs = 45000) {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), timeoutMs);
-
   try {
     return await fetch(url, {
       method: "POST",
@@ -597,7 +600,14 @@ async function _fetchOverpass(url, body, timeoutMs = 45000) {
   }
 }
 
-/** достаём центр города по экранам (чтобы не городить Nominatim для границ) */
+function _fillTemplate(q, vars){
+  return q
+    .replaceAll("{LAT}", String(vars.LAT))
+    .replaceAll("{LON}", String(vars.LON))
+    .replaceAll("{R}", String(vars.R));
+}
+
+/** центр города по экранам (fallback для around) */
 function cityCenterFromScreens(screensInCity){
   const pts = (screensInCity || [])
     .map(s => ({ lat: Number(s.lat), lon: Number(s.lon) }))
@@ -614,17 +624,29 @@ function cityCenterFromScreens(screensInCity){
   return { lat: (latMin+latMax)/2, lon: (lonMin+lonMax)/2 };
 }
 
-function _fillTemplate(q, vars){
-  return q
-    .replaceAll("{LAT}", String(vars.LAT))
-    .replaceAll("{LON}", String(vars.LON))
-    .replaceAll("{R}", String(vars.R));
+/** общая функция: прогнать запрос по всем endpoint'ам с backoff */
+async function _runOverpassWithFailover(body, timeoutMs = 45000) {
+  let lastErr = null;
+  let attempt = 0;
+
+  for (const url of OVERPASS_URLS) {
+    attempt++;
+    try {
+      const res = await _fetchOverpass(url, body, timeoutMs);
+      if (!res.ok) throw new Error(`Overpass ${res.status} @ ${url}`);
+      return await res.json();
+    } catch (e) {
+      lastErr = e;
+      console.warn("[poi] overpass fail:", String(e));
+      const wait = 400 * attempt + Math.floor(Math.random() * 600);
+      await _sleep(wait);
+    }
+  }
+
+  throw lastErr || new Error("Overpass failed (all endpoints)");
 }
 
-/**
- * POI по городу через area (БЕЗ Turbo-макроса geocodeArea)
- * Важно: area-поиск по name может быть неоднозначным, но для MVP ок.
- */
+/** POI по city area (лучше для Москвы/СПб, чем around) */
 async function fetchPOIsOverpassInCity(poiType, cityName, limit = 400){
   const t = String(poiType || "").trim();
   if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
@@ -632,67 +654,31 @@ async function fetchPOIsOverpassInCity(poiType, cityName, limit = 400){
   const city = String(cityName || "").trim();
   if (!city) throw new Error("City is empty");
 
-  // превратим around-запросы в запросы внутри area
   const qArea = String(POI_QUERIES[t])
     .replaceAll("nwr(around:{R},{LAT},{LON})", "nwr(area.a)");
 
   const body = `
     [out:json][timeout:40];
-    (
-      area["boundary"="administrative"]["name"="${city}"];
-      area["place"="city"]["name"="${city}"];
-    )->.a;
+    {{geocodeArea:${city}}}->.a;
     (
       ${qArea}
     );
     out center ${limit};
   `;
 
-  let lastErr = null;
-  let attempt = 0;
+  const json = await _runOverpassWithFailover(body, 55000);
+  const els = Array.isArray(json.elements) ? json.elements : [];
 
-  for (const url of OVERPASS_URLS){
-    attempt++;
-    try {
-      const res = await _fetchOverpass(url, body, 45000);
-      if (!res.ok) throw new Error(`Overpass ${res.status} @ ${url}`);
-
-      const json = await res.json();
-      const els = Array.isArray(json.elements) ? json.elements : [];
-
-      const pois = els.map(el => {
-        const name = el.tags?.name || "";
-        const lat0 = Number(el.lat ?? el.center?.lat);
-        const lon0 = Number(el.lon ?? el.center?.lon);
-        if (!Number.isFinite(lat0) || !Number.isFinite(lon0)) return null;
-        return { id: `${el.type}/${el.id}`, name, lat: lat0, lon: lon0, raw: el };
-      }).filter(Boolean);
-
-      return pois;
-    } catch (e) {
-      lastErr = e;
-      console.warn("[poi] overpass city fail:", String(e));
-      const wait = 400 * attempt + Math.floor(Math.random() * 400);
-      await _sleep(wait);
-    }
-  }
-
-  throw lastErr || new Error("Overpass city failed");
+  return els.map(el => {
+    const name = el.tags?.name || "";
+    const lat0 = Number(el.lat ?? el.center?.lat);
+    const lon0 = Number(el.lon ?? el.center?.lon);
+    if (!Number.isFinite(lat0) || !Number.isFinite(lon0)) return null;
+    return { id: `${el.type}/${el.id}`, name, lat: lat0, lon: lon0, raw: el };
+  }).filter(Boolean);
 }
 
-async function fetchPOIsForCity(poiType, cityName, centerLat, centerLon, fallbackRadiusMeters, limit = 400) {
-  try {
-    const poisCity = await fetchPOIsOverpassInCity(poiType, cityName, limit);
-    if (poisCity && poisCity.length) return poisCity;
-  } catch (e) {
-    console.warn("[poi] city-area failed, fallback to around:", e?.message || e);
-  }
-  return await fetchPOIsOverpass(poiType, centerLat, centerLon, fallbackRadiusMeters, limit);
-}
-
-/**
- * POI around (fallback) — с кэшем, таймаутом, перебором endpoint'ов и backoff
- */
+/** POI around (fallback) */
 async function fetchPOIsOverpass(poiType, lat, lon, radiusMeters, limit = 200){
   const t = String(poiType || "").trim();
   if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
@@ -711,40 +697,33 @@ async function fetchPOIsOverpass(poiType, lat, lon, radiusMeters, limit = 200){
     out center ${limit};
   `;
 
-  let lastErr = null;
-  let attempt = 0;
+  const json = await _runOverpassWithFailover(body, 45000);
+  const els = Array.isArray(json.elements) ? json.elements : [];
 
-  for (const url of OVERPASS_URLS){
-    attempt++;
-    try {
-      const res = await _fetchOverpass(url, body, 45000);
-      if (!res.ok) throw new Error(`Overpass ${res.status} @ ${url}`);
+  const pois = els.map(el => {
+    const name = el.tags?.name || "";
+    const lat0 = Number(el.lat ?? el.center?.lat);
+    const lon0 = Number(el.lon ?? el.center?.lon);
+    if (!Number.isFinite(lat0) || !Number.isFinite(lon0)) return null;
+    return { id: `${el.type}/${el.id}`, name, lat: lat0, lon: lon0, raw: el };
+  }).filter(Boolean);
 
-      const json = await res.json();
-      const els = Array.isArray(json.elements) ? json.elements : [];
-
-      const pois = els.map(el => {
-        const name = el.tags?.name || "";
-        const lat0 = Number(el.lat ?? el.center?.lat);
-        const lon0 = Number(el.lon ?? el.center?.lon);
-        if (!Number.isFinite(lat0) || !Number.isFinite(lon0)) return null;
-        return { id: `${el.type}/${el.id}`, name, lat: lat0, lon: lon0, raw: el };
-      }).filter(Boolean);
-
-      _poiCache.set(cacheKey, { ts: Date.now(), data: pois });
-      return pois;
-    } catch (e) {
-      lastErr = e;
-      console.warn("[poi] overpass fail:", String(e));
-      const wait = 400 * attempt + Math.floor(Math.random() * 400);
-      await _sleep(wait);
-    }
-  }
-
-  throw lastErr || new Error("Overpass failed");
+  _poiCache.set(cacheKey, { ts: Date.now(), data: pois });
+  return pois;
 }
 
-/** выбираем экраны, попадающие в радиус вокруг хотя бы одного POI */
+/** city-area -> если пусто/ошибка, fallback to around */
+async function fetchPOIsForCity(poiType, cityName, centerLat, centerLon, fallbackRadiusMeters, limit = 400) {
+  try {
+    const poisCity = await fetchPOIsOverpassInCity(poiType, cityName, limit);
+    if (poisCity && poisCity.length) return poisCity;
+  } catch (e) {
+    console.warn("[poi] city-area failed, fallback to around:", e?.message || e);
+  }
+  return await fetchPOIsOverpass(poiType, centerLat, centerLon, fallbackRadiusMeters, limit);
+}
+
+/** экраны в радиусе от POI */
 function pickScreensNearPOIs(screens, pois, radiusMeters){
   const r = Number(radiusMeters || 0);
   if (!r || !Array.isArray(pois) || !pois.length) return [];
@@ -765,6 +744,13 @@ function pickScreensNearPOIs(screens, pois, radiusMeters){
   }
   return picked;
 }
+
+// Экспорт для консоли/тестов
+window.PLANNER = window.PLANNER || {};
+window.PLANNER.fetchPOIsOverpassInCity = fetchPOIsOverpassInCity;
+window.PLANNER.fetchPOIsOverpass = fetchPOIsOverpass;
+window.PLANNER.fetchPOIsForCity = fetchPOIsForCity;
+window.PLANNER._runOverpassWithFailover = _runOverpassWithFailover;
 
 // ===== MAIN click handler =====
 
