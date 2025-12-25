@@ -616,6 +616,11 @@ function _fillTemplate(q, vars){
     .replaceAll("{R}", String(vars.R));
 }
 
+function _ensurePOIsNotEmpty(pois, poiType, cityName) {
+  if (Array.isArray(pois) && pois.length) return pois;
+  throw new Error(`POI не найдены: «${POI_LABELS?.[poiType] || poiType}» в городе «${cityName}». Попробуй другой тип или увеличь радиус/смени город.`);
+}
+
 function _normalizePOIs(json){
   const els = Array.isArray(json?.elements) ? json.elements : [];
   return els.map(el => {
@@ -628,87 +633,55 @@ function _normalizePOIs(json){
 }
 
 /** POI in CITY AREA (без Turbo-макросов) */
-async function fetchPOIsOverpassInCity(poiType, cityName, limit = 400){
+async function fetchPOIsOverpassInCity(poiType, cityName, limit = 50){
   const t = String(poiType || "").trim();
   if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
 
   const city = String(cityName || "").trim();
   if (!city) throw new Error("City is empty");
 
-  const qArea = String(POI_QUERIES[t]).replaceAll(
-    "nwr(around:{R},{LAT},{LON})",
-    "nwr(area.a)"
-  );
+  const safeLimit = Math.max(1, Math.min(50, Number(limit || 50))); // <= 50
 
-  // admin_level добавил чтобы сузить неоднозначности и ускорить
-  const body = `
-    [out:json][timeout:60];
-    (
-      area["boundary"="administrative"]["name"="${city}"]["admin_level"~"^(6|8)$"];
-      area["boundary"="administrative"]["name"="${city}"];
-      area["place"="city"]["name"="${city}"];
-    )->.a;
-    (
-      ${qArea}
-    );
-    out center qt ${Math.max(50, Math.min(800, Number(limit) || 400))};
-  `;
+  const buildBody = (queryStr) => {
+    const qArea = String(queryStr)
+      .replaceAll("nwr(around:{R},{LAT},{LON})", "nwr(area.a)");
 
-  const json = await _runOverpassWithFailover(body, 60000);
-  return _normalizePOIs(json);
-}
+    return `
+      [out:json][timeout:40];
+      {{geocodeArea:${city}}}->.a;
+      (
+        ${qArea}
+      );
+      out center ${safeLimit};
+    `;
+  };
 
-/** POI around (fallback) — с кэшем */
-async function fetchPOIsOverpass(poiType, lat, lon, radiusMeters, limit = 200){
-  const t = String(poiType || "").trim();
-  if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
+  // 1) основной запрос
+  let json = await _runOverpassWithFailover(buildBody(POI_QUERIES[t]), 55000);
+  let els = Array.isArray(json.elements) ? json.elements : [];
 
-  const R = Math.max(100, Number(radiusMeters || 0));
-  const L = Math.max(50, Math.min(800, Number(limit) || 200));
-  const cacheKey = `${t}|${lat.toFixed(5)}|${lon.toFixed(5)}|${R}|${L}`;
-
-  const cached = _poiCache.get(cacheKey);
-  if (cached && (Date.now() - cached.ts) < 10 * 60 * 1000) return cached.data;
-
-  const body = `
-    [out:json][timeout:35];
-    (
-      ${_fillTemplate(POI_QUERIES[t], { LAT: lat, LON: lon, R })}
-    );
-    out center qt ${L};
-  `;
-
-  const json = await _runOverpassWithFailover(body, 45000);
-  const pois = _normalizePOIs(json);
-
-  _poiCache.set(cacheKey, { ts: Date.now(), data: pois });
-  return pois;
-}
-
-/** city-area -> если ошибка/пусто, fallback to around
- *  ВАЖНО: для больших городов (Москва/СПб) сначала around — быстрее и стабильнее
- */
-async function fetchPOIsForCity(poiType, cityName, centerLat, centerLon, fallbackRadiusMeters, limit = 400) {
-  const city = String(cityName || "").trim();
-  const preferAround = (city === "Москва" || city === "Санкт-Петербург");
-
-  if (preferAround) {
-    try {
-      const pois = await fetchPOIsOverpass(poiType, centerLat, centerLon, fallbackRadiusMeters, limit);
-      if (pois && pois.length) return pois;
-    } catch (e) {
-      console.warn("[poi] prefer-around failed, try city-area:", e?.message || e);
-    }
+  // 2) fallback специально для ТЦ (OSM часто не shop=mall, а amenity=shopping_centre)
+  if (t === "mall" && els.length === 0) {
+    const mallFallbackQuery = `
+      nwr(around:{R},{LAT},{LON})["amenity"="shopping_centre"];
+      nwr(around:{R},{LAT},{LON})["building"="retail"];
+    `;
+    json = await _runOverpassWithFailover(buildBody(mallFallbackQuery), 55000);
+    els = Array.isArray(json.elements) ? json.elements : [];
   }
 
-  try {
-    const poisCity = await fetchPOIsOverpassInCity(poiType, city, limit);
-    if (poisCity && poisCity.length) return poisCity;
-  } catch (e) {
-    console.warn("[poi] city-area failed, fallback to around:", e?.message || e);
-  }
+  const pois = els.map(el => {
+    const name = el.tags?.name || "";
+    const lat0 = Number(el.lat ?? el.center?.lat);
+    const lon0 = Number(el.lon ?? el.center?.lon);
+    if (!Number.isFinite(lat0) || !Number.isFinite(lon0)) return null;
+    return { id: `${el.type}/${el.id}`, name, lat: lat0, lon: lon0, raw: el };
+  }).filter(Boolean);
 
-  return await fetchPOIsOverpass(poiType, centerLat, centerLon, fallbackRadiusMeters, limit);
+  // лимитируем финально (на случай если Overpass вернул больше)
+  const sliced = pois.slice(0, safeLimit);
+
+  return _ensurePOIsNotEmpty(sliced, t, city);
 }
 
 function pickScreensNearPOIs(screens, pois, radiusMeters){
