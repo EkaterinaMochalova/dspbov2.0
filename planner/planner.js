@@ -642,33 +642,20 @@ async function fetchPOIsOverpassInCity(poiType, cityName, limit = 50){
 
   const safeLimit = Math.max(1, Math.min(50, Number(limit || 50))); // <= 50
 
-  const buildBody = (queryStr) => {
-    const qArea = String(queryStr)
-      .replaceAll("nwr(around:{R},{LAT},{LON})", "nwr(area.a)");
+  const qArea = String(POI_QUERIES[t])
+    .replaceAll("nwr(around:{R},{LAT},{LON})", "nwr(area.a)");
 
-    return `
-      [out:json][timeout:40];
-      {{geocodeArea:${city}}}->.a;
-      (
-        ${qArea}
-      );
-      out center ${safeLimit};
-    `;
-  };
+  const body = `
+    [out:json][timeout:40];
+    {{geocodeArea:${city}}}->.a;
+    (
+      ${qArea}
+    );
+    out center ${safeLimit};
+  `;
 
-  // 1) основной запрос
-  let json = await _runOverpassWithFailover(buildBody(POI_QUERIES[t]), 55000);
-  let els = Array.isArray(json.elements) ? json.elements : [];
-
-  // 2) fallback специально для ТЦ (OSM часто не shop=mall, а amenity=shopping_centre)
-  if (t === "mall" && els.length === 0) {
-    const mallFallbackQuery = `
-      nwr(around:{R},{LAT},{LON})["amenity"="shopping_centre"];
-      nwr(around:{R},{LAT},{LON})["building"="retail"];
-    `;
-    json = await _runOverpassWithFailover(buildBody(mallFallbackQuery), 55000);
-    els = Array.isArray(json.elements) ? json.elements : [];
-  }
+  const json = await _runOverpassWithFailover(body, 55000);
+  const els = Array.isArray(json.elements) ? json.elements : [];
 
   const pois = els.map(el => {
     const name = el.tags?.name || "";
@@ -678,10 +665,13 @@ async function fetchPOIsOverpassInCity(poiType, cityName, limit = 50){
     return { id: `${el.type}/${el.id}`, name, lat: lat0, lon: lon0, raw: el };
   }).filter(Boolean);
 
-  // лимитируем финально (на случай если Overpass вернул больше)
   const sliced = pois.slice(0, safeLimit);
 
-  return _ensurePOIsNotEmpty(sliced, t, city);
+  if (!sliced.length) {
+    throw new Error(`POI не найдены: «${POI_LABELS?.[t] || t}» в городе «${city}». Попробуй другой тип.`);
+  }
+
+  return sliced;
 }
 
 function pickScreensNearPOIs(screens, pois, radiusMeters){
@@ -817,7 +807,7 @@ async function onCalcClick(){
       pois = await fetchPOIsForCity(poiType, city, center.lat, center.lon, poiSearchR, 500);
     } catch (e) {
       console.error("[poi] error:", e);
-      alert("Ошибка Overpass (OSM). Попробуй ещё раз.");
+      alert(e?.message || "Ошибка Overpass (OSM). Попробуй ещё раз.");
       setStatus("");
       return;
     }
