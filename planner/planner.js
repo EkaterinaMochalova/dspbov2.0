@@ -506,6 +506,79 @@ function downloadXLSX(rows){
   XLSX.writeFile(wb, "screens_selected.xlsx");
 }
 
+function downloadPOIsCSV(pois){
+  if(!pois || !pois.length) return;
+
+  const rows = pois.map(p => ({
+    id: p.id || "",
+    name: p.name || "",
+    lat: p.lat,
+    lon: p.lon,
+    city: (window.PLANNER?.state?.selectedCity || "") // опционально
+  }));
+
+  const csv = Papa.unparse(rows, { quotes: true });
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "pois.csv";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function downloadPOIsXLSX(pois){
+  if(!pois || !pois.length) return;
+
+  const rows = pois.map(p => ({
+    id: p.id || "",
+    name: p.name || "",
+    lat: p.lat,
+    lon: p.lon
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows, { header: ["id","name","lat","lon"] });
+  ws["!cols"] = [{wch:22},{wch:40},{wch:12},{wch:12}];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "POIs");
+  XLSX.writeFile(wb, "pois.xlsx");
+}
+
+function renderPOIList(pois){
+  const wrap = document.getElementById("poi-results");
+  if(!wrap) return;
+
+  if(!pois || !pois.length){
+    wrap.innerHTML = `<div style="font-size:13px; color:#666;">POI не найдены.</div>`;
+    return;
+  }
+
+  wrap.innerHTML =
+    `<div style="font-size:13px; color:#666;">Найдено POI: <b>${pois.length}</b> (показываю первые 20)</div>` +
+    `<div style="margin-top:8px; border:1px solid #eee; border-radius:12px; overflow:hidden;">` +
+    `<table style="width:100%; border-collapse:collapse; font-size:13px;">` +
+    `<thead><tr style="background:#fafafa;">` +
+    `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">name</th>` +
+    `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">lat</th>` +
+    `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">lon</th>` +
+    `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">id</th>` +
+    `</tr></thead><tbody>` +
+    pois.slice(0,20).map(p => (
+      `<tr>` +
+      `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${p.name || "—"}</td>` +
+      `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number(p.lat).toFixed(6)}</td>` +
+      `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number(p.lon).toFixed(6)}</td>` +
+      `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${p.id || ""}</td>` +
+      `</tr>`
+    )).join("") +
+    `</tbody></table></div>`;
+}
+
+
 // ===== Geo helpers for ROUTE =====
 function _llToXYMeters(lat, lon, lat0) {
   const R = 6371000;
