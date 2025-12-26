@@ -1,11 +1,13 @@
 console.log("planner.js loaded");
+
+// ========== GLOBAL ==========
 window.PLANNER = window.PLANNER || {};
 
-/** CSV */
+// ===== CSV =====
 const SCREENS_CSV_URL =
   "https://raw.githubusercontent.com/EkaterinaMochalova/dspbov2.0/planner/inventories_sync.csv";
 
-/** Форматы */
+// ===== Labels =====
 const FORMAT_LABELS = {
   BILLBOARD: { label: "Билборды", desc: "экраны 3×6 м вдоль трасс" },
   CITY_BOARD: { label: "City Board", desc: "небольшие экраны в центре города, видимые и авто-, и пешеходному траффику" },
@@ -21,63 +23,60 @@ const FORMAT_LABELS = {
   SUPERSITE: { label: "Суперсайты", desc: "крупные конструкции с высокой дальностью видимости" }
 };
 
-/** POI queries for Overpass (OpenStreetMap)
- *  nwr = node + way + relation
- */
 const POI_QUERIES = {
   fitness: `
-    nwr(around:{R},{LAT},{LON})["leisure"="fitness_centre"];
-    nwr(around:{R},{LAT},{LON})["amenity"="gym"];
-    nwr(around:{R},{LAT},{LON})["sport"="fitness"];
-    nwr(around:{R},{LAT},{LON})["leisure"="sports_centre"]["sport"="fitness"];
+    nwr(area.a)["leisure"="fitness_centre"];
+    nwr(area.a)["amenity"="gym"];
+    nwr(area.a)["sport"="fitness"];
+    nwr(area.a)["leisure"="sports_centre"]["sport"="fitness"];
   `,
   pet_store: `
-    nwr(around:{R},{LAT},{LON})["shop"="pet"];
-    nwr(around:{R},{LAT},{LON})["shop"="pet_grooming"];
-    nwr(around:{R},{LAT},{LON})["amenity"="veterinary"];
+    nwr(area.a)["shop"="pet"];
+    nwr(area.a)["shop"="pet_grooming"];
+    nwr(area.a)["amenity"="veterinary"];
   `,
   supermarket: `
-    nwr(around:{R},{LAT},{LON})["shop"="supermarket"];
-    nwr(around:{R},{LAT},{LON})["shop"="convenience"];
-    nwr(around:{R},{LAT},{LON})["shop"="hypermarket"];
+    nwr(area.a)["shop"="supermarket"];
+    nwr(area.a)["shop"="convenience"];
+    nwr(area.a)["shop"="hypermarket"];
   `,
   mall: `
-    nwr(around:{R},{LAT},{LON})["shop"="mall"];
+    nwr(area.a)["shop"="mall"];
   `,
   cafe: `
-    nwr(around:{R},{LAT},{LON})["amenity"="cafe"];
-    nwr(around:{R},{LAT},{LON})["shop"="coffee"];
+    nwr(area.a)["amenity"="cafe"];
+    nwr(area.a)["shop"="coffee"];
   `,
   restaurant: `
-    nwr(around:{R},{LAT},{LON})["amenity"="restaurant"];
-    nwr(around:{R},{LAT},{LON})["amenity"="fast_food"];
-    nwr(around:{R},{LAT},{LON})["amenity"="food_court"];
+    nwr(area.a)["amenity"="restaurant"];
+    nwr(area.a)["amenity"="fast_food"];
+    nwr(area.a)["amenity"="food_court"];
   `,
   pharmacy: `
-    nwr(around:{R},{LAT},{LON})["amenity"="pharmacy"];
+    nwr(area.a)["amenity"="pharmacy"];
   `,
   school: `
-    nwr(around:{R},{LAT},{LON})["amenity"="school"];
+    nwr(area.a)["amenity"="school"];
   `,
   university: `
-    nwr(around:{R},{LAT},{LON})["amenity"="university"];
-    nwr(around:{R},{LAT},{LON})["amenity"="college"];
+    nwr(area.a)["amenity"="university"];
+    nwr(area.a)["amenity"="college"];
   `,
   hospital: `
-    nwr(around:{R},{LAT},{LON})["amenity"="hospital"];
-    nwr(around:{R},{LAT},{LON})["amenity"="clinic"];
+    nwr(area.a)["amenity"="hospital"];
+    nwr(area.a)["amenity"="clinic"];
   `,
   gas_station: `
-    nwr(around:{R},{LAT},{LON})["amenity"="fuel"];
+    nwr(area.a)["amenity"="fuel"];
   `,
   bank: `
-    nwr(around:{R},{LAT},{LON})["amenity"="bank"];
-    nwr(around:{R},{LAT},{LON})["amenity"="atm"];
+    nwr(area.a)["amenity"="bank"];
+    nwr(area.a)["amenity"="atm"];
   `,
   transport: `
-    nwr(around:{R},{LAT},{LON})["public_transport"];
-    nwr(around:{R},{LAT},{LON})["railway"="station"];
-    nwr(around:{R},{LAT},{LON})["railway"="subway_entrance"];
+    nwr(area.a)["public_transport"];
+    nwr(area.a)["railway"="station"];
+    nwr(area.a)["railway"="subway_entrance"];
   `
 };
 
@@ -98,9 +97,9 @@ const POI_LABELS = {
 };
 
 // ===== Model =====
-const BID_MULTIPLIER = 1.2; // +20%
-const SC_OPT = 30;          // оптимум: 30 выходов/час/экран
-const SC_MAX = 60;          // максимум: 60 выходов/час/экран
+const BID_MULTIPLIER = 1.2;
+const SC_OPT = 30;
+const SC_MAX = 60;
 
 // ===== State =====
 const state = {
@@ -111,9 +110,9 @@ const state = {
   selectedFormats: new Set(),
   lastChosen: []
 };
-window.state = state;
+window.PLANNER.state = state;
 
-// ===== Small utils =====
+// ===== Utils =====
 function el(id){ return document.getElementById(id); }
 
 function setStatus(msg){
@@ -167,8 +166,8 @@ function daysInclusive(startStr, endStr){
 }
 
 function hoursPerDay(schedule){
-  if(schedule.type === "all_day") return 15; // 07–22
-  if(schedule.type === "peak") return 7;     // 07–10 + 17–21
+  if(schedule.type === "all_day") return 15;
+  if(schedule.type === "peak") return 7;
   if(schedule.type === "custom"){
     const [fh,fm] = (schedule.from || "07:00").split(":").map(Number);
     const [th,tm] = (schedule.to || "22:00").split(":").map(Number);
@@ -206,10 +205,7 @@ function renderSelectionExtra(){
 
   if(mode === "poi"){
     const keys = Object.keys(POI_QUERIES || {});
-    const options = keys.map(k => {
-      const label = POI_LABELS[k] || k;
-      return `<option value="${k}">${label}</option>`;
-    }).join("");
+    const options = keys.map(k => `<option value="${k}">${POI_LABELS[k] || k}</option>`).join("");
 
     extra.innerHTML = `
       <select id="poi-type"
@@ -266,16 +262,10 @@ async function loadScreens(){
     return {
       ...r,
       screen_id: String(screenId).trim(),
-      city,
-      format,
-      address,
-
-      // numbers
+      city, format, address,
       minBid: toNumber(r.minBid ?? r.min_bid ?? r.MINBID ?? r.minbid),
       ots: toNumber(r.ots ?? r.OTS),
       grp: toNumber(r.grp ?? r.GRP),
-
-      // geo
       lat: toNumber(r.lat ?? r.Lat ?? r.LAT),
       lon: toNumber(r.lon ?? r.Lon ?? r.LON ?? r.lng ?? r.Lng ?? r.LNG)
     };
@@ -290,15 +280,11 @@ async function loadScreens(){
   renderFormats();
   renderSelectedCity();
 
-  renderPlannerMap({ screens: state.screens.slice(0, 1000), pois: [] });
-
   setStatus(`Готово. Экранов: ${state.screens.length}. Городов: ${state.citiesAll.length}. Форматов: ${state.formatsAll.length}.`);
 
-  // readiness signal
   window.PLANNER.ready = true;
   window.dispatchEvent(new CustomEvent("planner:screens-ready", { detail: { count: state.screens.length } }));
 }
-
 
 // ===== UI: formats =====
 function renderFormats(){
@@ -421,13 +407,6 @@ function buildBrief(){
   };
 
   const qsVal = (sel) => (root.querySelector(sel)?.value ?? "");
-  const pickAnyVal = (...sels) => {
-    for (const s of sels) {
-      const v = qsVal(s);
-      if (String(v).trim()) return String(v).trim();
-    }
-    return "";
-  };
   const pickAnyNum = (fallback, ...sels) => {
     for (const s of sels) {
       const v = qsVal(s);
@@ -437,6 +416,13 @@ function buildBrief(){
       }
     }
     return fallback;
+  };
+  const pickAnyVal = (...sels) => {
+    for (const s of sels) {
+      const v = qsVal(s);
+      if (String(v).trim()) return String(v).trim();
+    }
+    return "";
   };
 
   if(selectionMode === "near_address"){
@@ -448,13 +434,10 @@ function buildBrief(){
     brief.selection.radius_m = pickAnyNum(500, "#planner-radius", "#radius");
   }
   if(selectionMode === "route"){
-    brief.selection.from = String(qsVal("#route-from") || "").trim();
-    brief.selection.to   = String(qsVal("#route-to") || "").trim();
+    brief.selection.from = pickAnyVal("#route-from");
+    brief.selection.to   = pickAnyVal("#route-to");
     brief.selection.radius_m = pickAnyNum(300, "#planner-radius", "#radius");
   }
-
-  if(!Array.isArray(brief.formats.selected)) brief.formats.selected = [];
-  if(!brief.formats.mode) brief.formats.mode = "auto";
 
   if (!Number.isFinite(brief.grp.min)) brief.grp.min = 0;
   if (!Number.isFinite(brief.grp.max)) brief.grp.max = 9.98;
@@ -465,7 +448,7 @@ function buildBrief(){
   return brief;
 }
 
-// ===== Calc helpers =====
+// ===== Helpers =====
 function pickScreensByMinBid(screens, n){
   const sorted = [...screens].sort((a,b) => {
     const aa = Number.isFinite(a.minBid) ? a.minBid : 1e18;
@@ -508,19 +491,16 @@ function downloadXLSX(rows){
 
 function downloadPOIsCSV(pois){
   if(!pois || !pois.length) return;
-
   const rows = pois.map(p => ({
     id: p.id || "",
     name: p.name || "",
     lat: p.lat,
     lon: p.lon,
-    city: (window.PLANNER?.state?.selectedCity || "") // опционально
+    city: state.selectedCity || ""
   }));
-
   const csv = Papa.unparse(rows, { quotes: true });
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
-
   const a = document.createElement("a");
   a.href = url;
   a.download = "pois.csv";
@@ -537,11 +517,12 @@ function downloadPOIsXLSX(pois){
     id: p.id || "",
     name: p.name || "",
     lat: p.lat,
-    lon: p.lon
+    lon: p.lon,
+    city: state.selectedCity || ""
   }));
 
-  const ws = XLSX.utils.json_to_sheet(rows, { header: ["id","name","lat","lon"] });
-  ws["!cols"] = [{wch:22},{wch:40},{wch:12},{wch:12}];
+  const ws = XLSX.utils.json_to_sheet(rows, { header: ["id","name","lat","lon","city"] });
+  ws["!cols"] = [{wch:22},{wch:40},{wch:12},{wch:12},{wch:18}];
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "POIs");
@@ -578,49 +559,17 @@ function renderPOIList(pois){
     `</tbody></table></div>`;
 }
 
-
-// ===== Geo helpers for ROUTE =====
-function _llToXYMeters(lat, lon, lat0) {
-  const R = 6371000;
-  const toRad = (x) => x * Math.PI / 180;
-  const x = R * toRad(lon) * Math.cos(toRad(lat0));
-  const y = R * toRad(lat);
-  return { x, y };
+function cityCenterFromScreens(screens){
+  const pts = (screens || [])
+    .map(s => ({ lat: Number(s.lat), lon: Number(s.lon) }))
+    .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+  if (!pts.length) return null;
+  const lat = pts.reduce((a,p)=>a+p.lat,0) / pts.length;
+  const lon = pts.reduce((a,p)=>a+p.lon,0) / pts.length;
+  return { lat, lon };
 }
 
-function _distPointToSegmentMeters(pLat, pLon, aLat, aLon, bLat, bLon) {
-  const lat0 = (aLat + bLat) / 2;
-
-  const A = _llToXYMeters(aLat, aLon, lat0);
-  const B = _llToXYMeters(bLat, bLon, lat0);
-  const P = _llToXYMeters(pLat, pLon, lat0);
-
-  const ABx = B.x - A.x, ABy = B.y - A.y;
-  const APx = P.x - A.x, APy = P.y - A.y;
-
-  const ab2 = ABx*ABx + ABy*ABy;
-  if (ab2 === 0) return Math.hypot(P.x - A.x, P.y - A.y);
-
-  let t = (APx*ABx + APy*ABy) / ab2;
-  t = Math.max(0, Math.min(1, t));
-
-  const Cx = A.x + t*ABx;
-  const Cy = A.y + t*ABy;
-
-  return Math.hypot(P.x - Cx, P.y - Cy);
-}
-
-function filterByRouteCorridor(screens, aLat, aLon, bLat, bLon, radiusMeters) {
-  const r = Number(radiusMeters || 0);
-  return (screens || []).filter(s => {
-    const slat = Number(s.lat);
-    const slon = Number(s.lon);
-    if (!Number.isFinite(slat) || !Number.isFinite(slon)) return false;
-    return _distPointToSegmentMeters(slat, slon, aLat, aLon, bLat, bLon) <= r;
-  });
-}
-
-/** Overpass (ONE TIME) */
+// ===== Overpass =====
 const OVERPASS_URLS = [
   "https://overpass.kumi.systems/api/interpreter",
   "https://overpass-api.de/api/interpreter",
@@ -629,7 +578,6 @@ const OVERPASS_URLS = [
   "https://overpass.private.coffee/api/interpreter"
 ];
 
-const _poiCache = new Map(); // key -> { ts, data }
 const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function _fetchOverpass(url, body, timeoutMs = 45000) {
@@ -638,9 +586,7 @@ async function _fetchOverpass(url, body, timeoutMs = 45000) {
   try {
     return await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
-      },
+      headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
       body: "data=" + encodeURIComponent(body),
       signal: ac.signal
     });
@@ -657,22 +603,15 @@ async function _runOverpassWithFailover(body, timeoutMs = 45000) {
     attempt++;
     try {
       const res = await _fetchOverpass(url, body, timeoutMs);
-
-      // читаем как текст ВСЕГДА, потому что иногда приходит HTML/XML
       const txt = await res.text();
 
       if (!res.ok) {
-        // покажем кусочек ответа — сильно помогает дебажить 429/504/503
         throw new Error(`Overpass ${res.status} @ ${url} :: ${txt.slice(0, 180)}`);
       }
 
-      // иногда content-type врёт, поэтому парсим “вручную”
       let json;
-      try {
-        json = JSON.parse(txt);
-      } catch {
-        throw new Error(`Overpass non-JSON @ ${url} :: ${txt.slice(0, 180)}`);
-      }
+      try { json = JSON.parse(txt); }
+      catch { throw new Error(`Overpass non-JSON @ ${url} :: ${txt.slice(0, 180)}`); }
 
       return json;
 
@@ -686,16 +625,8 @@ async function _runOverpassWithFailover(body, timeoutMs = 45000) {
   throw lastErr || new Error("Overpass failed (all endpoints)");
 }
 
-function _fillTemplate(q, vars){
-  return q
-    .replaceAll("{LAT}", String(vars.LAT))
-    .replaceAll("{LON}", String(vars.LON))
-    .replaceAll("{R}", String(vars.R));
-}
-
-function _ensurePOIsNotEmpty(pois, poiType, cityName) {
-  if (Array.isArray(pois) && pois.length) return pois;
-  throw new Error(`POI не найдены: «${POI_LABELS?.[poiType] || poiType}» в городе «${cityName}». Попробуй другой тип или увеличь радиус/смени город.`);
+function _escapeOverpassString(s){
+  return String(s || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"').trim();
 }
 
 function _normalizePOIs(json){
@@ -709,46 +640,43 @@ function _normalizePOIs(json){
   }).filter(Boolean);
 }
 
-/** POI in CITY AREA (без Turbo-макросов) */
+/**
+ * POI in city administrative area WITHOUT turbo macros
+ * poiType: key in POI_QUERIES
+ * cityName: "Москва"
+ * limit: <= 50
+ */
 async function fetchPOIsOverpassInCity(poiType, cityName, limit = 50){
   const t = String(poiType || "").trim();
   if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
 
-  const city = String(cityName || "").trim();
+  const city = _escapeOverpassString(cityName);
   if (!city) throw new Error("City is empty");
 
-  const safeLimit = Math.max(1, Math.min(50, Number(limit || 50))); // <= 50
+  const safeLimit = Math.max(1, Math.min(50, Number(limit || 50)));
 
-  const qArea = String(POI_QUERIES[t])
-    .replaceAll("nwr(around:{R},{LAT},{LON})", "nwr(area.a)");
-
+  // Ищем area по name или name:ru, на разных admin_level (город/регион) — берём что найдём
   const body = `
     [out:json][timeout:40];
-    {{geocodeArea:${city}}}->.a;
     (
-      ${qArea}
+      area["boundary"="administrative"]["name"="${city}"];
+      area["boundary"="administrative"]["name:ru"="${city}"];
+    )->.cand;
+    .cand->.a;
+    (
+      ${POI_QUERIES[t]}
     );
     out center ${safeLimit};
   `;
 
   const json = await _runOverpassWithFailover(body, 55000);
-  const els = Array.isArray(json.elements) ? json.elements : [];
+  const pois = _normalizePOIs(json).slice(0, safeLimit);
 
-  const pois = els.map(el => {
-    const name = el.tags?.name || "";
-    const lat0 = Number(el.lat ?? el.center?.lat);
-    const lon0 = Number(el.lon ?? el.center?.lon);
-    if (!Number.isFinite(lat0) || !Number.isFinite(lon0)) return null;
-    return { id: `${el.type}/${el.id}`, name, lat: lat0, lon: lon0, raw: el };
-  }).filter(Boolean);
-
-  const sliced = pois.slice(0, safeLimit);
-
-  if (!sliced.length) {
-    throw new Error(`POI не найдены: «${POI_LABELS?.[t] || t}» в городе «${city}». Попробуй другой тип.`);
+  if (!pois.length) {
+    throw new Error(`POI не найдены: «${POI_LABELS?.[t] || t}» в городе «${cityName}». Попробуй другой тип.`);
   }
 
-  return sliced;
+  return pois;
 }
 
 function pickScreensNearPOIs(screens, pois, radiusMeters){
@@ -772,7 +700,7 @@ function pickScreensNearPOIs(screens, pois, radiusMeters){
   return picked;
 }
 
-// ===== MAIN click handler =====
+// ===== MAIN =====
 async function onCalcClick(){
   const brief = buildBrief();
 
@@ -790,7 +718,6 @@ async function onCalcClick(){
   }
 
   const city = brief.geo.city;
-
   let pool = state.screens.filter(s => s.city === city);
 
   let selectedFormatsText = "—";
@@ -809,184 +736,50 @@ async function onCalcClick(){
     return;
   }
 
-  // ===== near_address =====
-  let geoResult = null;
-  if (brief.selection.mode === "near_address") {
-    if (!window.GeoUtils?.geocodeAddress || !window.GeoUtils?.filterByRadius) {
+  // ===== POI MODE =====
+  if (brief.selection.mode === "poi") {
+    if (!window.GeoUtils?.haversineMeters) {
       alert("GeoUtils не найден. Проверь подключение geo.js");
       return;
     }
 
-    const addr = String(brief.selection.address || "").trim();
-    const radius = Number(brief.selection.radius_m || 500);
+    const poiType = String(brief.selection.poi_type || "").trim();
+    const screenRadius = Number(brief.selection.radius_m || 500);
 
-    if (!addr) { alert("Введите адрес."); return; }
+    setStatus(`Ищу POI: ${POI_LABELS?.[poiType] || poiType}…`);
 
-    const query = `${city}, ${addr}`;
-    setStatus(`Ищу адрес: ${query}`);
-
+    let pois = [];
     try {
-      geoResult = await GeoUtils.geocodeAddress(query);
+      // IMPORTANT: тут больше нет center/poiSearchR — geocodeArea не используем
+      pois = await fetchPOIsOverpassInCity(poiType, city, 50);
     } catch (e) {
-      console.error("[geo] error:", e);
-      alert("Ошибка геокодинга (сервис недоступен).");
+      console.error("[poi] error:", e);
+      alert(e?.message || "Ошибка Overpass (OSM). Попробуй ещё раз.");
       setStatus("");
       return;
     }
 
-    if (!geoResult || !Number.isFinite(geoResult.lat) || !Number.isFinite(geoResult.lon)) {
-      alert("Адрес не найден. Уточните улицу и дом.");
-      setStatus("");
-      return;
-    }
-
-    setStatus(`Найдено: ${geoResult.display_name}`);
-
-    const before = pool.length;
-    pool = GeoUtils.filterByRadius(pool, geoResult.lat, geoResult.lon, radius);
-
-    if (!pool.length) {
-      alert("В этом радиусе нет экранов (или у них нет координат lat/lon).");
-      setStatus("");
-      return;
-    }
-
-    setStatus(`Экраны в радиусе: ${pool.length} из ${before}`);
-
-    brief.selection.address_display = geoResult.display_name;
-    brief.selection.address_lat = geoResult.lat;
-    brief.selection.address_lon = geoResult.lon;
-  }
-
-// ===== POI =====
-if (brief.selection.mode === "poi") {
-  if (!window.GeoUtils?.haversineMeters) {
-    alert("GeoUtils не найден. Проверь подключение geo.js");
-    return;
-  }
-
-  const poiType = String(brief.selection.poi_type || "").trim();
-  const screenRadius = Number(brief.selection.radius_m || 500);
-
-  const center = cityCenterFromScreens(pool);
-  if (!center) {
-    alert("Для POI-подбора нужны координаты экранов (lat/lon) в этом городе.");
-    return;
-  }
-
-  const CITY_POI_RADIUS_M = { "Москва": 25000, "Санкт-Петербург": 25000, "Казань": 15000 };
-  const poiSearchR = CITY_POI_RADIUS_M[city] || 15000;
-
-  setStatus(`Ищу POI: ${POI_LABELS?.[poiType] || poiType}…`);
-
-  let pois = [];
-
-  try {
-    pois = await fetchPOIsOverpassInCity(poiType, city, center.lat, center.lon, poiSearchR, 50);
-
-    if (!pois.length) {
-      throw new Error("POI не найдены для выбранного типа");
-    }
-
-    // сохраняем в бриф сразу (до фильтрации/рендера)
-    brief.selection.poi_found = pois.length;
-    brief.selection.poi_center_lat = center.lat;
-    brief.selection.poi_center_lon = center.lon;
-    brief.selection.poi_search_radius_m = poiSearchR;
-    brief.selection.poi_screen_radius_m = screenRadius;
-
-    // 1️⃣ карта: POI + экраны города (если есть функция)
-    if (typeof window.PLANNER?.renderPlannerMap === "function") {
-      window.PLANNER.renderPlannerMap({ screens: pool, pois });
-    }
-
-  } catch (e) {
-    console.error("[poi] error:", e);
-    alert(e?.message || "Ошибка Overpass (OSM). Попробуй ещё раз.");
-    setStatus("");
-    return;
-  }
-
-  // 2️⃣ фильтруем экраны вокруг POI
-  const before = pool.length;
-  pool = pickScreensNearPOIs(pool, pois, screenRadius);
-
-  if (!pool.length) {
-    alert("В радиусе вокруг найденных POI нет экранов (или у экранов нет lat/lon).");
-    setStatus("");
-    return;
-  }
-
-  setStatus(`Экраны у POI: ${pool.length} из ${before} (POI: ${pois.length})`);
-}
-  // ===== route =====
-  if (brief.selection.mode === "route") {
-    if (!window.GeoUtils?.geocodeAddress) {
-      alert("GeoUtils не найден. Проверь подключение geo.js");
-      return;
-    }
-
-    const from = String(brief.selection.from || "").trim();
-    const to   = String(brief.selection.to || "").trim();
-    const radius = Number(brief.selection.radius_m || 300);
-
-    if (!from || !to) {
-      alert("Введите обе точки маршрута (А и Б).");
-      return;
-    }
-
-    setStatus("Геокодирую маршрут…");
-
-    let geoA, geoB;
-    try {
-      geoA = await GeoUtils.geocodeAddress(`${city}, ${from}`);
-      geoB = await GeoUtils.geocodeAddress(`${city}, ${to}`);
-    } catch (e) {
-      console.error("[route] geocode error:", e);
-      alert("Ошибка геокодинга маршрута (сервис недоступен).");
-      setStatus("");
-      return;
-    }
-
-    if (!geoA || !Number.isFinite(geoA.lat) || !Number.isFinite(geoA.lon)) {
-      alert("Точка А не найдена. Уточните адрес.");
-      setStatus("");
-      return;
-    }
-    if (!geoB || !Number.isFinite(geoB.lat) || !Number.isFinite(geoB.lon)) {
-      alert("Точка Б не найдена. Уточните адрес.");
-      setStatus("");
-      return;
-    }
-
-    const before = pool.length;
-    pool = filterByRouteCorridor(pool, geoA.lat, geoA.lon, geoB.lat, geoB.lon, radius);
-
-    // ✅ сохранить POI для кнопок выгрузки + показать список
-    window.PLANNER = window.PLANNER || {};
+    // сохранить для выгрузки + включить кнопки
     window.PLANNER.lastPOIs = pois;
 
-    const b1 = document.getElementById("download-poi-csv");
-    const b2 = document.getElementById("download-poi-xlsx");
+    const b1 = el("download-poi-csv");
+    const b2 = el("download-poi-xlsx");
     if (b1) b1.disabled = !pois.length;
     if (b2) b2.disabled = !pois.length;
 
     renderPOIList(pois);
 
-    brief.selection.route_from_display = geoA.display_name || from;
-    brief.selection.route_to_display   = geoB.display_name || to;
-    brief.selection.route_from_lat = geoA.lat;
-    brief.selection.route_from_lon = geoA.lon;
-    brief.selection.route_to_lat   = geoB.lat;
-    brief.selection.route_to_lon   = geoB.lon;
+    // фильтруем экраны вокруг POI
+    const before = pool.length;
+    pool = pickScreensNearPOIs(pool, pois, screenRadius);
 
     if (!pool.length) {
-      alert("В коридоре маршрута нет экранов (или у них нет lat/lon).");
+      alert("В радиусе вокруг найденных POI нет экранов (или у экранов нет lat/lon).");
       setStatus("");
       return;
     }
 
-    setStatus(`Экраны вдоль маршрута: ${pool.length} из ${before}`);
+    setStatus(`Экраны у POI: ${pool.length} из ${before} (POI: ${pois.length})`);
   }
 
   // ===== GRP filter (optional) =====
@@ -1010,6 +803,7 @@ if (brief.selection.mode === "poi") {
     grpWarning = `⚠️ GRP-фильтр включён: экраны без GRP исключены (без GRP: ${grpDroppedNoValue}).`;
   }
 
+  // ===== CALC =====
   const avgBid = avgNumber(pool.map(s => s.minBid));
   if(avgBid == null){
     alert("Не могу посчитать: у выбранных экранов нет minBid.");
@@ -1021,7 +815,6 @@ if (brief.selection.mode === "poi") {
 
   const days = daysInclusive(brief.dates.start, brief.dates.end);
   const hpd = hoursPerDay(brief.schedule);
-
   if(days <= 0 || hpd <= 0){
     alert("Проверь даты/расписание.");
     return;
@@ -1060,13 +853,6 @@ if (brief.selection.mode === "poi") {
   const nf = (n) => Math.floor(n).toLocaleString("ru-RU");
   const of = (n) => Math.round(n).toLocaleString("ru-RU");
 
-  const selectionLine =
-    brief.selection.mode === "near_address"
-      ? `— Адрес: ${(brief.selection.address_display || brief.selection.address || "—")} (радиус: ${brief.selection.radius_m || 500} м)\n`
-      : brief.selection.mode === "route"
-        ? `— Маршрут: ${(brief.selection.route_from_display || brief.selection.from || "—")} → ${(brief.selection.route_to_display || brief.selection.to || "—")} (коридор: ${brief.selection.radius_m || 300} м)\n`
-        : "";
-
   const summaryText =
 `Бриф:
 — Бюджет: ${budget.toLocaleString("ru-RU")} ₽
@@ -1075,10 +861,10 @@ if (brief.selection.mode === "poi") {
 — Город: ${city}
 — Форматы: ${selectedFormatsText}
 — Подбор: ${brief.selection.mode}
-${selectionLine}— GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${brief.grp.max.toFixed(2)}` : "не учитываем"}
+— GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${brief.grp.max.toFixed(2)}` : "не учитываем"}
 
 Расчёт через minBid:
-— Средний minBid: ${bidPlus20.toFixed(2)} ₽
+— Средний minBid(+20%): ${bidPlus20.toFixed(2)} ₽
 — Выходов всего: ${nf(totalPlaysEffective)}
 — Выходов/день: ${nf(playsPerDay)}
 — Выходов/час (в сумме): ${nf(playsPerHourTotal)}
@@ -1164,12 +950,6 @@ function bindPlannerUI() {
     });
   }
 
-  const poiCsvBtn = el("download-poi-csv");
-  if (poiCsvBtn) poiCsvBtn.addEventListener("click", () => downloadPOIsCSV(window.PLANNER.lastPOIs || []));
-
-  const poiXlsxBtn = el("download-poi-xlsx");
-  if (poiXlsxBtn) poiXlsxBtn.addEventListener("click", () => downloadPOIsXLSX(window.PLANNER.lastPOIs || []));
-
   const selectionMode = el("selection-mode");
   if (selectionMode) selectionMode.addEventListener("change", renderSelectionExtra);
 
@@ -1179,93 +959,22 @@ function bindPlannerUI() {
   const downloadBtn = el("download-csv");
   if (downloadBtn) downloadBtn.addEventListener("click", () => downloadXLSX(state.lastChosen));
 
+  const poiCsvBtn = el("download-poi-csv");
+  if (poiCsvBtn) {
+    poiCsvBtn.disabled = true;
+    poiCsvBtn.addEventListener("click", () => downloadPOIsCSV(window.PLANNER.lastPOIs || []));
+  }
+
+  const poiXlsxBtn = el("download-poi-xlsx");
+  if (poiXlsxBtn) {
+    poiXlsxBtn.disabled = true;
+    poiXlsxBtn.addEventListener("click", () => downloadPOIsXLSX(window.PLANNER.lastPOIs || []));
+  }
+
   const calcBtn = el("calc-btn");
   if (calcBtn) calcBtn.addEventListener("click", () => onCalcClick());
 }
-// ===== MAP (Leaflet) =====
-function ensureLeafletMap() {
-  const mapEl = document.getElementById("planner-map");
-  if (!mapEl) return null;
 
-  if (!window.L) {
-    console.warn("[map] Leaflet not found (window.L is missing)");
-    return null;
-  }
-
-  const map = L.map(mapEl, { zoomControl: true });
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: "&copy; OpenStreetMap"
-  }).addTo(map);
-
-  // слои
-  window.PLANNER._layerScreens = L.layerGroup().addTo(map);
-  window.PLANNER._layerPOI = L.layerGroup().addTo(map);
-
-  // дефолтный вид
-  map.setView([55.751244, 37.618423], 11);
-
-  // важно для Tilda (DOM/блоки часто “дорисовываются” позже)
-  setTimeout(() => map.invalidateSize(), 250);
-
-  window.PLANNER._leafletMap = map;
-  return map;
-}
-
-function renderPlannerMap({ screens = [], pois = [] } = {}) {
-  const map = ensureLeafletMap();
-  if (!map) return;
-
-  const ls = window.PLANNER._layerScreens;
-  const lp = window.PLANNER._layerPOI;
-  ls.clearLayers();
-  lp.clearLayers();
-
-  const bounds = [];
-
-  // экраны — синие кружки
-  (screens || []).forEach(s => {
-    const lat = Number(s.lat), lon = Number(s.lon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-
-    const m = L.circleMarker([lat, lon], {
-      radius: 4,
-      weight: 1,
-      opacity: 0.9,
-      fillOpacity: 0.7
-    }).addTo(ls);
-
-    m.bindPopup(`<b>Экран</b><br>${s.screen_id || ""}<br>${s.address || ""}`);
-    bounds.push([lat, lon]);
-  });
-
-  // POI — красные кружки
-  (pois || []).slice(0, 50).forEach(p => {
-    const lat = Number(p.lat), lon = Number(p.lon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-
-    const m = L.circleMarker([lat, lon], {
-      radius: 5,
-      weight: 1,
-      opacity: 0.9,
-      fillOpacity: 0.7
-    }).addTo(lp);
-
-    m.bindPopup(`<b>POI</b><br>${(p.name || "без названия")}`);
-    bounds.push([lat, lon]);
-  });
-
-  if (bounds.length) {
-    map.fitBounds(bounds, { padding: [20, 20] });
-  }
-
-  // ещё раз — на случай если карта была в невидимом блоке
-  setTimeout(() => map.invalidateSize(), 250);
-}
-
-// экспорт для теста из консоли
-window.PLANNER.renderPlannerMap = renderPlannerMap;
-window.PLANNER.ensureLeafletMap = ensureLeafletMap;
 // ===== START =====
 async function startPlanner() {
   renderSelectionExtra();
@@ -1287,20 +996,17 @@ if (document.readyState === "loading") {
 }
 
 // ===== EXPORTS =====
-
 Object.assign(window.PLANNER, {
-  // state / init
   state,
   loadScreens,
   startPlanner,
   bootPlanner,
-
-  // poi
   fetchPOIsOverpassInCity,
   pickScreensNearPOIs,
-  
-  // debug
-  _sleep,
+  cityCenterFromScreens,
+  downloadPOIsCSV,
+  downloadPOIsXLSX,
+  renderPOIList,
   _fetchOverpass,
   _runOverpassWithFailover
 });
