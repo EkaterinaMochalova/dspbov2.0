@@ -1153,6 +1153,12 @@ function bindPlannerUI() {
     });
   }
 
+  const poiCsvBtn = el("download-poi-csv");
+  if (poiCsvBtn) poiCsvBtn.addEventListener("click", () => downloadPOIsCSV(window.PLANNER.lastPOIs || []));
+
+  const poiXlsxBtn = el("download-poi-xlsx");
+  if (poiXlsxBtn) poiXlsxBtn.addEventListener("click", () => downloadPOIsXLSX(window.PLANNER.lastPOIs || []));
+
   const selectionMode = el("selection-mode");
   if (selectionMode) selectionMode.addEventListener("change", renderSelectionExtra);
 
