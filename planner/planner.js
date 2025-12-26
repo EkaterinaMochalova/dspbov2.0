@@ -962,6 +962,17 @@ if (brief.selection.mode === "poi") {
     const before = pool.length;
     pool = filterByRouteCorridor(pool, geoA.lat, geoA.lon, geoB.lat, geoB.lon, radius);
 
+    // ✅ сохранить POI для кнопок выгрузки + показать список
+    window.PLANNER = window.PLANNER || {};
+    window.PLANNER.lastPOIs = pois;
+
+    const b1 = document.getElementById("download-poi-csv");
+    const b2 = document.getElementById("download-poi-xlsx");
+    if (b1) b1.disabled = !pois.length;
+    if (b2) b2.disabled = !pois.length;
+
+    renderPOIList(pois);
+
     brief.selection.route_from_display = geoA.display_name || from;
     brief.selection.route_to_display   = geoB.display_name || to;
     brief.selection.route_from_lat = geoA.lat;
