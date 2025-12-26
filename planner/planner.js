@@ -296,104 +296,7 @@ async function loadScreens(){
   window.dispatchEvent(new CustomEvent("planner:screens-ready", { detail: { count: state.screens.length } }));
 }
 
-// ===== MAP (Leaflet) =====
-let _leafletMap = null;
-let _layerScreens = null;
-let _layerPOI = null;
 
-function _ensureMap(){
-  const el = document.getElementById("planner-map");
-  if (!el) return null;
-
-  if (!_leafletMap) {
-    if (!window.L) throw new Error("Leaflet (L) не найден. Проверь подключение leaflet.js");
-
-    _leafletMap = L.map(el, { zoomControl: true }).setView([55.751244, 37.618423], 11);
-
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: "&copy; OpenStreetMap"
-    }).addTo(_leafletMap);
-
-    _layerScreens = L.layerGroup().addTo(_leafletMap);
-    _layerPOI = L.layerGroup().addTo(_leafletMap);
-  }
-
-  return _leafletMap;
-}
-
-function _clearMapLayers(){
-  if (_layerScreens) _layerScreens.clearLayers();
-  if (_layerPOI) _layerPOI.clearLayers();
-}
-
-function _fitToLayers(){
-  const bounds = [];
-  if (_layerScreens) _layerScreens.eachLayer(l => l.getLatLng && bounds.push(l.getLatLng()));
-  if (_layerPOI) _layerPOI.eachLayer(l => l.getLatLng && bounds.push(l.getLatLng()));
-
-  if (bounds.length && _leafletMap) {
-    const b = L.latLngBounds(bounds);
-    _leafletMap.fitBounds(b.pad(0.15));
-  }
-}
-
-/**
- * Рисуем:
- * - screens: кружки одного цвета
- * - pois: кружки другого цвета
- */
-function renderMapScreensAndPOI(screens, pois){
-  const map = _ensureMap();
-  if (!map) return; // нет контейнера — тихо выходим
-
-  _clearMapLayers();
-
-  // ЭКРАНЫ (например: синий)
-  for (const s of (screens || [])) {
-    const lat = Number(s.lat), lon = Number(s.lon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-
-    const title =
-      `<b>Экран</b><br>` +
-      `GID: ${String(s.screen_id || "")}<br>` +
-      `Формат: ${String(s.format || "")}<br>` +
-      `Адрес: ${String(s.address || "")}`;
-
-    L.circleMarker([lat, lon], {
-      radius: 5,
-      weight: 1,
-      opacity: 1,
-      fillOpacity: 0.7
-    }).bindPopup(title).addTo(_layerScreens);
-  }
-
-  // POI (например: оранжевый)
-  for (const p of (pois || [])) {
-    const lat = Number(p.lat), lon = Number(p.lon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-
-    const title =
-      `<b>POI</b><br>` +
-      `${String(p.name || "—")}<br>` +
-      `${String(p.id || "")}`;
-
-    L.circleMarker([lat, lon], {
-      radius: 6,
-      weight: 1,
-      opacity: 1,
-      fillOpacity: 0.85
-    }).bindPopup(title).addTo(_layerPOI);
-  }
-
-  // Цвета отдельно (чтобы не задавать их “магией” в options выше — но можно и там)
-  // Leaflet circleMarker не имеет прямых “className” везде одинаково,
-  // поэтому зададим цвета через setStyle:
-  _layerScreens.eachLayer(l => l.setStyle && l.setStyle({ color: "#2563eb", fillColor: "#2563eb" }));
-  _layerPOI.eachLayer(l => l.setStyle && l.setStyle({ color: "#f97316", fillColor: "#f97316" }));
-
-  _fitToLayers();
-}
 
 // Экспорт для отладки
 window.PLANNER = window.PLANNER || {};
@@ -1188,7 +1091,95 @@ function bindPlannerUI() {
   const calcBtn = el("calc-btn");
   if (calcBtn) calcBtn.addEventListener("click", () => onCalcClick());
 }
+// ===== MAP (Leaflet) =====
+function ensureLeafletMap() {
+  const mapEl = document.getElementById("planner-map");
+  if (!mapEl) return null;
 
+  if (!window.L) {
+    console.warn("[map] Leaflet not found (window.L is missing)");
+    return null;
+  }
+
+  // создаём карту 1 раз
+  window.PLANNER = window.PLANNER || {};
+  if (window.PLANNER._leafletMap) return window.PLANNER._leafletMap;
+
+  const map = L.map(mapEl, { zoomControl: true });
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap"
+  }).addTo(map);
+
+  // слои
+  window.PLANNER._layerScreens = L.layerGroup().addTo(map);
+  window.PLANNER._layerPOI = L.layerGroup().addTo(map);
+
+  // дефолтный вид
+  map.setView([55.751244, 37.618423], 11);
+
+  // важно для Tilda (DOM/блоки часто “дорисовываются” позже)
+  setTimeout(() => map.invalidateSize(), 250);
+
+  window.PLANNER._leafletMap = map;
+  return map;
+}
+
+function renderPlannerMap({ screens = [], pois = [] } = {}) {
+  const map = ensureLeafletMap();
+  if (!map) return;
+
+  const ls = window.PLANNER._layerScreens;
+  const lp = window.PLANNER._layerPOI;
+  ls.clearLayers();
+  lp.clearLayers();
+
+  const bounds = [];
+
+  // экраны — синие кружки
+  (screens || []).forEach(s => {
+    const lat = Number(s.lat), lon = Number(s.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+    const m = L.circleMarker([lat, lon], {
+      radius: 4,
+      weight: 1,
+      opacity: 0.9,
+      fillOpacity: 0.7
+    }).addTo(ls);
+
+    m.bindPopup(`<b>Экран</b><br>${s.screen_id || ""}<br>${s.address || ""}`);
+    bounds.push([lat, lon]);
+  });
+
+  // POI — красные кружки
+  (pois || []).slice(0, 50).forEach(p => {
+    const lat = Number(p.lat), lon = Number(p.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+    const m = L.circleMarker([lat, lon], {
+      radius: 5,
+      weight: 1,
+      opacity: 0.9,
+      fillOpacity: 0.7
+    }).addTo(lp);
+
+    m.bindPopup(`<b>POI</b><br>${(p.name || "без названия")}`);
+    bounds.push([lat, lon]);
+  });
+
+  if (bounds.length) {
+    map.fitBounds(bounds, { padding: [20, 20] });
+  }
+
+  // ещё раз — на случай если карта была в невидимом блоке
+  setTimeout(() => map.invalidateSize(), 250);
+}
+
+// экспорт для теста из консоли
+window.PLANNER = window.PLANNER || {};
+window.PLANNER.renderPlannerMap = renderPlannerMap;
+window.PLANNER.ensureLeafletMap = ensureLeafletMap;
 // ===== START =====
 async function startPlanner() {
   renderSelectionExtra();
