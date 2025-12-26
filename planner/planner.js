@@ -792,61 +792,72 @@ async function onCalcClick(){
   // показываем на карте: (а) экраны в пуле после фильтра, (б) найденные POI
   try { renderMapScreensAndPOI(pool, pois); } catch (e) { console.warn("[map] render failed:", e); }
 
-  // ===== POI =====
-  if (brief.selection.mode === "poi") {
-    if (!window.GeoUtils?.haversineMeters) {
-      alert("GeoUtils не найден. Проверь подключение geo.js");
-      return;
+// ===== POI =====
+if (brief.selection.mode === "poi") {
+  if (!window.GeoUtils?.haversineMeters) {
+    alert("GeoUtils не найден. Проверь подключение geo.js");
+    return;
+  }
+
+  const poiType = String(brief.selection.poi_type || "").trim();
+  const screenRadius = Number(brief.selection.radius_m || 500);
+
+  const center = cityCenterFromScreens(pool);
+  if (!center) {
+    alert("Для POI-подбора нужны координаты экранов (lat/lon) в этом городе.");
+    return;
+  }
+
+  const CITY_POI_RADIUS_M = { "Москва": 25000, "Санкт-Петербург": 25000, "Казань": 15000 };
+  const poiSearchR = CITY_POI_RADIUS_M[city] || 15000;
+
+  setStatus(`Ищу POI: ${POI_LABELS?.[poiType] || poiType}…`);
+
+  let pois = [];
+
+  try {
+    pois = await fetchPOIsForCity(poiType, city, center.lat, center.lon, poiSearchR, 50);
+
+    if (!pois.length) {
+      throw new Error("POI не найдены для выбранного типа");
     }
 
-    const poiType = String(brief.selection.poi_type || "").trim();
-    const screenRadius = Number(brief.selection.radius_m || 500);
-
-    const center = cityCenterFromScreens(pool);
-    if (!center) {
-      alert("Для POI-подбора нужны координаты экранов (lat/lon) в этом городе.");
-      return;
-    }
-
-    const CITY_POI_RADIUS_M = { "Москва": 25000, "Санкт-Петербург": 25000, "Казань": 15000 };
-    const poiSearchR = CITY_POI_RADIUS_M[city] || 15000;
-
-    setStatus(`Ищу POI: ${POI_LABELS?.[poiType] || poiType}…`);
-
-    let pois = [];
-    try {
-      pois = await fetchPOIsForCity(poiType, city, center.lat, center.lon, poiSearchR, 500);
-    } catch (e) {
-      console.error("[poi] error:", e);
-      alert(e?.message || "Ошибка Overpass (OSM). Попробуй ещё раз.");
-      setStatus("");
-      return;
-    }
-
+    // сохраняем в бриф сразу (до фильтрации/рендера)
     brief.selection.poi_found = pois.length;
     brief.selection.poi_center_lat = center.lat;
     brief.selection.poi_center_lon = center.lon;
     brief.selection.poi_search_radius_m = poiSearchR;
     brief.selection.poi_screen_radius_m = screenRadius;
 
-    if (!pois.length) {
-      alert("POI не найдены. Попробуй другой тип.");
-      setStatus("");
-      return;
+    // 1️⃣ карта: POI + экраны города (если есть функция)
+    if (typeof window.renderPlannerMap === "function") {
+      renderPlannerMap({ screens: pool, pois });
     }
 
-    const before = pool.length;
-    pool = pickScreensNearPOIs(pool, pois, screenRadius);
-
-    if (!pool.length) {
-      alert("В радиусе вокруг найденных POI нет экранов (или у экранов нет lat/lon).");
-      setStatus("");
-      return;
-    }
-
-    setStatus(`Экраны у POI: ${pool.length} из ${before} (POI: ${pois.length})`);
+  } catch (e) {
+    console.error("[poi] error:", e);
+    alert(e?.message || "Ошибка Overpass (OSM). Попробуй ещё раз.");
+    setStatus("");
+    return;
   }
 
+  // 2️⃣ фильтруем экраны вокруг POI
+  const before = pool.length;
+  pool = pickScreensNearPOIs(pool, pois, screenRadius);
+
+  if (!pool.length) {
+    alert("В радиусе вокруг найденных POI нет экранов (или у экранов нет lat/lon).");
+    setStatus("");
+    return;
+  }
+
+  // 3️⃣ карта: финальный результат
+  if (typeof window.renderPlannerMap === "function") {
+    renderPlannerMap({ screens: pool, pois });
+  }
+
+  setStatus(`Экраны у POI: ${pool.length} из ${before} (POI: ${pois.length})`);
+}
   // ===== route =====
   if (brief.selection.mode === "route") {
     if (!window.GeoUtils?.geocodeAddress) {
