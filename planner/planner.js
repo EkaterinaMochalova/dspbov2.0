@@ -289,6 +289,8 @@ async function loadScreens(){
   renderFormats();
   renderSelectedCity();
 
+  renderPlannerMap({ screens: state.screens.slice(0, 1000), pois: [] });
+
   setStatus(`Готово. Экранов: ${state.screens.length}. Городов: ${state.citiesAll.length}. Форматов: ${state.formatsAll.length}.`);
 
   // readiness signal
