@@ -703,6 +703,121 @@ function pickScreensNearPOIs(screens, pois, radiusMeters){
   return picked;
 }
 
+// ===== MAP (Leaflet) =====
+let _plannerMap = null;
+let _plannerMapLayers = { screens: null, pois: null };
+
+function _getPlannerMapEl() {
+  // на всякий случай берём первый (если вдруг дубль)
+  const els = document.querySelectorAll("#planner-map");
+  return els && els.length ? els[0] : null;
+}
+
+function _ensurePlannerMap() {
+  const mapEl = _getPlannerMapEl();
+  if (!mapEl) throw new Error("Не найден контейнер #planner-map");
+
+  if (!window.L) throw new Error("Leaflet (window.L) не найден. Проверь подключение leaflet.js");
+
+  // если уже есть карта — просто вернём
+  if (_plannerMap) return _plannerMap;
+
+  // создать карту
+  _plannerMap = L.map(mapEl, {
+    zoomControl: true,
+    scrollWheelZoom: false,
+  });
+
+  // тайлы (OSM)
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(_plannerMap);
+
+  // группы слоёв
+  _plannerMapLayers.screens = L.layerGroup().addTo(_plannerMap);
+  _plannerMapLayers.pois    = L.layerGroup().addTo(_plannerMap);
+
+  // дефолтный вид
+  _plannerMap.setView([55.751244, 37.618423], 10);
+
+  // Tilda/рендер: иногда контейнер готов, но размеры “оседают” позже
+  setTimeout(() => _plannerMap.invalidateSize(true), 50);
+  setTimeout(() => _plannerMap.invalidateSize(true), 250);
+
+  return _plannerMap;
+}
+
+function renderPlannerMap({ screens = [], pois = [] } = {}) {
+  const map = _ensurePlannerMap();
+
+  // очистка
+  _plannerMapLayers.screens.clearLayers();
+  _plannerMapLayers.pois.clearLayers();
+
+  const screenPts = [];
+  const poiPts = [];
+
+  // экраны (одним цветом)
+  for (const s of (screens || [])) {
+    const lat = Number(s.lat), lon = Number(s.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+
+    const m = L.circleMarker([lat, lon], {
+      radius: 5,
+      weight: 1,
+      fillOpacity: 0.85,
+      // цвет экранов
+      color: "#2563eb",
+      fillColor: "#2563eb"
+    }).bindPopup(
+      `<b>Экран</b><br>` +
+      `GID: ${s.screen_id || ""}<br>` +
+      `Формат: ${s.format || ""}<br>` +
+      `Адрес: ${s.address || ""}`
+    );
+
+    _plannerMapLayers.screens.addLayer(m);
+    screenPts.push([lat, lon]);
+  }
+
+  // POI (другим цветом)
+  for (const p of (pois || [])) {
+    const lat = Number(p.lat), lon = Number(p.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+
+    const m = L.circleMarker([lat, lon], {
+      radius: 6,
+      weight: 2,
+      fillOpacity: 0.95,
+      // цвет POI
+      color: "#ef4444",
+      fillColor: "#ef4444"
+    }).bindPopup(
+      `<b>POI</b><br>` +
+      `${p.name ? `Название: ${p.name}<br>` : ""}` +
+      `ID: ${p.id || ""}`
+    );
+
+    _plannerMapLayers.pois.addLayer(m);
+    poiPts.push([lat, lon]);
+  }
+
+  // подгоняем зум
+  const allPts = [...screenPts, ...poiPts];
+  if (allPts.length) {
+    const b = L.latLngBounds(allPts);
+    map.fitBounds(b.pad(0.15));
+  }
+
+  // важно для Tilda
+  setTimeout(() => map.invalidateSize(true), 50);
+}
+
+// экспорт для консоли
+window.PLANNER = window.PLANNER || {};
+window.PLANNER.renderPlannerMap = renderPlannerMap;
+
 // ===== MAIN click handler =====
 async function onCalcClick(){
   const brief = buildBrief();
