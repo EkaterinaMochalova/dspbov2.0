@@ -300,10 +300,6 @@ async function loadScreens(){
 }
 
 
-
-// Экспорт для отладки
-window.PLANNER = window.PLANNER || {};
-
 // ===== UI: formats =====
 function renderFormats(){
   const wrap = el("formats-wrap");
@@ -1106,10 +1102,6 @@ function ensureLeafletMap() {
     return null;
   }
 
-  // создаём карту 1 раз
-  window.PLANNER = window.PLANNER || {};
-  if (window.PLANNER._leafletMap) return window.PLANNER._leafletMap;
-
   const map = L.map(mapEl, { zoomControl: true });
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
@@ -1182,7 +1174,6 @@ function renderPlannerMap({ screens = [], pois = [] } = {}) {
 }
 
 // экспорт для теста из консоли
-window.PLANNER = window.PLANNER || {};
 window.PLANNER.renderPlannerMap = renderPlannerMap;
 window.PLANNER.ensureLeafletMap = ensureLeafletMap;
 // ===== START =====
@@ -1206,7 +1197,7 @@ if (document.readyState === "loading") {
 }
 
 // ===== EXPORTS =====
-window.PLANNER = window.PLANNER || {};
+
 Object.assign(window.PLANNER, {
   // state / init
   state,
