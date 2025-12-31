@@ -453,6 +453,37 @@ function buildBrief(){
   return brief;
 }
 
+async function loadTiers(){
+  try {
+    const res = await fetch(TIERS_JSON_URL, { cache: "no-store" });
+    if(!res.ok) throw new Error("tiers json http " + res.status);
+    const json = await res.json();
+
+    // ожидаем { tiers: {city: tier} }
+    const tiers = json?.tiers && typeof json.tiers === "object" ? json.tiers : null;
+    if(!tiers) throw new Error("tiers json has no 'tiers' object");
+
+    window.PLANNER.tiers = tiers;
+    window.PLANNER.tiersMeta = {
+      version: json?.version || "unknown",
+      generated_at: json?.generated_at || null
+    };
+
+    console.log("[tiers] loaded:", Object.keys(tiers).length, "cities", window.PLANNER.tiersMeta);
+    return true;
+  } catch(e){
+    console.warn("[tiers] load failed:", e);
+    window.PLANNER.tiers = {}; // чтобы код дальше не падал
+    window.PLANNER.tiersMeta = { version: "missing", generated_at: null };
+    return false;
+  }
+}
+
+function getTierForCity(city){
+  const t = window.PLANNER?.tiers?.[city];
+  return (t === "A" || t === "B" || t === "C" || t === "D") ? t : "C"; // дефолт
+}
+
 // ===== Helpers =====
 function pickScreensByMinBid(screens, n){
   const sorted = [...screens].sort((a,b) => {
