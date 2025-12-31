@@ -7,6 +7,10 @@ window.PLANNER = window.PLANNER || {};
 const SCREENS_CSV_URL =
   "https://raw.githubusercontent.com/EkaterinaMochalova/dspbov2.0/planner/inventories_sync.csv";
 
+// ===== TIERS =====
+const TIERS_JSON_URL =
+  "https://raw.githubusercontent.com/EkaterinaMochalova/dspbov2.0/planner/tiers_v1.json";
+
 // ===== Labels =====
 const FORMAT_LABELS = {
   BILLBOARD: { label: "Билборды", desc: "экраны 3×6 м вдоль трасс" },
