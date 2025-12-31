@@ -100,6 +100,7 @@ const POI_LABELS = {
 const BID_MULTIPLIER = 1.2;
 const SC_OPT = 30;
 const SC_MAX = 60;
+const RECO_HOURS_PER_DAY = 12;  // для режима "нужна рекомендация"
 
 // ===== State =====
 const state = {
@@ -805,20 +806,51 @@ async function onCalcClick(){
 
   // ===== CALC =====
   const avgBid = avgNumber(pool.map(s => s.minBid));
-  if(avgBid == null){
-    alert("Не могу посчитать: у выбранных экранов нет minBid.");
-    return;
-  }
+if(avgBid == null){
+  alert("Не могу посчитать: у выбранных экранов нет minBid.");
+  return;
+}
 
-  const bidPlus20 = avgBid * BID_MULTIPLIER;
-  const budget = brief.budget.amount;
+const bidPlus20 = avgBid * BID_MULTIPLIER;
 
-  const days = daysInclusive(brief.dates.start, brief.dates.end);
-  const hpd = hoursPerDay(brief.schedule);
-  if(days <= 0 || hpd <= 0){
-    alert("Проверь даты/расписание.");
+// days обязателен и для fixed, и для reco (как ты просила: пока нет дней — нет рекомендации)
+const days = daysInclusive(brief.dates.start, brief.dates.end);
+if(!Number.isFinite(days) || days <= 0){
+  alert("Выберите корректные даты начала и окончания.");
+  return;
+}
+
+// hpd: для fixed — по выбранному расписанию, для reco — фикс 12 часов
+const hpdFixed = hoursPerDay(brief.schedule);
+if(!Number.isFinite(hpdFixed) || hpdFixed <= 0){
+  alert("Проверь расписание.");
+  return;
+}
+
+let budget = brief.budget.amount;
+
+// === RECO budget ===
+if(brief.budget.mode !== "fixed"){
+  const screensCount = pool.length;
+
+  // потолок по ёмкости: SC_MAX (60) * 12 часов * screens * days
+  const maxPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * screensCount * days);
+  const maxBudget = maxPlays * bidPlus20;
+
+  // базовый бюджет по Tier (подключим вашу таблицу tier — пока заглушка)
+  const tier = window.PLANNER?.tiers?.[city] || "C";
+  const baseByTier = { A: 2000000, B: 1000000, C: 500000, D: 200000 };
+  const baseBudget = baseByTier[tier] ?? 500000;
+
+  budget = Math.floor(Math.min(baseBudget, maxBudget));
+
+  if(!Number.isFinite(budget) || budget <= 0){
+    alert("Не получилось посчитать рекомендацию бюджета для выбранных условий.");
     return;
-  }
+}
+
+// hpd, который используется дальше в расчётах выходов/час и т.п.
+const hpd = (brief.budget.mode !== "fixed") ? RECO_HOURS_PER_DAY : hpdFixed;
 
   const totalPlaysTheory = Math.floor(budget / bidPlus20);
   const playsPerHourTotalTheory = totalPlaysTheory / days / hpd;
