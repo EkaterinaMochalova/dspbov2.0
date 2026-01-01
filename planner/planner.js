@@ -874,10 +874,13 @@ if(brief.budget.mode !== "fixed"){
 
   // базовый бюджет по Tier
   const tier = window.PLANNER?.tiers?.[city] || "C";
-  const baseByTier = { A: 2000000, B: 1000000, C: 500000, D: 200000 };
-  const baseBudget = baseByTier[tier] ?? 500000;
+  const BASE_MONTHLY_BY_TIER = { A: 2000000, B: 1000000, C: 500000, D: 200000 };
+  const DAYS_IN_MONTH = 30;
 
-  budget = Math.floor(Math.min(baseBudget, maxBudget));
+  const baseMonthly = BASE_MONTHLY_BY_TIER[tier] ?? 500000;
+  const baseBudgetForPeriod = Math.floor(baseMonthly * (days / DAYS_IN_MONTH));
+
+budget = Math.floor(Math.min(baseBudgetForPeriod, maxBudget));
 
   if(!Number.isFinite(budget) || budget <= 0){
     alert("Не получилось посчитать рекомендацию бюджета для выбранных условий.");
