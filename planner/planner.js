@@ -848,7 +848,7 @@ if(avgBid == null){
 
 const bidPlus20 = avgBid * BID_MULTIPLIER;
 
-// days обязателен и для fixed, и для reco (как ты просила: пока нет дней — нет рекомендации)
+// days обязателен и для fixed, и для reco
 const days = daysInclusive(brief.dates.start, brief.dates.end);
 if(!Number.isFinite(days) || days <= 0){
   alert("Выберите корректные даты начала и окончания.");
@@ -872,7 +872,7 @@ if(brief.budget.mode !== "fixed"){
   const maxPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * screensCount * days);
   const maxBudget = maxPlays * bidPlus20;
 
-  // базовый бюджет по Tier (подключим вашу таблицу tier — пока заглушка)
+  // базовый бюджет по Tier
   const tier = window.PLANNER?.tiers?.[city] || "C";
   const baseByTier = { A: 2000000, B: 1000000, C: 500000, D: 200000 };
   const baseBudget = baseByTier[tier] ?? 500000;
@@ -882,30 +882,32 @@ if(brief.budget.mode !== "fixed"){
   if(!Number.isFinite(budget) || budget <= 0){
     alert("Не получилось посчитать рекомендацию бюджета для выбранных условий.");
     return;
-}
+  }
+} // <-- ВОТ ЭТОЙ СКОБКИ У ТЕБЯ НЕ ХВАТАЛО
 
-// hpd, который используется дальше в расчётах выходов/час и т.п.
+// hpd, который используется дальше
 const hpd = (brief.budget.mode !== "fixed") ? RECO_HOURS_PER_DAY : hpdFixed;
 
-  const totalPlaysTheory = Math.floor(budget / bidPlus20);
-  const playsPerHourTotalTheory = totalPlaysTheory / days / hpd;
+// дальше твой расчёт без изменений
+const totalPlaysTheory = Math.floor(budget / bidPlus20);
+const playsPerHourTotalTheory = totalPlaysTheory / days / hpd;
 
-  const screensNeeded = Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_OPT));
-  const screensChosenCount = Math.min(pool.length, screensNeeded);
-  const chosen = pickScreensByMinBid(pool, screensChosenCount);
+const screensNeeded = Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_OPT));
+const screensChosenCount = Math.min(pool.length, screensNeeded);
+const chosen = pickScreensByMinBid(pool, screensChosenCount);
 
-  const playsPerHourPerScreen = playsPerHourTotalTheory / screensChosenCount;
+const playsPerHourPerScreen = playsPerHourTotalTheory / screensChosenCount;
 
-  let warning = "";
-  let totalPlaysEffective = totalPlaysTheory;
+let warning = "";
+let totalPlaysEffective = totalPlaysTheory;
 
-  if(playsPerHourPerScreen > SC_OPT && playsPerHourPerScreen <= SC_MAX){
-    warning = `⚠️ В среднем получается ${playsPerHourPerScreen.toFixed(1)} выходов/час на экран (выше оптимальных ${SC_OPT}). Выходов может быть меньше: ёмкость экранов ограничена.`;
-  } else if(playsPerHourPerScreen > SC_MAX){
-    const maxPlaysByCapacity = Math.floor(SC_MAX * screensChosenCount * days * hpd);
-    totalPlaysEffective = Math.min(totalPlaysTheory, maxPlaysByCapacity);
-    warning = `⚠️ На заданный бюджет не хватает ёмкости: максимум ${SC_MAX} выходов/час на экран. В расчёте показаны данные по ёмкости (часть бюджета может не утилизироваться).`;
-  }
+if(playsPerHourPerScreen > SC_OPT && playsPerHourPerScreen <= SC_MAX){
+  warning = `⚠️ В среднем получается ${playsPerHourPerScreen.toFixed(1)} выходов/час на экран (выше оптимальных ${SC_OPT}). Выходов может быть меньше: ёмкость экранов ограничена.`;
+} else if(playsPerHourPerScreen > SC_MAX){
+  const maxPlaysByCapacity = Math.floor(SC_MAX * screensChosenCount * days * hpd);
+  totalPlaysEffective = Math.min(totalPlaysTheory, maxPlaysByCapacity);
+  warning = `⚠️ На заданный бюджет не хватает ёмкости: максимум ${SC_MAX} выходов/час на экран. В расчёте показаны данные по ёмкости (часть бюджета может не утилизироваться).`;
+}
 
   const playsPerDay = totalPlaysEffective / days;
   const playsPerHourTotal = totalPlaysEffective / days / hpd;
