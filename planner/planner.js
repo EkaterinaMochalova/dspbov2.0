@@ -247,6 +247,7 @@ function renderSelectionExtra(){
 // ===== Data load =====
 async function loadScreens(){
   setStatus("Загружаю список экранов…");
+  console.log("[screens] url:", SCREENS_CSV_URL);
 
   const res = await fetch(SCREENS_CSV_URL, { cache: "no-store" });
   if(!res.ok) throw new Error("Не удалось загрузить CSV: " + res.status);
