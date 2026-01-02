@@ -5,7 +5,7 @@ window.PLANNER = window.PLANNER || {};
 
 // ===== CSV =====
 const SCREENS_CSV_URL =
-  "https://github.com/EkaterinaMochalova/dspbov2.0/raw/refs/heads/planner/inventories_sync.csv;
+  "https://github.com/EkaterinaMochalova/dspbov2.0/raw/refs/heads/planner/inventories_sync.csv";
 
 // ===== TIERS =====
 const TIERS_JSON_URL =
