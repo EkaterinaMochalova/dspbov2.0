@@ -757,15 +757,14 @@ async function onCalcClick(){
 
   const city = brief.geo.city;
   let pool = state.screens.filter(s => s.city === city);
+  const days = daysInclusive(brief.dates.start, brief.dates.end);
+  if(!Number.isFinite(days) || days <= 0){
+    alert("Выберите корректные даты начала и окончания.");
+    return;
+  }
 
-  const tier = getTierForCity(city);
-  const BASE_MONTHLY_BY_TIER = { A: 2000000, B: 1000000, C: 500000, D: 200000 };
-  const DAYS_IN_MONTH = 30;
+  
 
-  const baseMonthly = BASE_MONTHLY_BY_TIER[tier] ?? BASE_MONTHLY_BY_TIER.C;
-  const baseBudgetForPeriod = Math.floor(baseMonthly * (days / DAYS_IN_MONTH));
-
-budget = Math.floor(Math.min(baseBudgetForPeriod, maxBudget));
 
   let selectedFormatsText = "—";
   if(brief.formats.mode === "manual" && brief.formats.selected.length > 0){
