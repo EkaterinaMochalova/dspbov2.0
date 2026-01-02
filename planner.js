@@ -10,6 +10,10 @@ const SCREENS_CSV_URL =
 const TIERS_JSON_URL =
   "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@main/tiers_v1.json?v=" + Date.now();
 
+// ===== CITY -> REGION =====
+const CITY_REGIONS_URL =
+  "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@main/city_regions.json?v=" + Date.now();
+
 // ===== Labels =====
 const FORMAT_LABELS = {
   BILLBOARD: { label: "Билборды", desc: "экраны 3×6 м вдоль трасс" },
@@ -110,12 +114,14 @@ const state = {
   screens: [],
   citiesAll: [],
   formatsAll: [],
-  selectedCity: null,
+
+  regionsAll: [],
+  selectedRegion: null,
+
   selectedFormats: new Set(),
   lastChosen: []
 };
 window.PLANNER.state = state;
-
 // ===== Utils =====
 function el(id){ return document.getElementById(id); }
 
@@ -243,6 +249,33 @@ function renderSelectionExtra(){
   }
 }
 
+async function loadCityRegions(){
+  try {
+    const res = await fetch(CITY_REGIONS_URL, { cache: "no-store" });
+    if(!res.ok) throw new Error("city_regions http " + res.status);
+
+    const json = await res.json();
+    const regions = json?.regions && typeof json.regions === "object" ? json.regions : null;
+    if(!regions) throw new Error("city_regions has no 'regions' object");
+
+    window.PLANNER.cityRegions = regions;
+    window.PLANNER.cityRegionsMeta = json?.meta || null;
+
+    console.log("[city_regions] loaded:", Object.keys(regions).length);
+    return true;
+  } catch (e) {
+    console.warn("[city_regions] load failed:", e);
+    window.PLANNER.cityRegions = {};
+    window.PLANNER.cityRegionsMeta = null;
+    return false;
+  }
+}
+
+function getRegionForCity(city){
+  const r = window.PLANNER?.cityRegions?.[city];
+  return (typeof r === "string" && r.trim()) ? r.trim() : "Не назначено";
+}
+
 // ===== Data load =====
 async function loadScreens(){
   setStatus("Загружаю список экранов…");
@@ -257,6 +290,7 @@ async function loadScreens(){
 
   state.screens = rows.map(r => {
     const city = String(r.city ?? r.City ?? r.CITY ?? "").trim();
+    const region = getRegionForCity(city);
     const format = String(r.format ?? r.Format ?? r.FORMAT ?? "").trim();
     const address = String(r.address ?? r.Address ?? r.ADDRESS ?? "").trim();
 
@@ -268,7 +302,7 @@ async function loadScreens(){
     return {
       ...r,
       screen_id: String(screenId).trim(),
-      city, format, address,
+      city, region, format, address, 
       minBid: toNumber(r.minBid ?? r.min_bid ?? r.MINBID ?? r.minbid),
       ots: toNumber(r.ots ?? r.OTS),
       grp: toNumber(r.grp ?? r.GRP),
@@ -282,6 +316,9 @@ async function loadScreens(){
 
   state.formatsAll = [...new Set(state.screens.map(s => s.format).filter(Boolean))]
     .sort((a,b)=>a.localeCompare(b));
+
+  state.regionsAll = [...new Set(state.screens.map(s => s.region).filter(Boolean))]
+  .sort((a,b)=>a.localeCompare(b, "ru"));
 
   renderFormats();
   renderSelectedCity();
@@ -328,44 +365,46 @@ function renderFormats(){
 }
 
 // ===== UI: city =====
-function renderSelectedCity(){
+function renderSelectedRegion(){
   const wrap = el("city-selected");
   if(!wrap) return;
   wrap.innerHTML = "";
 
-  if(!state.selectedCity){
-    wrap.innerHTML = `<div style="font-size:12px; color:#666;">Город не выбран</div>`;
+  if(!state.selectedRegion){
+    wrap.innerHTML = `<div style="font-size:12px; color:#666;">Регион не выбран</div>`;
     return;
   }
 
   const chip = document.createElement("button");
   cssButtonBase(chip);
-  chip.textContent = "✕ " + state.selectedCity;
+  chip.textContent = "✕ " + state.selectedRegion;
   chip.addEventListener("click", () => {
-    state.selectedCity = null;
-    renderSelectedCity();
+    state.selectedRegion = null;
+    renderSelectedRegion();
   });
   wrap.appendChild(chip);
 }
 
-function renderCitySuggestions(q){
+function renderRegionSuggestions(q){
   const sug = el("city-suggestions");
   if(!sug) return;
   sug.innerHTML = "";
   if(!q) return;
 
   const qq = q.toLowerCase();
-  const matches = state.citiesAll.filter(c => c.toLowerCase().includes(qq)).slice(0, 12);
+  const matches = state.regionsAll
+    .filter(r => r.toLowerCase().includes(qq))
+    .slice(0, 12);
 
-  matches.forEach(c => {
+  matches.forEach(r => {
     const b = document.createElement("button");
     cssButtonBase(b);
-    b.textContent = "+ " + c;
+    b.textContent = "+ " + r;
     b.addEventListener("click", () => {
-      state.selectedCity = c;
+      state.selectedRegion = r;
       if(el("city-search")) el("city-search").value = "";
       sug.innerHTML = "";
-      renderSelectedCity();
+      renderSelectedRegion();
     });
     sug.appendChild(b);
   });
@@ -399,7 +438,7 @@ function buildBrief(){
       from: scheduleType === "custom" ? timeFrom : null,
       to: scheduleType === "custom" ? timeTo : null
     },
-    geo: { city: state.selectedCity },
+    geo: { region: state.selectedRegion },
     formats: {
       mode: el("formats-auto")?.checked ? "auto" : "manual",
       selected: el("formats-auto")?.checked ? [] : [...state.selectedFormats]
@@ -745,10 +784,13 @@ async function onCalcClick(){
     alert("Выберите даты начала и окончания.");
     return;
   }
-  if(!brief.geo.city){
-    alert("Выберите город (один).");
+  if(!brief.geo.region){
+    alert("Выберите регион (один).");
     return;
   }
+
+const region = brief.geo.region;
+let pool = state.screens.filter(s => s.region === region);
 
   // days нужен всем режимам
   const days = daysInclusive(brief.dates.start, brief.dates.end);
@@ -933,7 +975,7 @@ async function onCalcClick(){
 — Бюджет: ${budget.toLocaleString("ru-RU")} ₽
 — Даты: ${brief.dates.start} → ${brief.dates.end} (дней: ${days})
 — Расписание: ${brief.schedule.type} (часов/день: ${hpd})
-— Город: ${city}
+— Регион: ${region}
 — Форматы: ${selectedFormatsText}
 — Подбор: ${brief.selection.mode}
 — GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${brief.grp.max.toFixed(2)}` : "не учитываем"}
@@ -1029,8 +1071,8 @@ function bindPlannerUI() {
   if (selectionMode) selectionMode.addEventListener("change", renderSelectionExtra);
 
   const citySearch = el("city-search");
-  if (citySearch) citySearch.addEventListener("input", (e) => renderCitySuggestions(e.target.value));
-
+  if (citySearch) citySearch.addEventListener("input", (e) => renderRegionSuggestions(e.target.value));
+  
   const downloadBtn = el("download-csv");
   if (downloadBtn) downloadBtn.addEventListener("click", () => downloadXLSX(state.lastChosen));
 
@@ -1055,6 +1097,7 @@ async function startPlanner() {
   renderSelectionExtra();
   bindPlannerUI();
   await loadTiers();
+  await loadCityRegions();
   await loadScreens();
 }
 
