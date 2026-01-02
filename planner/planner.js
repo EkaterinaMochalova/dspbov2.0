@@ -9,7 +9,7 @@ const SCREENS_CSV_URL =
 
 // ===== TIERS =====
 const TIERS_JSON_URL =
-  "https://raw.githubusercontent.com/EkaterinaMochalova/dspbov2.0/planner/planner/tiers_v1.json";
+  "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@planner/planner/tiers_v1.json?v=" + Date.now();
 
 // ===== Labels =====
 const FORMAT_LABELS = {
