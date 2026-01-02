@@ -9,7 +9,7 @@ const SCREENS_CSV_URL =
 
 // ===== TIERS =====
 const TIERS_JSON_URL =
-  "https://raw.githubusercontent.com/EkaterinaMochalova/dspbov2.0/planner/tiers_v1.json";
+  "https://raw.githubusercontent.com/EkaterinaMochalova/dspbov2.0/planner/planner/tiers_v1.json";
 
 // ===== Labels =====
 const FORMAT_LABELS = {
@@ -764,6 +764,15 @@ async function onCalcClick(){
   const city = brief.geo.city;
   let pool = state.screens.filter(s => s.city === city);
 
+  const tier = getTierForCity(city);
+  const BASE_MONTHLY_BY_TIER = { A: 2000000, B: 1000000, C: 500000, D: 200000 };
+  const DAYS_IN_MONTH = 30;
+
+  const baseMonthly = BASE_MONTHLY_BY_TIER[tier] ?? BASE_MONTHLY_BY_TIER.C;
+  const baseBudgetForPeriod = Math.floor(baseMonthly * (days / DAYS_IN_MONTH));
+
+budget = Math.floor(Math.min(baseBudgetForPeriod, maxBudget));
+
   let selectedFormatsText = "—";
   if(brief.formats.mode === "manual" && brief.formats.selected.length > 0){
     const fset = new Set(brief.formats.selected);
@@ -945,6 +954,7 @@ if(playsPerHourPerScreen > SC_OPT && playsPerHourPerScreen <= SC_MAX){
 — Форматы: ${selectedFormatsText}
 — Подбор: ${brief.selection.mode}
 — GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${brief.grp.max.toFixed(2)}` : "не учитываем"}
+— Tier: ${tier}
 
 Расчёт через minBid:
 — Средний minBid(+20%): ${bidPlus20.toFixed(2)} ₽
