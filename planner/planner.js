@@ -741,7 +741,6 @@ function pickScreensNearPOIs(screens, pois, radiusMeters){
 async function onCalcClick(){
   const brief = buildBrief();
 
-  // --- basic validation ---
   if(!brief.dates.start || !brief.dates.end){
     alert("Выберите даты начала и окончания.");
     return;
@@ -750,27 +749,19 @@ async function onCalcClick(){
     alert("Выберите город (один).");
     return;
   }
-  if(brief.budget.mode === "fixed" && (!brief.budget.amount || brief.budget.amount <= 0)){
-    alert("Введите бюджет или выберите «нужна рекомендация».");
-    return;
-  }
 
-  const city = brief.geo.city;
-
-  // days обязателен и для fixed, и для reco
+  // days нужен всем режимам
   const days = daysInclusive(brief.dates.start, brief.dates.end);
   if(!Number.isFinite(days) || days <= 0){
     alert("Выберите корректные даты начала и окончания.");
     return;
   }
 
-  // tier нужен и для summary, и для reco
-  const tier = getTierForCity(city);
-
-  // initial pool by city
+  // пул по городу
+  const city = brief.geo.city;
   let pool = state.screens.filter(s => s.city === city);
 
-  // --- formats filter ---
+  // форматы
   let selectedFormatsText = "—";
   if(brief.formats.mode === "manual" && brief.formats.selected.length > 0){
     const fset = new Set(brief.formats.selected);
@@ -851,33 +842,38 @@ async function onCalcClick(){
     grpWarning = `⚠️ GRP-фильтр включён: экраны без GRP исключены (без GRP: ${grpDroppedNoValue}).`;
   }
 
-  // ===== CALC =====
+  // avg bid
   const avgBid = avgNumber(pool.map(s => s.minBid));
   if(avgBid == null){
     alert("Не могу посчитать: у выбранных экранов нет minBid.");
     return;
   }
-
   const bidPlus20 = avgBid * BID_MULTIPLIER;
 
-  // hpd fixed from schedule
+  // hpd
   const hpdFixed = hoursPerDay(brief.schedule);
   if(!Number.isFinite(hpdFixed) || hpdFixed <= 0){
     alert("Проверь расписание.");
     return;
   }
 
+  // tier нужен и для summary
+  const tier = getTierForCity(city);
+
   // budget
   let budget = brief.budget.amount;
 
-  if(brief.budget.mode !== "fixed"){
+  if(brief.budget.mode === "fixed"){
+    if(!Number.isFinite(budget) || budget <= 0){
+      alert("Введите бюджет или выберите «нужна рекомендация».");
+      return;
+    }
+  } else {
     const screensCount = pool.length;
 
-    // capacity ceiling
     const maxPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * screensCount * days);
     const maxBudget = maxPlays * bidPlus20;
 
-    // base budget by tier
     const BASE_MONTHLY_BY_TIER = { A: 2000000, B: 1000000, C: 500000, D: 200000 };
     const DAYS_IN_MONTH = 30;
 
@@ -892,9 +888,9 @@ async function onCalcClick(){
     }
   }
 
-  // hours per day used in calc
   const hpd = (brief.budget.mode !== "fixed") ? RECO_HOURS_PER_DAY : hpdFixed;
 
+  // ===== CALC =====
   const totalPlaysTheory = Math.floor(budget / bidPlus20);
   const playsPerHourTotalTheory = totalPlaysTheory / days / hpd;
 
@@ -971,27 +967,16 @@ async function onCalcClick(){
       `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">grp</th>` +
       `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">address</th>` +
       `</tr></thead><tbody>` +
-  
-      chosen
-        .slice(0, 10)
-        .map(
-          (r) =>
-            `<tr>` +
-            `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.screen_id || ""}</td>` +
-            `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.format || ""}</td>` +
-            `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${
-              Number.isFinite(r.minBid) ? r.minBid.toFixed(2) : ""
-            }</td>` +
-            `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${
-              Number.isFinite(r.ots) ? r.ots : ""
-            }</td>` +
-            `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${
-              Number.isFinite(r.grp) ? r.grp.toFixed(2) : ""
-            }</td>` +
-            `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.address || ""}</td>` +
-            `</tr>`
-        )
-        .join("") +
+      chosen.slice(0,10).map(r => (
+        `<tr>` +
+        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.screen_id || ""}</td>` +
+        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.format || ""}</td>` +
+        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number.isFinite(r.minBid) ? r.minBid.toFixed(2) : ""}</td>` +
+        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number.isFinite(r.ots) ? r.ots : ""}</td>` +
+        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number.isFinite(r.grp) ? r.grp.toFixed(2) : ""}</td>` +
+        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.address || ""}</td>` +
+        `</tr>`
+      )).join("") +
       `</tbody></table></div>`;
   }
 }
