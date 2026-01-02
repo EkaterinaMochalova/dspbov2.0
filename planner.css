@@ -1,0 +1,11 @@
+/* базовые “красивые” кнопки */
+.ux-btn{
+  transition: transform .08s ease, box-shadow .12s ease, background-color .12s ease, border-color .12s ease;
+  transform: translateZ(0);
+  user-select: none;
+}
+.ux-btn:hover{ box-shadow: 0 6px 18px rgba(0,0,0,.08); }
+.ux-btn:active{ transform: scale(0.98); box-shadow: 0 2px 8px rgba(0,0,0,.10); }
+.ux-btn:focus-visible{ outline:0; box-shadow: 0 0 0 4px rgba(0,0,0,.10); }
+.ux-btn.is-selected{ border-color:#111 !important; box-shadow: 0 8px 22px rgba(0,0,0,.10); }
+.ux-btn:disabled{ opacity:.55; cursor:not-allowed; transform:none; box-shadow:none; }
