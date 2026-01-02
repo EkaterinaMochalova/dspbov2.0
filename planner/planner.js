@@ -738,14 +738,6 @@ function pickScreensNearPOIs(screens, pois, radiusMeters){
   return picked;
 }
 
-console.log("[tier debug]",
-  { city,
-    tierFromDict: window.PLANNER?.tiers?.[city],
-    tierResolved: getTierForCity(city),
-    tiersCount: Object.keys(window.PLANNER?.tiers || {}).length
-  }
-);
-
 // ===== MAIN =====
 async function onCalcClick(){
   const brief = buildBrief();
