@@ -738,51 +738,51 @@ function pickScreensNearPOIs(screens, pois, radiusMeters){
 }
 
 // ===== MAIN =====
-async function onCalcClick() {
+async function onCalcClick(){
   const brief = buildBrief();
 
   // --- basic validation ---
-  if (!brief.dates.start || !brief.dates.end) {
+  if(!brief.dates.start || !brief.dates.end){
     alert("Выберите даты начала и окончания.");
     return;
   }
-  if (!brief.geo.city) {
+  if(!brief.geo.city){
     alert("Выберите город (один).");
     return;
   }
-  if (
-    brief.budget.mode === "fixed" &&
-    (!brief.budget.amount || brief.budget.amount <= 0)
-  ) {
+  if(brief.budget.mode === "fixed" && (!brief.budget.amount || brief.budget.amount <= 0)){
     alert("Введите бюджет или выберите «нужна рекомендация».");
     return;
   }
 
   const city = brief.geo.city;
 
-  // --- days (ONE time) ---
+  // days обязателен и для fixed, и для reco
   const days = daysInclusive(brief.dates.start, brief.dates.end);
-  if (!Number.isFinite(days) || days <= 0) {
+  if(!Number.isFinite(days) || days <= 0){
     alert("Выберите корректные даты начала и окончания.");
     return;
   }
 
-  // --- pool by city ---
-  let pool = state.screens.filter((s) => s.city === city);
+  // tier нужен и для summary, и для reco
+  const tier = getTierForCity(city);
 
-  // --- formats ---
+  // initial pool by city
+  let pool = state.screens.filter(s => s.city === city);
+
+  // --- formats filter ---
   let selectedFormatsText = "—";
-  if (brief.formats.mode === "manual" && brief.formats.selected.length > 0) {
+  if(brief.formats.mode === "manual" && brief.formats.selected.length > 0){
     const fset = new Set(brief.formats.selected);
-    pool = pool.filter((s) => fset.has(s.format));
+    pool = pool.filter(s => fset.has(s.format));
     selectedFormatsText = brief.formats.selected.join(", ");
-  } else if (brief.formats.mode === "auto") {
+  } else if(brief.formats.mode === "auto"){
     selectedFormatsText = "рекомендация";
   } else {
     selectedFormatsText = "не выбраны";
   }
 
-  if (pool.length === 0) {
+  if(pool.length === 0){
     alert("Нет экранов под выбранные условия (город/форматы).");
     return;
   }
@@ -809,7 +809,6 @@ async function onCalcClick() {
       return;
     }
 
-    // сохранить для выгрузки + включить кнопки
     window.PLANNER.lastPOIs = pois;
 
     const b1 = el("download-poi-csv");
@@ -819,14 +818,11 @@ async function onCalcClick() {
 
     renderPOIList(pois);
 
-    // фильтруем экраны вокруг POI
     const before = pool.length;
     pool = pickScreensNearPOIs(pool, pois, screenRadius);
 
     if (!pool.length) {
-      alert(
-        "В радиусе вокруг найденных POI нет экранов (или у экранов нет lat/lon)."
-      );
+      alert("В радиусе вокруг найденных POI нет экранов (или у экранов нет lat/lon).");
       setStatus("");
       return;
     }
@@ -839,19 +835,16 @@ async function onCalcClick() {
   let grpDroppedNoValue = 0;
 
   if (brief.grp?.enabled) {
-    grpDroppedNoValue = pool.filter((s) => !Number.isFinite(s.grp)).length;
+    grpDroppedNoValue = pool.filter(s => !Number.isFinite(s.grp)).length;
 
-    pool = pool.filter(
-      (s) =>
-        Number.isFinite(s.grp) &&
-        s.grp >= brief.grp.min &&
-        s.grp <= brief.grp.max
+    pool = pool.filter(s =>
+      Number.isFinite(s.grp) &&
+      s.grp >= brief.grp.min &&
+      s.grp <= brief.grp.max
     );
 
     if (pool.length === 0) {
-      alert(
-        "Нет экранов под выбранный GRP-диапазон. Учти: не все экраны передают GRP."
-      );
+      alert("Нет экранов под выбранный GRP-диапазон. Учти: не все экраны передают GRP.");
       return;
     }
 
@@ -859,59 +852,54 @@ async function onCalcClick() {
   }
 
   // ===== CALC =====
-
-  // 1) minBid average
-  const avgBid = avgNumber(pool.map((s) => s.minBid));
-  if (avgBid == null) {
+  const avgBid = avgNumber(pool.map(s => s.minBid));
+  if(avgBid == null){
     alert("Не могу посчитать: у выбранных экранов нет minBid.");
     return;
   }
+
   const bidPlus20 = avgBid * BID_MULTIPLIER;
 
-  // 2) hours/day
+  // hpd fixed from schedule
   const hpdFixed = hoursPerDay(brief.schedule);
-  if (!Number.isFinite(hpdFixed) || hpdFixed <= 0) {
+  if(!Number.isFinite(hpdFixed) || hpdFixed <= 0){
     alert("Проверь расписание.");
     return;
   }
 
-  // 3) budget (fixed or reco)
+  // budget
   let budget = brief.budget.amount;
 
-  // Tier (defined once for output + reco)
-  const tier = getTierForCity(city);
-
-  if (brief.budget.mode !== "fixed") {
+  if(brief.budget.mode !== "fixed"){
     const screensCount = pool.length;
 
-    // потолок по ёмкости: SC_MAX * 12h * screens * days
-    const maxPlays = Math.floor(
-      SC_MAX * RECO_HOURS_PER_DAY * screensCount * days
-    );
+    // capacity ceiling
+    const maxPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * screensCount * days);
     const maxBudget = maxPlays * bidPlus20;
 
-    // базовый бюджет по Tier
+    // base budget by tier
     const BASE_MONTHLY_BY_TIER = { A: 2000000, B: 1000000, C: 500000, D: 200000 };
+    const DAYS_IN_MONTH = 30;
+
     const baseMonthly = BASE_MONTHLY_BY_TIER[tier] ?? BASE_MONTHLY_BY_TIER.C;
-    const baseBudgetForPeriod = Math.floor(baseMonthly * (days / 30));
+    const baseBudgetForPeriod = Math.floor(baseMonthly * (days / DAYS_IN_MONTH));
 
     budget = Math.floor(Math.min(baseBudgetForPeriod, maxBudget));
 
-    if (!Number.isFinite(budget) || budget <= 0) {
+    if(!Number.isFinite(budget) || budget <= 0){
       alert("Не получилось посчитать рекомендацию бюджета для выбранных условий.");
       return;
     }
   }
 
-  // 4) hours/day used further
-  const hpd = brief.budget.mode !== "fixed" ? RECO_HOURS_PER_DAY : hpdFixed;
+  // hours per day used in calc
+  const hpd = (brief.budget.mode !== "fixed") ? RECO_HOURS_PER_DAY : hpdFixed;
 
-  // 5) core math
   const totalPlaysTheory = Math.floor(budget / bidPlus20);
   const playsPerHourTotalTheory = totalPlaysTheory / days / hpd;
 
   const screensNeeded =
-    brief.budget.mode !== "fixed"
+    (brief.budget.mode !== "fixed")
       ? Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_MAX))
       : Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_OPT));
 
@@ -923,14 +911,10 @@ async function onCalcClick() {
   let warning = "";
   let totalPlaysEffective = totalPlaysTheory;
 
-  if (playsPerHourPerScreen > SC_OPT && playsPerHourPerScreen <= SC_MAX) {
-    warning = `⚠️ В среднем получается ${playsPerHourPerScreen.toFixed(
-      1
-    )} выходов/час на экран (выше оптимальных ${SC_OPT}). Выходов может быть меньше: ёмкость экранов ограничена.`;
-  } else if (playsPerHourPerScreen > SC_MAX) {
-    const maxPlaysByCapacity = Math.floor(
-      SC_MAX * screensChosenCount * days * hpd
-    );
+  if(playsPerHourPerScreen > SC_OPT && playsPerHourPerScreen <= SC_MAX){
+    warning = `⚠️ В среднем получается ${playsPerHourPerScreen.toFixed(1)} выходов/час на экран (выше оптимальных ${SC_OPT}). Выходов может быть меньше: ёмкость экранов ограничена.`;
+  } else if(playsPerHourPerScreen > SC_MAX){
+    const maxPlaysByCapacity = Math.floor(SC_MAX * screensChosenCount * days * hpd);
     totalPlaysEffective = Math.min(totalPlaysTheory, maxPlaysByCapacity);
     warning = `⚠️ На заданный бюджет не хватает ёмкости: максимум ${SC_MAX} выходов/час на экран. В расчёте показаны данные по ёмкости (часть бюджета может не утилизироваться).`;
   }
@@ -938,10 +922,10 @@ async function onCalcClick() {
   const playsPerDay = totalPlaysEffective / days;
   const playsPerHourTotal = totalPlaysEffective / days / hpd;
 
-  const avgOts = avgNumber(pool.map((s) => s.ots));
-  const otsTotal = avgOts == null ? null : totalPlaysEffective * avgOts;
-  const otsPerDay = avgOts == null ? null : otsTotal / days;
-  const otsPerHour = avgOts == null ? null : otsTotal / days / hpd;
+  const avgOts = avgNumber(pool.map(s => s.ots));
+  const otsTotal = (avgOts == null) ? null : totalPlaysEffective * avgOts;
+  const otsPerDay = (avgOts == null) ? null : otsTotal / days;
+  const otsPerHour = (avgOts == null) ? null : otsTotal / days / hpd;
 
   state.lastChosen = chosen;
 
@@ -949,7 +933,7 @@ async function onCalcClick() {
   const of = (n) => Math.round(n).toLocaleString("ru-RU");
 
   const summaryText =
-    `Бриф:
+`Бриф:
 — Бюджет: ${budget.toLocaleString("ru-RU")} ₽
 — Даты: ${brief.dates.start} → ${brief.dates.end} (дней: ${days})
 — Расписание: ${brief.schedule.type} (часов/день: ${hpd})
@@ -967,14 +951,14 @@ async function onCalcClick() {
 — Экранов выбрано: ${screensChosenCount}
 — OTS всего: ${otsTotal == null ? "—" : of(otsTotal)}
 — OTS/день: ${otsTotal == null ? "—" : of(otsPerDay)}
-— OTS/час: ${otsTotal == null ? "—" : of(otsPerHour)}` +
-    (warning ? `\n\n${warning}` : "") +
-    (grpWarning ? `\n\n${grpWarning}` : "");
+— OTS/час: ${otsTotal == null ? "—" : of(otsPerHour)}`
+    + (warning ? `\n\n${warning}` : "")
+    + (grpWarning ? `\n\n${grpWarning}` : "");
 
-  if (el("summary")) el("summary").textContent = summaryText;
-  if (el("download-csv")) el("download-csv").disabled = chosen.length === 0;
+  if(el("summary")) el("summary").textContent = summaryText;
+  if(el("download-csv")) el("download-csv").disabled = chosen.length === 0;
 
-  if (el("results")) {
+  if(el("results")){
     el("results").innerHTML =
       `<div style="font-size:13px; color:#666;">Показаны первые 10 выбранных экранов.</div>` +
       `<div style="margin-top:8px; border:1px solid #eee; border-radius:12px; overflow:hidden;">` +
@@ -987,6 +971,7 @@ async function onCalcClick() {
       `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">grp</th>` +
       `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">address</th>` +
       `</tr></thead><tbody>` +
+  
       chosen
         .slice(0, 10)
         .map(
