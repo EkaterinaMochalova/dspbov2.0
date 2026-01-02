@@ -250,6 +250,7 @@ async function loadScreens(){
   console.log("[screens] url:", SCREENS_CSV_URL);
 
   const res = await fetch(SCREENS_CSV_URL, { cache: "no-store" });
+  console.log("[screens] status:", res.status, res.statusText);
   if(!res.ok) throw new Error("Не удалось загрузить CSV: " + res.status);
 
   const text = await res.text();
