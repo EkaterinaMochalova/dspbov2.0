@@ -738,45 +738,51 @@ function pickScreensNearPOIs(screens, pois, radiusMeters){
 }
 
 // ===== MAIN =====
-async function onCalcClick(){
+async function onCalcClick() {
   const brief = buildBrief();
 
-  if(!brief.dates.start || !brief.dates.end){
+  // --- basic validation ---
+  if (!brief.dates.start || !brief.dates.end) {
     alert("Выберите даты начала и окончания.");
     return;
   }
-  if(!brief.geo.city){
+  if (!brief.geo.city) {
     alert("Выберите город (один).");
     return;
   }
-  if(brief.budget.mode === "fixed" && (!brief.budget.amount || brief.budget.amount <= 0)){
+  if (
+    brief.budget.mode === "fixed" &&
+    (!brief.budget.amount || brief.budget.amount <= 0)
+  ) {
     alert("Введите бюджет или выберите «нужна рекомендация».");
     return;
   }
 
   const city = brief.geo.city;
-  let pool = state.screens.filter(s => s.city === city);
+
+  // --- days (ONE time) ---
   const days = daysInclusive(brief.dates.start, brief.dates.end);
-  if(!Number.isFinite(days) || days <= 0){
+  if (!Number.isFinite(days) || days <= 0) {
     alert("Выберите корректные даты начала и окончания.");
     return;
   }
 
-  
+  // --- pool by city ---
+  let pool = state.screens.filter((s) => s.city === city);
 
-
+  // --- formats ---
   let selectedFormatsText = "—";
-  if(brief.formats.mode === "manual" && brief.formats.selected.length > 0){
+  if (brief.formats.mode === "manual" && brief.formats.selected.length > 0) {
     const fset = new Set(brief.formats.selected);
-    pool = pool.filter(s => fset.has(s.format));
+    pool = pool.filter((s) => fset.has(s.format));
     selectedFormatsText = brief.formats.selected.join(", ");
-  } else if(brief.formats.mode === "auto"){
+  } else if (brief.formats.mode === "auto") {
     selectedFormatsText = "рекомендация";
   } else {
     selectedFormatsText = "не выбраны";
   }
 
-  if(pool.length === 0){
+  if (pool.length === 0) {
     alert("Нет экранов под выбранные условия (город/форматы).");
     return;
   }
@@ -795,7 +801,6 @@ async function onCalcClick(){
 
     let pois = [];
     try {
-      // IMPORTANT: тут больше нет center/poiSearchR — geocodeArea не используем
       pois = await fetchPOIsOverpassInCity(poiType, city, 50);
     } catch (e) {
       console.error("[poi] error:", e);
@@ -819,7 +824,9 @@ async function onCalcClick(){
     pool = pickScreensNearPOIs(pool, pois, screenRadius);
 
     if (!pool.length) {
-      alert("В радиусе вокруг найденных POI нет экранов (или у экранов нет lat/lon).");
+      alert(
+        "В радиусе вокруг найденных POI нет экранов (или у экранов нет lat/lon)."
+      );
       setStatus("");
       return;
     }
@@ -832,16 +839,19 @@ async function onCalcClick(){
   let grpDroppedNoValue = 0;
 
   if (brief.grp?.enabled) {
-    grpDroppedNoValue = pool.filter(s => !Number.isFinite(s.grp)).length;
+    grpDroppedNoValue = pool.filter((s) => !Number.isFinite(s.grp)).length;
 
-    pool = pool.filter(s =>
-      Number.isFinite(s.grp) &&
-      s.grp >= brief.grp.min &&
-      s.grp <= brief.grp.max
+    pool = pool.filter(
+      (s) =>
+        Number.isFinite(s.grp) &&
+        s.grp >= brief.grp.min &&
+        s.grp <= brief.grp.max
     );
 
     if (pool.length === 0) {
-      alert("Нет экранов под выбранный GRP-диапазон. Учти: не все экраны передают GRP.");
+      alert(
+        "Нет экранов под выбранный GRP-диапазон. Учти: не все экраны передают GRP."
+      );
       return;
     }
 
@@ -849,88 +859,89 @@ async function onCalcClick(){
   }
 
   // ===== CALC =====
-  const avgBid = avgNumber(pool.map(s => s.minBid));
-if(avgBid == null){
-  alert("Не могу посчитать: у выбранных экранов нет minBid.");
-  return;
-}
 
-const bidPlus20 = avgBid * BID_MULTIPLIER;
-
-// days обязателен и для fixed, и для reco
-const days = daysInclusive(brief.dates.start, brief.dates.end);
-if(!Number.isFinite(days) || days <= 0){
-  alert("Выберите корректные даты начала и окончания.");
-  return;
-}
-
-// hpd: для fixed — по выбранному расписанию, для reco — фикс 12 часов
-const hpdFixed = hoursPerDay(brief.schedule);
-if(!Number.isFinite(hpdFixed) || hpdFixed <= 0){
-  alert("Проверь расписание.");
-  return;
-}
-
-let budget = brief.budget.amount;
-
-// === RECO budget ===
-if(brief.budget.mode !== "fixed"){
-  const screensCount = pool.length;
-
-  // потолок по ёмкости: SC_MAX (60) * 12 часов * screens * days
-  const maxPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * screensCount * days);
-  const maxBudget = maxPlays * bidPlus20;
-
-  // базовый бюджет по Tier
-  const tier = getTierForCity(city);
-  const BASE_MONTHLY_BY_TIER = { A: 2000000, B: 1000000, C: 500000, D: 200000 };
-  const DAYS_IN_MONTH = 30;
-
-  const baseMonthly = BASE_MONTHLY_BY_TIER[tier] ?? 500000;
-  const baseBudgetForPeriod = Math.floor(baseMonthly * (days / DAYS_IN_MONTH));
-
-budget = Math.floor(Math.min(baseBudgetForPeriod, maxBudget));
-
-  if(!Number.isFinite(budget) || budget <= 0){
-    alert("Не получилось посчитать рекомендацию бюджета для выбранных условий.");
+  // 1) minBid average
+  const avgBid = avgNumber(pool.map((s) => s.minBid));
+  if (avgBid == null) {
+    alert("Не могу посчитать: у выбранных экранов нет minBid.");
     return;
   }
-} 
+  const bidPlus20 = avgBid * BID_MULTIPLIER;
 
-// hpd, который используется дальше
-const hpd = (brief.budget.mode !== "fixed") ? RECO_HOURS_PER_DAY : hpdFixed;
+  // 2) hours/day
+  const hpdFixed = hoursPerDay(brief.schedule);
+  if (!Number.isFinite(hpdFixed) || hpdFixed <= 0) {
+    alert("Проверь расписание.");
+    return;
+  }
 
-// дальше твой расчёт без изменений
-const totalPlaysTheory = Math.floor(budget / bidPlus20);
-const playsPerHourTotalTheory = totalPlaysTheory / days / hpd;
+  // 3) budget (fixed or reco)
+  let budget = brief.budget.amount;
 
-const screensNeeded =
-  (brief.budget.mode !== "fixed")
-    ? Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_MAX))
-    : Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_OPT));
-const screensChosenCount = Math.min(pool.length, screensNeeded);
-const chosen = pickScreensByMinBid(pool, screensChosenCount);
+  // Tier (defined once for output + reco)
+  const tier = getTierForCity(city);
 
-const playsPerHourPerScreen = playsPerHourTotalTheory / screensChosenCount;
+  if (brief.budget.mode !== "fixed") {
+    const screensCount = pool.length;
 
-let warning = "";
-let totalPlaysEffective = totalPlaysTheory;
+    // потолок по ёмкости: SC_MAX * 12h * screens * days
+    const maxPlays = Math.floor(
+      SC_MAX * RECO_HOURS_PER_DAY * screensCount * days
+    );
+    const maxBudget = maxPlays * bidPlus20;
 
-if(playsPerHourPerScreen > SC_OPT && playsPerHourPerScreen <= SC_MAX){
-  warning = `⚠️ В среднем получается ${playsPerHourPerScreen.toFixed(1)} выходов/час на экран (выше оптимальных ${SC_OPT}). Выходов может быть меньше: ёмкость экранов ограничена.`;
-} else if(playsPerHourPerScreen > SC_MAX){
-  const maxPlaysByCapacity = Math.floor(SC_MAX * screensChosenCount * days * hpd);
-  totalPlaysEffective = Math.min(totalPlaysTheory, maxPlaysByCapacity);
-  warning = `⚠️ На заданный бюджет не хватает ёмкости: максимум ${SC_MAX} выходов/час на экран. В расчёте показаны данные по ёмкости (часть бюджета может не утилизироваться).`;
-}
+    // базовый бюджет по Tier
+    const BASE_MONTHLY_BY_TIER = { A: 2000000, B: 1000000, C: 500000, D: 200000 };
+    const baseMonthly = BASE_MONTHLY_BY_TIER[tier] ?? BASE_MONTHLY_BY_TIER.C;
+    const baseBudgetForPeriod = Math.floor(baseMonthly * (days / 30));
+
+    budget = Math.floor(Math.min(baseBudgetForPeriod, maxBudget));
+
+    if (!Number.isFinite(budget) || budget <= 0) {
+      alert("Не получилось посчитать рекомендацию бюджета для выбранных условий.");
+      return;
+    }
+  }
+
+  // 4) hours/day used further
+  const hpd = brief.budget.mode !== "fixed" ? RECO_HOURS_PER_DAY : hpdFixed;
+
+  // 5) core math
+  const totalPlaysTheory = Math.floor(budget / bidPlus20);
+  const playsPerHourTotalTheory = totalPlaysTheory / days / hpd;
+
+  const screensNeeded =
+    brief.budget.mode !== "fixed"
+      ? Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_MAX))
+      : Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_OPT));
+
+  const screensChosenCount = Math.min(pool.length, screensNeeded);
+  const chosen = pickScreensByMinBid(pool, screensChosenCount);
+
+  const playsPerHourPerScreen = playsPerHourTotalTheory / screensChosenCount;
+
+  let warning = "";
+  let totalPlaysEffective = totalPlaysTheory;
+
+  if (playsPerHourPerScreen > SC_OPT && playsPerHourPerScreen <= SC_MAX) {
+    warning = `⚠️ В среднем получается ${playsPerHourPerScreen.toFixed(
+      1
+    )} выходов/час на экран (выше оптимальных ${SC_OPT}). Выходов может быть меньше: ёмкость экранов ограничена.`;
+  } else if (playsPerHourPerScreen > SC_MAX) {
+    const maxPlaysByCapacity = Math.floor(
+      SC_MAX * screensChosenCount * days * hpd
+    );
+    totalPlaysEffective = Math.min(totalPlaysTheory, maxPlaysByCapacity);
+    warning = `⚠️ На заданный бюджет не хватает ёмкости: максимум ${SC_MAX} выходов/час на экран. В расчёте показаны данные по ёмкости (часть бюджета может не утилизироваться).`;
+  }
 
   const playsPerDay = totalPlaysEffective / days;
   const playsPerHourTotal = totalPlaysEffective / days / hpd;
 
-  const avgOts = avgNumber(pool.map(s => s.ots));
-  const otsTotal = (avgOts == null) ? null : totalPlaysEffective * avgOts;
-  const otsPerDay = (avgOts == null) ? null : otsTotal / days;
-  const otsPerHour = (avgOts == null) ? null : otsTotal / days / hpd;
+  const avgOts = avgNumber(pool.map((s) => s.ots));
+  const otsTotal = avgOts == null ? null : totalPlaysEffective * avgOts;
+  const otsPerDay = avgOts == null ? null : otsTotal / days;
+  const otsPerHour = avgOts == null ? null : otsTotal / days / hpd;
 
   state.lastChosen = chosen;
 
@@ -938,7 +949,7 @@ if(playsPerHourPerScreen > SC_OPT && playsPerHourPerScreen <= SC_MAX){
   const of = (n) => Math.round(n).toLocaleString("ru-RU");
 
   const summaryText =
-`Бриф:
+    `Бриф:
 — Бюджет: ${budget.toLocaleString("ru-RU")} ₽
 — Даты: ${brief.dates.start} → ${brief.dates.end} (дней: ${days})
 — Расписание: ${brief.schedule.type} (часов/день: ${hpd})
@@ -956,14 +967,14 @@ if(playsPerHourPerScreen > SC_OPT && playsPerHourPerScreen <= SC_MAX){
 — Экранов выбрано: ${screensChosenCount}
 — OTS всего: ${otsTotal == null ? "—" : of(otsTotal)}
 — OTS/день: ${otsTotal == null ? "—" : of(otsPerDay)}
-— OTS/час: ${otsTotal == null ? "—" : of(otsPerHour)}`
-    + (warning ? `\n\n${warning}` : "")
-    + (grpWarning ? `\n\n${grpWarning}` : "");
+— OTS/час: ${otsTotal == null ? "—" : of(otsPerHour)}` +
+    (warning ? `\n\n${warning}` : "") +
+    (grpWarning ? `\n\n${grpWarning}` : "");
 
-  if(el("summary")) el("summary").textContent = summaryText;
-  if(el("download-csv")) el("download-csv").disabled = chosen.length === 0;
+  if (el("summary")) el("summary").textContent = summaryText;
+  if (el("download-csv")) el("download-csv").disabled = chosen.length === 0;
 
-  if(el("results")){
+  if (el("results")) {
     el("results").innerHTML =
       `<div style="font-size:13px; color:#666;">Показаны первые 10 выбранных экранов.</div>` +
       `<div style="margin-top:8px; border:1px solid #eee; border-radius:12px; overflow:hidden;">` +
@@ -976,20 +987,29 @@ if(playsPerHourPerScreen > SC_OPT && playsPerHourPerScreen <= SC_MAX){
       `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">grp</th>` +
       `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">address</th>` +
       `</tr></thead><tbody>` +
-      chosen.slice(0,10).map(r => (
-        `<tr>` +
-        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.screen_id || ""}</td>` +
-        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.format || ""}</td>` +
-        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number.isFinite(r.minBid) ? r.minBid.toFixed(2) : ""}</td>` +
-        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number.isFinite(r.ots) ? r.ots : ""}</td>` +
-        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number.isFinite(r.grp) ? r.grp.toFixed(2) : ""}</td>` +
-        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.address || ""}</td>` +
-        `</tr>`
-      )).join("") +
+      chosen
+        .slice(0, 10)
+        .map(
+          (r) =>
+            `<tr>` +
+            `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.screen_id || ""}</td>` +
+            `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.format || ""}</td>` +
+            `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${
+              Number.isFinite(r.minBid) ? r.minBid.toFixed(2) : ""
+            }</td>` +
+            `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${
+              Number.isFinite(r.ots) ? r.ots : ""
+            }</td>` +
+            `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${
+              Number.isFinite(r.grp) ? r.grp.toFixed(2) : ""
+            }</td>` +
+            `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.address || ""}</td>` +
+            `</tr>`
+        )
+        .join("") +
       `</tbody></table></div>`;
   }
 }
-
 // ===== BIND UI =====
 function bindPlannerUI() {
   document.querySelectorAll(".preset").forEach(b => {
