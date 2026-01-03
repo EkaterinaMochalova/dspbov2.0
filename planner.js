@@ -707,7 +707,7 @@ function downloadPOIsCSV(pois){
     name: p.name || "",
     lat: p.lat,
     lon: p.lon,
-    city: state.selectedCity || ""
+    region: state.selectedRegion || ""
   }));
   const csv = Papa.unparse(rows, { quotes: true });
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -911,6 +911,52 @@ function pickScreensNearPOIs(screens, pois, radiusMeters){
   return picked;
 }
 
+/**
+ * POI in REGION administrative area (Oblast/Republic/Federal city)
+ * regionName: "Московская область", "Москва", "Санкт-Петербург", ...
+ */
+async function fetchPOIsOverpassInRegion(poiType, regionName, limit = 50){
+  const t = String(poiType || "").trim();
+  if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
+
+  const region = _escapeOverpassString(regionName);
+  if (!region) throw new Error("Region is empty");
+
+  const safeLimit = Math.max(1, Math.min(50, Number(limit || 50)));
+
+  // Важно: ищем административную область региона.
+  // Для РФ субъекты часто admin_level=4 (область/республика/город федерального значения).
+  // На всякий случай добавляем 6 (иногда встречается).
+  const body = `
+    [out:json][timeout:40];
+
+    (
+      area["boundary"="administrative"]["name"="${region}"]["admin_level"~"4|6"];
+      area["boundary"="administrative"]["name:ru"="${region}"]["admin_level"~"4|6"];
+      area["boundary"="administrative"]["name"="${region}"];
+      area["boundary"="administrative"]["name:ru"="${region}"];
+    )->.cand;
+
+    .cand->.a;
+
+    (
+      ${POI_QUERIES[t]}
+    );
+
+    out center ${safeLimit};
+  `;
+
+  const json = await _runOverpassWithFailover(body, 55000);
+  const pois = _normalizePOIs(json).slice(0, safeLimit);
+
+  if (!pois.length) {
+    throw new Error(`POI не найдены: «${POI_LABELS?.[t] || t}» в регионе «${regionName}». Попробуй другой тип.`);
+  }
+
+  return pois;
+}
+
+
 // ===== MAIN =====
 async function onCalcClick(){
   const brief = buildBrief();
@@ -965,11 +1011,11 @@ async function onCalcClick(){
     const poiType = String(brief.selection.poi_type || "").trim();
     const screenRadius = Number(brief.selection.radius_m || 500);
 
-    setStatus(`Ищу POI: ${POI_LABELS?.[poiType] || poiType}…`);
+    setStatus(`Ищу POI в регионе «${region}»: ${POI_LABELS?.[poiType] || poiType}…`);
 
     let pois = [];
     try {
-      pois = await fetchPOIsOverpassInCity(poiType, city, 50);
+      pois = await fetchPOIsOverpassInRegion(poiType, region, 50);
     } catch (e) {
       console.error("[poi] error:", e);
       alert(e?.message || "Ошибка Overpass (OSM). Попробуй ещё раз.");
@@ -1290,6 +1336,7 @@ Object.assign(window.PLANNER, {
   loadCityRegions,
   bootPlanner,
   fetchPOIsOverpassInCity,
+  fetchPOIsOverpassInRegion,
   pickScreensNearPOIs,
   cityCenterFromScreens,
   downloadPOIsCSV,
