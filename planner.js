@@ -283,37 +283,56 @@ async function loadCityRegions(){
     if(!res.ok) throw new Error("city_regions http " + res.status);
 
     const json = await res.json();
-    const regionsRaw = (json?.regions && typeof json.regions === "object") ? json.regions : null;
-    if(!regionsRaw) throw new Error("city_regions has no 'regions' object");
+    const regionsObj = json?.regions && typeof json.regions === "object" ? json.regions : null;
+    if(!regionsObj) throw new Error("city_regions has no 'regions' object");
 
-    const regionsNorm = {};
-    for (const [city, region] of Object.entries(regionsRaw)) {
-      const k = normKey(city);
-      const v = String(region ?? "").trim();
-      if (!k || !v) continue;
-      // если вдруг дубликаты — оставим первое или последнее, как тебе удобнее
-      regionsNorm[k] = v;
+    // Поддерживаем 2 формата:
+    // A) { "Москва": "Москва", "Химки": "Московская область" }  (city -> region)
+    // B) { "Московская область": ["Химки","Подольск"] }         (region -> [cities])
+    const cityToRegion = {};
+
+    for (const [k, v] of Object.entries(regionsObj)) {
+      if (Array.isArray(v)) {
+        // формат B: region -> cities[]
+        const regionName = String(k).trim();
+        for (const c of v) {
+          const cityName = String(c || "").trim();
+          if (!cityName) continue;
+          cityToRegion[normalizeCityKey(cityName)] = regionName;
+        }
+      } else if (typeof v === "string") {
+        // формат A: city -> region
+        const cityName = String(k).trim();
+        const regionName = String(v).trim();
+        if (!cityName || !regionName) continue;
+        cityToRegion[normalizeCityKey(cityName)] = regionName;
+      }
     }
 
-    window.PLANNER.cityRegionsRaw = regionsRaw;
-    window.PLANNER.cityRegions = regionsNorm;          // <-- ВАЖНО: теперь тут norm-ключи
+    window.PLANNER.cityRegions = cityToRegion;
     window.PLANNER.cityRegionsMeta = json?.meta || null;
 
-    console.log("[city_regions] loaded cities:", Object.keys(regionsNorm).length);
+    console.log("[city_regions] loaded:", Object.keys(cityToRegion).length);
     return true;
-
   } catch (e) {
     console.warn("[city_regions] load failed:", e);
-    window.PLANNER.cityRegionsRaw = {};
     window.PLANNER.cityRegions = {};
     window.PLANNER.cityRegionsMeta = null;
     return false;
   }
 }
 
+// нормализация ключа города (минимально, но уже решает регистр/пробелы)
+function normalizeCityKey(city){
+  return String(city || "")
+    .trim()
+    .toLowerCase()
+    .replace(/ё/g, "е");
+}
+
 function getRegionForCity(city){
-  const k = normKey(city);
-  const r = window.PLANNER?.cityRegions?.[k];
+  const key = normalizeCityKey(city);
+  const r = window.PLANNER?.cityRegions?.[key];
   return (typeof r === "string" && r.trim()) ? r.trim() : "Не назначено";
 }
 
@@ -399,10 +418,17 @@ async function loadScreens(){
   state.formatsAll = [...new Set(state.screens.map(s => s.format).filter(Boolean))]
     .sort((a,b)=>a.localeCompare(b));
 
-  // 3) Строим regionsByCity + regionsAll ИЗ справочника (а не из screens.region)
+    // regionsByCity + regionsAll
   state.regionsByCity = {};
   state.regionsAll = [];
 
+  for (const c of state.citiesAll) {
+    const reg = getRegionForCity(c);
+    state.regionsByCity[c] = reg;
+    if (!state.regionsAll.includes(reg)) state.regionsAll.push(reg);
+  }
+  state.regionsAll.sort((a,b)=>a.localeCompare(b,"ru"));
+  
   for (const city of state.citiesAll) {
     const region = getRegionForCity(city); // важно: справочник уже должен быть загружен loadCityRegions()
     state.regionsByCity[city] = region;
