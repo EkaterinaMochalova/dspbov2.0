@@ -784,27 +784,28 @@ async function onCalcClick(){
     alert("Выберите даты начала и окончания.");
     return;
   }
-  if(!brief.geo.region){
-    alert("Выберите регион (один).");
+  if(!brief.geo.city){
+    alert("Выберите город (один).");
+    return;
+  }
+  if(brief.budget.mode === "fixed" && (!brief.budget.amount || brief.budget.amount <= 0)){
+    alert("Введите бюджет или выберите «нужна рекомендация».");
     return;
   }
 
-const region = brief.geo.region;
-let pool = state.screens.filter(s => s.region === region);
+  const city = brief.geo.city;
 
-  // days нужен всем режимам
+  // ✅ ОБЪЯВЛЯЕМ pool РОВНО ОДИН РАЗ
+  let pool = state.screens.filter(s => s.city === city);
+
   const days = daysInclusive(brief.dates.start, brief.dates.end);
   if(!Number.isFinite(days) || days <= 0){
     alert("Выберите корректные даты начала и окончания.");
     return;
   }
 
-  // пул по городу
-  const city = brief.geo.city;
-  let pool = state.screens.filter(s => s.city === city);
-
-  // форматы
   let selectedFormatsText = "—";
+  
   if(brief.formats.mode === "manual" && brief.formats.selected.length > 0){
     const fset = new Set(brief.formats.selected);
     pool = pool.filter(s => fset.has(s.format));
