@@ -114,12 +114,12 @@ const state = {
   screens: [],
   citiesAll: [],
   formatsAll: [],
-
-  regionsAll: [],
-  selectedRegion: null,
-
+  regionsAll: [],           // <- NEW
+  selectedCity: null,
   selectedFormats: new Set(),
-  lastChosen: []
+  lastChosen: [],
+  regionsByCity: {}         // <- NEW: { "Москва": "Москва", "Химки": "Московская область", ... }
+
 };
 window.PLANNER.state = state;
 // ===== Utils =====
@@ -1091,6 +1091,38 @@ function bindPlannerUI() {
   const calcBtn = el("calc-btn");
   if (calcBtn) calcBtn.addEventListener("click", () => onCalcClick());
 }
+async function loadRegions(){
+  try {
+    const res = await fetch(CITY_REGIONS_URL, { cache: "no-store" });
+    if(!res.ok) throw new Error("regions json http " + res.status);
+
+    const json = await res.json();
+
+    // поддержим 2 формата:
+    // 1) { "Москва": "Москва", "Химки": "Московская область" }
+    // 2) { "map": {...} }
+    const map = (json && typeof json === "object" && !Array.isArray(json))
+      ? (json.map && typeof json.map === "object" ? json.map : json)
+      : null;
+
+    if(!map || typeof map !== "object") throw new Error("regions json has no object map");
+
+    state.regionsByCity = map;
+
+    // список уникальных регионов
+    state.regionsAll = [...new Set(Object.values(map).filter(Boolean))]
+      .sort((a,b)=>String(a).localeCompare(String(b), "ru"));
+
+    console.log("[regions] loaded:", Object.keys(map).length, "cities;", "regions:", state.regionsAll.length);
+    return true;
+  } catch(e){
+    console.warn("[regions] load failed:", e);
+    state.regionsByCity = {};
+    state.regionsAll = [];
+    return false;
+  }
+}
+
 
 // ===== START =====
 async function startPlanner() {
@@ -1119,6 +1151,7 @@ Object.assign(window.PLANNER, {
   state,
   loadScreens,
   startPlanner,
+  loadRegions,
   bootPlanner,
   fetchPOIsOverpassInCity,
   pickScreensNearPOIs,
