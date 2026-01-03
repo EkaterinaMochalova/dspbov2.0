@@ -276,6 +276,43 @@ function getRegionForCity(city){
   return (typeof r === "string" && r.trim()) ? r.trim() : "Не назначено";
 }
 
+function renderSelectedCity() {
+  const box = el("city-selected");
+  if (!box) return;
+
+  const city = state.selectedCity || "";
+  if (!city) {
+    box.innerHTML = "";
+    return;
+  }
+
+  box.innerHTML = `
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <span style="padding:6px 10px; border:1px solid #ddd; border-radius:999px; background:#fafafa;">
+        ${escapeHtml(city)}
+      </span>
+      <button type="button" id="city-clear"
+        style="padding:6px 10px; border:1px solid #ddd; border-radius:10px; background:#fff; cursor:pointer;">
+        Очистить
+      </button>
+    </div>
+  `;
+
+  const btn = el("city-clear");
+  if (btn) {
+    btn.onclick = () => {
+      state.selectedCity = null;
+      renderSelectedCity();
+      renderCitySuggestions(""); // если у тебя есть эта функция; если нет — убери строку
+    };
+  }
+}
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, m => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+  }[m]));
+}
+
 // ===== Data load =====
 async function loadScreens(){
   setStatus("Загружаю список экранов…");
