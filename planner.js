@@ -12,7 +12,7 @@ const TIERS_JSON_URL =
 
 // ===== CITY -> REGION =====
 const CITY_REGIONS_URL =
-  "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@main/city_regions.json?v=" + Date.now();
+  "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@f6f96a16980cda4d7165e692526ef08f2cd0c22e/city_regions.json?v=" + Date.now();
 
 // ===== Labels =====
 const FORMAT_LABELS = {
