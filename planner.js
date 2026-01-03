@@ -130,6 +130,15 @@ function setStatus(msg){
   if(s) s.textContent = msg || "";
 }
 
+function normKey(s){
+  return String(s ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/\s+/g, " ");
+}
+
+
 function cssButtonBase(btn){
   if(!btn) return;
   btn.classList.add("ux-btn");
@@ -258,60 +267,42 @@ function _normCityKey(city) {
     .replace(/ё/g, "е");
 }
 
-async function loadCityRegions() {
+async function loadCityRegions(){
   try {
     const res = await fetch(CITY_REGIONS_URL, { cache: "no-store" });
-    if (!res.ok) throw new Error("city_regions http " + res.status);
+    if(!res.ok) throw new Error("city_regions http " + res.status);
 
     const json = await res.json();
-    const src = json?.regions;
+    const regionsRaw = (json?.regions && typeof json.regions === "object") ? json.regions : null;
+    if(!regionsRaw) throw new Error("city_regions has no 'regions' object");
 
-    // Внутри всегда соберём один унифицированный словарь:
-    // { "москва": "Москва", "химки": "Московская область", ... }
-    const dict = {};
-
-    // 1) Формат A: regions — объект city->region
-    if (src && typeof src === "object" && !Array.isArray(src)) {
-      for (const [city, region] of Object.entries(src)) {
-        const k = _normCityKey(city);
-        const r = String(region || "").trim();
-        if (k && r) dict[k] = r;
-      }
+    const regionsNorm = {};
+    for (const [city, region] of Object.entries(regionsRaw)) {
+      const k = normKey(city);
+      const v = String(region ?? "").trim();
+      if (!k || !v) continue;
+      // если вдруг дубликаты — оставим первое или последнее, как тебе удобнее
+      regionsNorm[k] = v;
     }
 
-    // 2) Формат B: regions — массив [{region, cities:[...]}]
-    if (Array.isArray(src)) {
-      for (const item of src) {
-        const regionName = String(item?.region || item?.name || "").trim();
-        const cities = Array.isArray(item?.cities) ? item.cities : [];
-        if (!regionName || !cities.length) continue;
-
-        for (const c of cities) {
-          const k = _normCityKey(c);
-          if (k) dict[k] = regionName;
-        }
-      }
-    }
-
-    if (!Object.keys(dict).length) {
-      throw new Error("city_regions parsed, but dictionary is empty (check json format)");
-    }
-
-    window.PLANNER.cityRegions = dict;
+    window.PLANNER.cityRegionsRaw = regionsRaw;
+    window.PLANNER.cityRegions = regionsNorm;          // <-- ВАЖНО: теперь тут norm-ключи
     window.PLANNER.cityRegionsMeta = json?.meta || null;
 
-    console.log("[city_regions] loaded:", Object.keys(dict).length, "cities");
+    console.log("[city_regions] loaded cities:", Object.keys(regionsNorm).length);
     return true;
+
   } catch (e) {
     console.warn("[city_regions] load failed:", e);
+    window.PLANNER.cityRegionsRaw = {};
     window.PLANNER.cityRegions = {};
     window.PLANNER.cityRegionsMeta = null;
     return false;
   }
 }
 
-function getRegionForCity(city) {
-  const k = _normCityKey(city);
+function getRegionForCity(city){
+  const k = normKey(city);
   const r = window.PLANNER?.cityRegions?.[k];
   return (typeof r === "string" && r.trim()) ? r.trim() : "Не назначено";
 }
