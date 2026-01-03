@@ -366,9 +366,9 @@ async function loadScreens(){
   const text = await res.text();
   const rows = parseCSV(text);
 
+  // 1) Сначала парсим экраны БЕЗ region (region добавим после того, как соберём citiesAll)
   state.screens = rows.map(r => {
     const city = String(r.city ?? r.City ?? r.CITY ?? "").trim();
-    const region = getRegionForCity(city);
     const format = String(r.format ?? r.Format ?? r.FORMAT ?? "").trim();
     const address = String(r.address ?? r.Address ?? r.ADDRESS ?? "").trim();
 
@@ -380,28 +380,52 @@ async function loadScreens(){
     return {
       ...r,
       screen_id: String(screenId).trim(),
-      city, region, format, address, 
+      city,
+      format,
+      address,
       minBid: toNumber(r.minBid ?? r.min_bid ?? r.MINBID ?? r.minbid),
       ots: toNumber(r.ots ?? r.OTS),
       grp: toNumber(r.grp ?? r.GRP),
       lat: toNumber(r.lat ?? r.Lat ?? r.LAT),
       lon: toNumber(r.lon ?? r.Lon ?? r.LON ?? r.lng ?? r.Lng ?? r.LNG)
+      // region добавим позже
     };
   });
 
+  // 2) citiesAll / formatsAll
   state.citiesAll = [...new Set(state.screens.map(s => s.city).filter(Boolean))]
     .sort((a,b)=>a.localeCompare(b, "ru"));
 
   state.formatsAll = [...new Set(state.screens.map(s => s.format).filter(Boolean))]
     .sort((a,b)=>a.localeCompare(b));
 
-  state.regionsAll = [...new Set(state.screens.map(s => s.region).filter(Boolean))]
-  .sort((a,b)=>a.localeCompare(b, "ru"));
+  // 3) Строим regionsByCity + regionsAll ИЗ справочника (а не из screens.region)
+  state.regionsByCity = {};
+  state.regionsAll = [];
 
+  for (const city of state.citiesAll) {
+    const region = getRegionForCity(city); // важно: справочник уже должен быть загружен loadCityRegions()
+    state.regionsByCity[city] = region;
+    if (!state.regionsAll.includes(region)) state.regionsAll.push(region);
+  }
+
+  state.regionsAll.sort((a,b)=>a.localeCompare(b, "ru"));
+
+  // 4) Проставляем region каждому экрану
+  for (const s of state.screens) {
+    s.region = state.regionsByCity[s.city] || "Не назначено";
+  }
+
+  // 5) UI
   renderFormats();
   renderSelectedCity();
 
-  setStatus(`Готово. Экранов: ${state.screens.length}. Городов: ${state.citiesAll.length}. Форматов: ${state.formatsAll.length}.`);
+  setStatus(
+    `Готово. Экранов: ${state.screens.length}. ` +
+    `Городов: ${state.citiesAll.length}. ` +
+    `Форматов: ${state.formatsAll.length}. ` +
+    `Регионов: ${state.regionsAll.length}.`
+  );
 
   window.PLANNER.ready = true;
   window.dispatchEvent(new CustomEvent("planner:screens-ready", { detail: { count: state.screens.length } }));
