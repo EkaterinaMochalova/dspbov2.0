@@ -114,11 +114,21 @@ const state = {
   screens: [],
   citiesAll: [],
   formatsAll: [],
-  regionsAll: [],           // <- NEW
+
+  // ===== Regions =====
+  regionsAll: [],              // ["Москва", "Санкт-Петербург", "Московская область", ...]
+  regionsByCity: {},           // { "Москва": "Москва", "Химки": "Московская область", ... }
+
+  // ===== Diagnostics =====
+  unknownCities: [],           // ["Троицк", "Долгопрудный", ...]
+  unknownCitiesTop: [],        // [{ city, screens }, ...]
+
+  // ===== UI =====
   selectedCity: null,
   selectedFormats: new Set(),
-  lastChosen: [],
-  regionsByCity: {}         // <- NEW: { "Москва": "Москва", "Химки": "Московская область", ... }
+  lastChosen: []
+};
+  
 
 };
 window.PLANNER.state = state;
