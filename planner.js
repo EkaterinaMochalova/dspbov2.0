@@ -932,9 +932,6 @@ async function onCalcClick(){
     return;
   }
 
-  // ✅ ОБЪЯВЛЯЕМ pool РОВНО ОДИН РАЗ
-  let pool = state.screens.filter(s => s.city === city);
-
   const days = daysInclusive(brief.dates.start, brief.dates.end);
   if(!Number.isFinite(days) || days <= 0){
     alert("Выберите корректные даты начала и окончания.");
