@@ -341,11 +341,6 @@ function getRegionForCity(city){
   const key = normalizeCityKey(city);
   const r = window.PLANNER?.cityRegions?.[key];
   return (typeof r === "string" && r.trim()) ? r.trim() : "Не назначено";
-
-function getRegionForCity(city){
-  const key = normalizeCityKey(city);
-  const r = window.PLANNER?.cityRegions?.[key];
-  return (typeof r === "string" && r.trim()) ? r.trim() : "Не назначено";
 }
 
 function renderSelectedCity() {
@@ -924,16 +919,18 @@ async function onCalcClick(){
     alert("Выберите даты начала и окончания.");
     return;
   }
-  if(!brief.geo.city){
-    alert("Выберите город (один).");
-    return;
+  if(!brief.geo.region){
+  alert("Выберите регион (один).");
+  return;
   }
+
+  const region = brief.geo.region;
+  let pool = state.screens.filter(s => s.region === region);
+
   if(brief.budget.mode === "fixed" && (!brief.budget.amount || brief.budget.amount <= 0)){
     alert("Введите бюджет или выберите «нужна рекомендация».");
     return;
   }
-
-  const city = brief.geo.city;
 
   // ✅ ОБЪЯВЛЯЕМ pool РОВНО ОДИН РАЗ
   let pool = state.screens.filter(s => s.city === city);
@@ -1293,6 +1290,7 @@ Object.assign(window.PLANNER, {
   loadScreens,
   startPlanner,
   loadRegions,
+  loadCityRegions,
   bootPlanner,
   fetchPOIsOverpassInCity,
   pickScreensNearPOIs,
