@@ -659,6 +659,37 @@ function getTierForCity(city){
   return (t === "A" || t === "B" || t === "C" || t === "D") ? t : "C"; // дефолт
 }
 
+function getTierForRegion(region, poolScreens){
+  // poolScreens: экраны уже отфильтрованы по region
+  const tiers = window.PLANNER?.tiers || {};
+
+  // веса tier'ов по числу экранов
+  const w = { A: 0, B: 0, C: 0, D: 0, U: 0 };
+
+  for(const s of (poolScreens || [])){
+    const city = String(s.city || "").trim();
+    if(!city) continue;
+
+    const t = tiers[city]; // tiers.json по городам
+    if(t === "A" || t === "B" || t === "C" || t === "D") w[t] += 1;
+    else w.U += 1; // unknown
+  }
+
+  // выбираем максимум (если все unknown — дефолт C)
+  const order = ["A","B","C","D"];
+  let best = "C";
+  let bestW = -1;
+
+  for(const t of order){
+    if(w[t] > bestW){ bestW = w[t]; best = t; }
+  }
+
+  // если вообще нет экранов или все unknown
+  if(bestW <= 0) return "C";
+  return best;
+}
+
+
 // ===== Helpers =====
 function pickScreensByMinBid(screens, n){
   const sorted = [...screens].sort((a,b) => {
@@ -1081,7 +1112,7 @@ async function onCalcClick(){
   }
 
   // tier нужен и для summary
-  const tier = getTierForCity(city);
+  const tier = getTierForRegion(region, pool);
 
   // budget
   let budget = brief.budget.amount;
