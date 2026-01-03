@@ -129,8 +129,6 @@ const state = {
   lastChosen: []
 };
   
-
-};
 window.PLANNER.state = state;
 // ===== Utils =====
 function el(id){ return document.getElementById(id); }
