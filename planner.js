@@ -277,43 +277,60 @@ function _normCityKey(city) {
     .replace(/ё/g, "е");
 }
 
+function normalizeCityKey(s){
+  return String(s || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
 async function loadCityRegions(){
   try {
     const res = await fetch(CITY_REGIONS_URL, { cache: "no-store" });
     if(!res.ok) throw new Error("city_regions http " + res.status);
 
     const json = await res.json();
-    const regionsObj = json?.regions && typeof json.regions === "object" ? json.regions : null;
-    if(!regionsObj) throw new Error("city_regions has no 'regions' object");
+    const regionsRaw = (json?.regions && typeof json.regions === "object") ? json.regions : null;
+    if(!regionsRaw) throw new Error("city_regions has no 'regions' object");
 
-    // Поддерживаем 2 формата:
-    // A) { "Москва": "Москва", "Химки": "Московская область" }  (city -> region)
-    // B) { "Московская область": ["Химки","Подольск"] }         (region -> [cities])
+    // Собираем city -> region (нормализованный ключ города)
     const cityToRegion = {};
+    let citiesCount = 0;
+    let regionsCount = 0;
 
-    for (const [k, v] of Object.entries(regionsObj)) {
-      if (Array.isArray(v)) {
-        // формат B: region -> cities[]
-        const regionName = String(k).trim();
-        for (const c of v) {
-          const cityName = String(c || "").trim();
-          if (!cityName) continue;
-          cityToRegion[normalizeCityKey(cityName)] = regionName;
+    for (const [k, v] of Object.entries(regionsRaw)) {
+      // Вариант A (старый): "Москва": "Москва"
+      if (typeof v === "string") {
+        const city = k;
+        const region = v;
+        const key = normalizeCityKey(city);
+        if (key) {
+          cityToRegion[key] = String(region).trim();
+          citiesCount++;
         }
-      } else if (typeof v === "string") {
-        // формат A: city -> region
-        const cityName = String(k).trim();
-        const regionName = String(v).trim();
-        if (!cityName || !regionName) continue;
-        cityToRegion[normalizeCityKey(cityName)] = regionName;
+        continue;
+      }
+
+      // Вариант B (новый): "Московская область": ["Химки", ...]
+      if (Array.isArray(v)) {
+        const region = String(k).trim();
+        regionsCount++;
+        for (const city of v) {
+          const key = normalizeCityKey(city);
+          if (!key) continue;
+          cityToRegion[key] = region;
+          citiesCount++;
+        }
+        continue;
       }
     }
 
-    window.PLANNER.cityRegions = cityToRegion;
+    window.PLANNER.cityRegions = cityToRegion;          // dict: normalizedCity -> region
     window.PLANNER.cityRegionsMeta = json?.meta || null;
 
-    console.log("[city_regions] loaded:", Object.keys(cityToRegion).length);
+    console.log("[city_regions] loaded:", { cities: citiesCount, regions: regionsCount || "n/a" });
     return true;
+
   } catch (e) {
     console.warn("[city_regions] load failed:", e);
     window.PLANNER.cityRegions = {};
@@ -322,13 +339,10 @@ async function loadCityRegions(){
   }
 }
 
-// нормализация ключа города (минимально, но уже решает регистр/пробелы)
-function normalizeCityKey(city){
-  return String(city || "")
-    .trim()
-    .toLowerCase()
-    .replace(/ё/g, "е");
-}
+function getRegionForCity(city){
+  const key = normalizeCityKey(city);
+  const r = window.PLANNER?.cityRegions?.[key];
+  return (typeof r === "string" && r.trim()) ? r.trim() : "Не назначено";
 
 function getRegionForCity(city){
   const key = normalizeCityKey(city);
