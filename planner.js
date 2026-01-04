@@ -30,6 +30,15 @@ const FORMAT_LABELS = {
   SUPERSITE: { label: "Суперсайты", desc: "крупные конструкции с высокой дальностью видимости" }
 };
 
+
+// Экспортируем метки форматов наружу (для UI-скриптов в Tilda)
+window.PLANNER = window.PLANNER || {};
+window.PLANNER.FORMAT_LABELS = FORMAT_LABELS;
+
+// (опционально) чтобы проще было обращаться из любого места
+window.FORMAT_LABELS = window.FORMAT_LABELS || FORMAT_LABELS;
+
+
 const POI_QUERIES = {
   fitness: `
     nwr(area.a)["leisure"="fitness_centre"];
