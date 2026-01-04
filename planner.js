@@ -22,6 +22,8 @@ const FORMAT_LABELS = {
   CITY_FORMAT_RC: { label: "Ситиформаты на МЦК", desc: "экраны на МЦК" },
   CITY_FORMAT_RD: { label: "Ситиформаты на вокзалах", desc: "экраны на вокзале" },
   CITY_FORMAT_WD: { label: "Ситиформаты в метро", desc: "экраны в метро" },
+  RW_PLATFORM: { label: "Ситиформаты на МЦД", desc: "экраны на МЦД" },
+  METRO_SCREEN_3X1: { label: "Горизонтальные экраны в метро", desc: "экраны в метро" },
   MEDIAFACADE: { label: "Медиафасады", desc: "огромные экраны на стенах домов" },
   METRO_LIGHTBOX: { label: "Metro Lightbox", desc: "экраны в метро, горизонтальные" },
   OTHER: { label: "Indoor-экраны", desc: "экраны внутри БЦ, ТЦ и иных помещений" },
