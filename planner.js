@@ -173,7 +173,7 @@ function getBudgetMode(){
   return document.querySelector('input[name="budget_mode"]:checked')?.value || "fixed";
 }
 function getScheduleType(){
-  return document.querySelector('input[name="schedule"]:checked')?.value || "all_day";
+  return document.querySelector('input[name="schedule"]:checked')?.value || "весь день";
 }
 
 function parseCSV(text){
@@ -1310,10 +1310,10 @@ async function onCalcClick(){
 — Форматы: ${selectedFormatsText}
 — Подбор: ${brief.selection.mode}
 — GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${brief.grp.max.toFixed(2)}` : "не учитываем"}
-— Tier: ${tier}
+— Страта: ${tier}
 
 Расчёт через minBid:
-— Средний minBid(+20%): ${bidPlus20.toFixed(2)} ₽
+— Средняя ставка: ${bidPlus20.toFixed(2)} ₽
 — Выходов всего: ${nf(totalPlaysEffective)}
 — Выходов/день: ${nf(playsPerDay)}
 — Выходов/час (в сумме): ${nf(playsPerHourTotal)}
