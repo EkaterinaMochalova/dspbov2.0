@@ -5,7 +5,7 @@ window.PLANNER = window.PLANNER || {};
 
 const REF = "planner";
 const SCREENS_CSV_URL =
-  "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@29201ee800e1b2492201e09aac977b5fc08a0e4f/inventories_sync.csv?v=" + Date.now();
+  "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@24ada9ff4b42b7426b4c954e8b7bebc97efed72c/inventories_sync.csv?v=" + Date.now();
 
 const TIERS_JSON_URL =
   "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@main/tiers_v1.json?v=" + Date.now();
