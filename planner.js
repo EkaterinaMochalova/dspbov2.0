@@ -454,7 +454,8 @@ async function loadScreens(){
   renderSelectedCity();
 
   setStatus(
-    `Готово. Экранов: ${state.screens.length}. ` +
+    `Всего доступно:` +
+    `Экранов: ${state.screens.length}. ` +
     `Городов: ${state.citiesAll.length}. ` +
     `Форматов: ${state.formatsAll.length}. ` +
     `Регионов: ${state.regionsAll.length}.`
