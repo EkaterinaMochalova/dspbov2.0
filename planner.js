@@ -1004,8 +1004,6 @@ async function onCalcClick(){
 
   const region = brief.geo.region;
   const tier = getTierForGeo(region);
-  console.log("[calc] region:", region, "tier:", tier, "tierRaw:", window.PLANNER?.tiers?.[String(region||"").trim()]);
-  console.log("[calc] pool before formats:", pool.length);
   let pool = state.screens.filter(s => s.region === region);
 
   if(brief.budget.mode === "fixed" && (!brief.budget.amount || brief.budget.amount <= 0)){
