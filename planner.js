@@ -1115,9 +1115,6 @@ async function onCalcClick(){
     return;
   }
 
-  // tier нужен и для summary
-  const tier = getTierForRegion(region, pool);
-
   // budget
   let budget = brief.budget.amount;
 
