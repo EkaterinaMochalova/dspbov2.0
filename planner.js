@@ -944,11 +944,70 @@ function pickScreensNearPOIs(screens, pois, radiusMeters){
   return picked;
 }
 
+function _poiQueryWithScope(poiType, scopeExpr){
+  // scopeExpr examples:
+  //  - "area.a"
+  //  - "55.6,37.3,55.9,37.9"        (bbox)
+  //  - "around:25000,55.75,37.61"  (around)
+  const raw = POI_QUERIES[poiType];
+  if(!raw) throw new Error("Unknown poi_type: " + poiType);
+
+  // заменяем ровно "nwr(area.a)" -> "nwr(<scopeExpr>)"
+  return String(raw).replace(/nwr\s*\(\s*area\.a\s*\)/g, `nwr(${scopeExpr})`);
+}
+
+function _bboxFromScreens(screens){
+  const pts = (screens || [])
+    .map(s => ({ lat: Number(s.lat), lon: Number(s.lon) }))
+    .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+
+  if(!pts.length) return null;
+
+  let minLat =  90, maxLat = -90, minLon =  180, maxLon = -180;
+  for(const p of pts){
+    if(p.lat < minLat) minLat = p.lat;
+    if(p.lat > maxLat) maxLat = p.lat;
+    if(p.lon < minLon) minLon = p.lon;
+    if(p.lon > maxLon) maxLon = p.lon;
+  }
+
+  // padding: чтобы POI на границе не отрезались
+  const padLat = 0.05; // ~5-6 км
+  const padLon = 0.08; // ~5-8 км в средней полосе (грубо)
+
+  return {
+    minLat: minLat - padLat,
+    minLon: minLon - padLon,
+    maxLat: maxLat + padLat,
+    maxLon: maxLon + padLon
+  };
+}
+
+function _centerFromBbox(bb){
+  if(!bb) return null;
+  return { lat: (bb.minLat + bb.maxLat)/2, lon: (bb.minLon + bb.maxLon)/2 };
+}
+
+function _estimateRadiusFromBbox(bb){
+  // грубая оценка радиуса (в метрах) по диагонали bbox
+  if(!bb) return 25000;
+  const latSpan = Math.abs(bb.maxLat - bb.minLat);
+  const lonSpan = Math.abs(bb.maxLon - bb.minLon);
+  // 1 градус широты ~111км, долготы ~111км * cos(lat)
+  const latKm = latSpan * 111;
+  const midLat = (bb.minLat + bb.maxLat)/2;
+  const lonKm = lonSpan * 111 * Math.cos((midLat * Math.PI)/180);
+  const diagKm = Math.sqrt(latKm*latKm + lonKm*lonKm);
+  // radius примерно половина диагонали, но ограничим
+  const r = Math.max(8000, Math.min(120000, (diagKm * 0.6) * 1000));
+  return Math.round(r);
+}
+
 /**
  * POI in REGION administrative area (Oblast/Republic/Federal city)
  * regionName: "Московская область", "Москва", "Санкт-Петербург", ...
  */
-async function fetchPOIsOverpassInRegion(poiType, regionName, limit = 50){
+async function fetchPOIsOverpassInRegion(poiType, regionName, screensInRegion, limit = 50){
   const t = String(poiType || "").trim();
   if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
 
@@ -957,36 +1016,85 @@ async function fetchPOIsOverpassInRegion(poiType, regionName, limit = 50){
 
   const safeLimit = Math.max(1, Math.min(50, Number(limit || 50)));
 
-  // Важно: ищем административную область региона.
-  // Для РФ субъекты часто admin_level=4 (область/республика/город федерального значения).
-  // На всякий случай добавляем 6 (иногда встречается).
-  const body = `
-    [out:json][timeout:40];
+  // ---------- Attempt 1: admin area by name ----------
+  try {
+    const bodyArea = `
+      [out:json][timeout:40];
+      (
+        area["boundary"="administrative"]["name"="${region}"]["admin_level"~"4|6"];
+        area["boundary"="administrative"]["name:ru"="${region}"]["admin_level"~"4|6"];
+        area["boundary"="administrative"]["name"="${region}"];
+        area["boundary"="administrative"]["name:ru"="${region}"];
+      )->.cand;
 
-    (
-      area["boundary"="administrative"]["name"="${region}"]["admin_level"~"4|6"];
-      area["boundary"="administrative"]["name:ru"="${region}"]["admin_level"~"4|6"];
-      area["boundary"="administrative"]["name"="${region}"];
-      area["boundary"="administrative"]["name:ru"="${region}"];
-    )->.cand;
+      .cand->.a;
 
-    .cand->.a;
+      (
+        ${POI_QUERIES[t]}
+      );
 
-    (
-      ${POI_QUERIES[t]}
-    );
+      out center ${safeLimit};
+    `;
 
-    out center ${safeLimit};
-  `;
+    const json = await _runOverpassWithFailover(bodyArea, 55000);
+    const pois = _normalizePOIs(json).slice(0, safeLimit);
+    if (pois.length) return pois;
 
-  const json = await _runOverpassWithFailover(body, 55000);
-  const pois = _normalizePOIs(json).slice(0, safeLimit);
-
-  if (!pois.length) {
-    throw new Error(`POI не найдены: «${POI_LABELS?.[t] || t}» в регионе «${regionName}». Попробуй другой тип.`);
+  } catch(e){
+    console.warn("[poi] area attempt failed:", String(e));
+    // идём дальше
   }
 
-  return pois;
+  // ---------- Attempt 2: bbox from screens ----------
+  const bb = _bboxFromScreens(screensInRegion || []);
+  if (bb) {
+    try {
+      const scope = `${bb.minLat},${bb.minLon},${bb.maxLat},${bb.maxLon}`;
+      const q = _poiQueryWithScope(t, scope);
+
+      const bodyBbox = `
+        [out:json][timeout:40];
+        (
+          ${q}
+        );
+        out center ${safeLimit};
+      `;
+
+      const json2 = await _runOverpassWithFailover(bodyBbox, 55000);
+      const pois2 = _normalizePOIs(json2).slice(0, safeLimit);
+      if (pois2.length) return pois2;
+
+    } catch(e){
+      console.warn("[poi] bbox attempt failed:", String(e));
+    }
+  }
+
+  // ---------- Attempt 3: around center ----------
+  const c = _centerFromBbox(bb);
+  if (c) {
+    try {
+      const r = _estimateRadiusFromBbox(bb); // динамический радиус
+      const scope = `around:${r},${c.lat},${c.lon}`;
+      const q = _poiQueryWithScope(t, scope);
+
+      const bodyAround = `
+        [out:json][timeout:40];
+        (
+          ${q}
+        );
+        out center ${safeLimit};
+      `;
+
+      const json3 = await _runOverpassWithFailover(bodyAround, 55000);
+      const pois3 = _normalizePOIs(json3).slice(0, safeLimit);
+      if (pois3.length) return pois3;
+
+    } catch(e){
+      console.warn("[poi] around attempt failed:", String(e));
+    }
+  }
+
+  throw new Error(`POI не найдены: «${POI_LABELS?.[t] || t}» в регионе «${regionName}». Попробуй другой тип или увеличь радиус/поменяй регион.`);
 }
 
 
@@ -1049,7 +1157,7 @@ async function onCalcClick(){
 
     let pois = [];
     try {
-      pois = await fetchPOIsOverpassInRegion(poiType, region, 50);
+      pois = await fetchPOIsOverpassInRegion(poiType, region, pool, 50);
     } catch (e) {
       console.error("[poi] error:", e);
       alert(e?.message || "Ошибка Overpass (OSM). Попробуй ещё раз.");
