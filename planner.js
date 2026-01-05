@@ -1443,6 +1443,7 @@ const toggle = document.getElementById("results-toggle");
     };
   }
 }
+}
   
 // ===== BIND UI =====
 function bindPlannerUI() {
@@ -1587,5 +1588,4 @@ Object.assign(window.PLANNER, {
   renderPOIList,
   _fetchOverpass,
   _runOverpassWithFailover
-});
-};   
+}); 
