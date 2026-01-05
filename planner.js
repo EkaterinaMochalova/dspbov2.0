@@ -1427,7 +1427,21 @@ async function onCalcClick(){
       </table>
     </div>
   `;
+const toggle = document.getElementById("results-toggle");
+  const body   = document.getElementById("results-body");
+  const arrow  = document.getElementById("results-arrow");
+
+  if(toggle && body && arrow){
+    let opened = true; // по умолчанию раскрыто
+
+    toggle.onclick = () => {
+      opened = !opened;
+      body.style.display = opened ? "block" : "none";
+      arrow.textContent = opened ? "▾" : "▸";
+    };
+  }
 }
+  
 // ===== BIND UI =====
 function bindPlannerUI() {
   document.querySelectorAll(".preset").forEach(b => {
