@@ -716,6 +716,60 @@ function pickScreensByMinBid(screens, n){
   return sorted.slice(0, n);
 }
 
+function pickScreensUniformGrid(pool, n, grid = 6){
+  const pts = pool.filter(s => Number.isFinite(s.lat) && Number.isFinite(s.lon));
+  if(pts.length === 0) return pool.slice(0, n);
+  if(pts.length <= n) return pts.slice(0, n);
+
+  let minLat=  90, maxLat=-90, minLon= 180, maxLon=-180;
+  for(const s of pts){
+    if(s.lat < minLat) minLat = s.lat;
+    if(s.lat > maxLat) maxLat = s.lat;
+    if(s.lon < minLon) minLon = s.lon;
+    if(s.lon > maxLon) maxLon = s.lon;
+  }
+
+  const dLat = (maxLat - minLat) || 1e-9;
+  const dLon = (maxLon - minLon) || 1e-9;
+
+  const cells = new Map();
+  for(const s of pts){
+    const cx = Math.min(grid-1, Math.max(0, Math.floor(((s.lon - minLon) / dLon) * grid)));
+    const cy = Math.min(grid-1, Math.max(0, Math.floor(((s.lat - minLat) / dLat) * grid)));
+    const key = cy + ":" + cx;
+    if(!cells.has(key)) cells.set(key, []);
+    cells.get(key).push(s);
+  }
+
+  const keys = Array.from(cells.keys());
+  for(let i=keys.length-1;i>0;i--){
+    const j = (Math.random()*(i+1))|0;
+    [keys[i],keys[j]] = [keys[j],keys[i]];
+  }
+
+  const picked = [];
+  for(const k of keys){
+    const arr = cells.get(k);
+    if(!arr?.length) continue;
+    picked.push(arr[(Math.random()*arr.length)|0]);
+    if(picked.length >= n) return picked;
+  }
+
+  let layer = 1;
+  while(picked.length < n && layer < 50){
+    for(const k of keys){
+      const arr = cells.get(k);
+      if(!arr?.length) continue;
+      picked.push(arr[layer % arr.length]);
+      if(picked.length >= n) return picked;
+    }
+    layer++;
+  }
+
+  return picked.slice(0, n);
+}
+
+
 function pickScreensMaxSpread(pool, n, candN = 2500){
   const withGeo = pool.filter(s => Number.isFinite(s.lat) && Number.isFinite(s.lon));
   if(withGeo.length === 0) return pool.slice(0, n);
@@ -1470,8 +1524,7 @@ async function onCalcClick(){
       : Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_OPT));
 
   const screensChosenCount = Math.min(pool.length, screensNeeded);
-  const chosen = pickScreensMaxSpread(pool, screensChosenCount, 2500);
-
+  const chosen = pickScreensUniformGrid(pool, screensChosenCount, 6);
   const playsPerHourPerScreen = playsPerHourTotalTheory / screensChosenCount;
 
   let warning = "";
