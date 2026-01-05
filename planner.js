@@ -1392,30 +1392,41 @@ async function onCalcClick(){
   if(el("download-csv")) el("download-csv").disabled = chosen.length === 0;
 
   if(el("results")){
-    el("results").innerHTML =
-      `<div style="font-size:13px; color:#666;">Показаны первые 10 выбранных экранов.</div>` +
-      `<div style="margin-top:8px; border:1px solid #eee; border-radius:12px; overflow:hidden;">` +
-      `<table style="width:100%; border-collapse:collapse; font-size:13px;">` +
-      `<thead><tr style="background:#fafafa;">` +
-      `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">screen_id</th>` +
-      `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">format</th>` +
-      `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">minBid</th>` +
-      `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">ots</th>` +
-      `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">grp</th>` +
-      `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">address</th>` +
-      `</tr></thead><tbody>` +
-      chosen.slice(0,10).map(r => (
-        `<tr>` +
-        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.screen_id || ""}</td>` +
-        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.format || ""}</td>` +
-        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number.isFinite(r.minBid) ? r.minBid.toFixed(2) : ""}</td>` +
-        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number.isFinite(r.ots) ? r.ots : ""}</td>` +
-        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number.isFinite(r.grp) ? r.grp.toFixed(2) : ""}</td>` +
-        `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.address || ""}</td>` +
-        `</tr>`
-      )).join("") +
-      `</tbody></table></div>`;
-  }
+  el("results").innerHTML = `
+    <div id="results-toggle"
+         style="font-size:13px; color:#555; cursor:pointer; display:flex; align-items:center; gap:6px; user-select:none;">
+      <span id="results-arrow">▾</span>
+      <span>Показаны первые 10 выбранных экранов</span>
+    </div>
+
+    <div id="results-body"
+         style="margin-top:8px; border:1px solid #eee; border-radius:12px; overflow:hidden;">
+      <table style="width:100%; border-collapse:collapse; font-size:13px;">
+        <thead>
+          <tr style="background:#fafafa;">
+            <th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">screen_id</th>
+            <th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">format</th>
+            <th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">minBid</th>
+            <th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">ots</th>
+            <th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">grp</th>
+            <th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">address</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${chosen.slice(0,10).map(r => `
+            <tr>
+              <td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.screen_id || ""}</td>
+              <td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.format || ""}</td>
+              <td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number.isFinite(r.minBid) ? r.minBid.toFixed(2) : ""}</td>
+              <td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number.isFinite(r.ots) ? r.ots : ""}</td>
+              <td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number.isFinite(r.grp) ? r.grp.toFixed(2) : ""}</td>
+              <td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.address || ""}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 // ===== BIND UI =====
 function bindPlannerUI() {
