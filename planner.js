@@ -1577,7 +1577,7 @@ const norm = (v) => {
   return Number.isFinite(n) ? n : NaN;
 };
 const pts = chosen
-  .map(s => ({ lat: norm(s.lat ?? s.latitude), lon: norm(s.lon ?? s.lng ?? s.longitude) }))
+  .map(s => ({ lat: _normCoord(s.lat ?? s.latitude), lon: _normCoord(s.lon ?? s.lng ?? s.longitude) }))
   .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
 
 const lats = pts.map(p => p.lat);
@@ -1610,14 +1610,14 @@ console.log("[calc] chosen bbox lon:", Math.min(...lons), Math.max(...lons));
 
   state.lastChosen = chosen;
 
-  const norm = (v) => {
+  const _normCoord = (v) => {
   const s = String(v ?? "").trim().replace(",", ".");
   const n = Number(s);
   return Number.isFinite(n) ? n : NaN;
 };
 
 const pts = chosen
-  .map(s => ({ lat: norm(s.lat ?? s.latitude), lon: norm(s.lon ?? s.lng ?? s.longitude) }))
+  .map(s => ({ lat: _normCoord(s.lat ?? s.latitude), lon: _normCoord(s.lon ?? s.lng ?? s.longitude) }))
   .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
 
 if(pts.length){
