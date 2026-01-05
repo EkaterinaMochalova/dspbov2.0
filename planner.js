@@ -100,7 +100,7 @@ const POI_QUERIES = {
 
 const POI_LABELS = {
   fitness: "Фитнес-клубы",
-  pet_store: "Pet stores / Vet",
+  pet_store: "Зоомагазины",
   supermarket: "Супермаркеты",
   mall: "Торговые центры",
   cafe: "Кафе / кофе",
@@ -1148,7 +1148,9 @@ async function onCalcClick(){
   } else {
     selectedFormatsText = "не выбраны";
   }
-
+  if (window.PLANNER?.getScreensFilteredByOwner) {
+  pool = window.PLANNER.getScreensFilteredByOwner(pool);
+  }
   if(pool.length === 0){
     alert("Нет экранов под выбранные условия (город/форматы).");
     return;
