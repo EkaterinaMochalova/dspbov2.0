@@ -1432,7 +1432,9 @@ const toggle = document.getElementById("results-toggle");
   const arrow  = document.getElementById("results-arrow");
 
   if(toggle && body && arrow){
-    let opened = true; // по умолчанию раскрыто
+    let opened = false;
+    body.style.display = "none";
+    arrow.textContent = "▸";
 
     toggle.onclick = () => {
       opened = !opened;
