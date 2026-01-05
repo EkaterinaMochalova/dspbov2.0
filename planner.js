@@ -36,6 +36,8 @@ const FORMAT_LABELS = {
 // Экспортируем метки форматов наружу (для UI-скриптов в Tilda)
 window.PLANNER = window.PLANNER || {};
 window.PLANNER.FORMAT_LABELS = FORMAT_LABELS;
+window.PLANNER.ui = window.PLANNER.ui || {};
+window.PLANNER.ui.photosAllowed = false;
 
 // (опционально) чтобы проще было обращаться из любого места
 window.FORMAT_LABELS = window.FORMAT_LABELS || FORMAT_LABELS;
@@ -792,6 +794,7 @@ function clearPhotosCarousel(){
 }
 
 function renderPhotosCarousel(chosen){
+  if(!window.PLANNER?.ui?.photosAllowed) return; 
   const box = document.getElementById("screens-photos");
   const row = document.getElementById("screens-photos-row");
   if(!box || !row) return;
@@ -1354,6 +1357,7 @@ async function onCalcClick(){
   const otsPerHour = (avgOts == null) ? null : otsTotal / days / hpd;
 
   state.lastChosen = chosen;
+  window.PLANNER.ui.photosAllowed = true;
   renderPhotosCarousel(chosen);
 
   const nf = (n) => Math.floor(n).toLocaleString("ru-RU");
@@ -1517,6 +1521,8 @@ async function loadRegions(){
 async function startPlanner() {
   renderSelectionExtra();
   bindPlannerUI();
+  window.PLANNER.ui.photosAllowed = false;
+  clearPhotosCarousel();
   await loadTiers();
   await loadCityRegions(); clearPhotosCarousel();
   await loadScreens();
