@@ -1714,6 +1714,7 @@ if (el("results")) {
     };
   }
 }
+}
   
 // ===== BIND UI =====
 function bindPlannerUI() {
