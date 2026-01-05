@@ -716,6 +716,66 @@ function pickScreensByMinBid(screens, n){
   return sorted.slice(0, n);
 }
 
+function pickScreensEvenlyByGrid(pool, n, grid = 4){
+  const withGeo = pool.filter(s => Number.isFinite(s.lat) && Number.isFinite(s.lon));
+  if(withGeo.length < Math.min(n, 3)) {
+    // если геоданных мало — падаем назад
+    return pickScreensByMinBid(pool, n);
+  }
+
+  let minLat=+Infinity, maxLat=-Infinity, minLon=+Infinity, maxLon=-Infinity;
+  for(const s of withGeo){
+    if(s.lat < minLat) minLat = s.lat;
+    if(s.lat > maxLat) maxLat = s.lat;
+    if(s.lon < minLon) minLon = s.lon;
+    if(s.lon > maxLon) maxLon = s.lon;
+  }
+
+  const latSpan = Math.max(1e-6, maxLat - minLat);
+  const lonSpan = Math.max(1e-6, maxLon - minLon);
+
+  const cells = new Map(); // key -> array screens
+  const keyOf = (s) => {
+    const r = Math.min(grid-1, Math.max(0, Math.floor(((s.lat - minLat) / latSpan) * grid)));
+    const c = Math.min(grid-1, Math.max(0, Math.floor(((s.lon - minLon) / lonSpan) * grid)));
+    return `${r}:${c}`;
+  };
+
+  for(const s of withGeo){
+    const k = keyOf(s);
+    if(!cells.has(k)) cells.set(k, []);
+    cells.get(k).push(s);
+  }
+
+  // сортируем внутри ячеек по minBid
+  const buckets = Array.from(cells.values()).map(arr =>
+    arr.sort((a,b) => (a.minBid ?? 1e18) - (b.minBid ?? 1e18))
+  );
+
+  // чтобы начать “с разных мест”, отсортируем ячейки по количеству (сначала пустые/малые не мешают)
+  buckets.sort((a,b) => a.length - b.length);
+
+  const out = [];
+  let safety = 0;
+
+  while(out.length < n && buckets.some(b => b.length)){
+    for(const b of buckets){
+      if(out.length >= n) break;
+      if(b.length) out.push(b.shift());
+    }
+    if(++safety > 10000) break;
+  }
+
+  // если не добрали (бывает, если n больше числа geo-экранов) — добиваем обычным minBid из оставшихся
+  if(out.length < n){
+    const picked = new Set(out);
+    const rest = pool.filter(s => !picked.has(s));
+    out.push(...pickScreensByMinBid(rest, n - out.length));
+  }
+
+  return out.slice(0, n);
+}
+
 function downloadXLSX(rows){
   if(!rows || !rows.length) return;
 
@@ -1334,7 +1394,7 @@ async function onCalcClick(){
       : Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_OPT));
 
   const screensChosenCount = Math.min(pool.length, screensNeeded);
-  const chosen = pickScreensByMinBid(pool, screensChosenCount);
+  const chosen = pickScreensEvenlyByGrid(pool, screensChosenCount, 4);
 
   const playsPerHourPerScreen = playsPerHourTotalTheory / screensChosenCount;
 
