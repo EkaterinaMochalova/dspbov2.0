@@ -1556,91 +1556,88 @@ async function onCalcClick(){
 
   const hpd = (brief.budget.mode !== "fixed") ? RECO_HOURS_PER_DAY : hpdFixed;
 
-  // ===== CALC =====
-  const totalPlaysTheory = Math.floor(budget / bidPlus20);
-  const playsPerHourTotalTheory = totalPlaysTheory / days / hpd;
+ // ===== CALC =====
+const totalPlaysTheory = Math.floor(budget / bidPlus20);
+const playsPerHourTotalTheory = totalPlaysTheory / days / hpd;
 
-  const screensNeeded =
-    (brief.budget.mode !== "fixed")
-      ? Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_MAX))
-      : Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_OPT));
+const screensNeeded =
+  (brief.budget.mode !== "fixed")
+    ? Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_MAX))
+    : Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_OPT));
 
-  const screensChosenCount = Math.min(pool.length, screensNeeded);
-  const chosen = pickScreensUniformByGrid(pool, screensChosenCount, 2);
+const screensChosenCount = Math.min(pool.length, screensNeeded);
 
-  console.log("[calc] pool:", pool.length, "chosen:", chosen.length);
+// выбор (равномерный)
+const chosen = pickScreensUniformByGrid(pool, screensChosenCount, 2);
 
-// bbox выбранных
-const norm = (v) => {
+console.log("[calc] pool:", pool.length, "screensNeeded:", screensNeeded, "chosen:", chosen.length);
+
+// DEBUG bbox выбранных (без дублей и без _normCoord до объявления)
+const _normCoord = (v) => {
   const s = String(v ?? "").trim().replace(",", ".");
   const n = Number(s);
   return Number.isFinite(n) ? n : NaN;
 };
-const pts = chosen
-  .map(s => ({ lat: _normCoord(s.lat ?? s.latitude), lon: _normCoord(s.lon ?? s.lng ?? s.longitude) }))
+
+const pts = (chosen || [])
+  .map(s => ({
+    lat: _normCoord(s.lat ?? s.latitude),
+    lon: _normCoord(s.lon ?? s.lng ?? s.longitude)
+  }))
   .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
 
-const lats = pts.map(p => p.lat);
-const lons = pts.map(p => p.lon);
-
-console.log("[calc] chosen bbox lat:", Math.min(...lats), Math.max(...lats));
-console.log("[calc] chosen bbox lon:", Math.min(...lons), Math.max(...lons));
-
-  
-  const playsPerHourPerScreen = playsPerHourTotalTheory / screensChosenCount;
-
-  let warning = "";
-  let totalPlaysEffective = totalPlaysTheory;
-
-  if(playsPerHourPerScreen > SC_OPT && playsPerHourPerScreen <= SC_MAX){
-    warning = `⚠️ В среднем получается ${playsPerHourPerScreen.toFixed(1)} выходов/час на экран (выше оптимальных ${SC_OPT}). Выходов может быть меньше: ёмкость экранов ограничена.`;
-  } else if(playsPerHourPerScreen > SC_MAX){
-    const maxPlaysByCapacity = Math.floor(SC_MAX * screensChosenCount * days * hpd);
-    totalPlaysEffective = Math.min(totalPlaysTheory, maxPlaysByCapacity);
-    warning = `⚠️ На заданный бюджет не хватает ёмкости: максимум ${SC_MAX} выходов/час на экран. В расчёте показаны данные по ёмкости (часть бюджета может не утилизироваться).`;
+if (pts.length) {
+  let minLat =  90, maxLat = -90, minLon =  180, maxLon = -180;
+  for (const p of pts) {
+    if (p.lat < minLat) minLat = p.lat;
+    if (p.lat > maxLat) maxLat = p.lat;
+    if (p.lon < minLon) minLon = p.lon;
+    if (p.lon > maxLon) maxLon = p.lon;
   }
-
-  const playsPerDay = totalPlaysEffective / days;
-  const playsPerHourTotal = totalPlaysEffective / days / hpd;
-
-  const avgOts = avgNumber(pool.map(s => s.ots));
-  const otsTotal = (avgOts == null) ? null : totalPlaysEffective * avgOts;
-  const otsPerDay = (avgOts == null) ? null : otsTotal / days;
-  const otsPerHour = (avgOts == null) ? null : otsTotal / days / hpd;
-
-  state.lastChosen = chosen;
-
-  const _normCoord = (v) => {
-  const s = String(v ?? "").trim().replace(",", ".");
-  const n = Number(s);
-  return Number.isFinite(n) ? n : NaN;
-};
-
-const pts = chosen
-  .map(s => ({ lat: _normCoord(s.lat ?? s.latitude), lon: _normCoord(s.lon ?? s.lng ?? s.longitude) }))
-  .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
-
-if(pts.length){
-  const lats = pts.map(p => p.lat);
-  const lons = pts.map(p => p.lon);
-  console.log("[chosen bbox] lat:", Math.min(...lats), Math.max(...lats), "spread:", (Math.max(...lats)-Math.min(...lats)));
-  console.log("[chosen bbox] lon:", Math.min(...lons), Math.max(...lons), "spread:", (Math.max(...lons)-Math.min(...lons)));
+  console.log("[calc] chosen bbox lat:", minLat, maxLat, "spread:", (maxLat - minLat));
+  console.log("[calc] chosen bbox lon:", minLon, maxLon, "spread:", (maxLon - minLon));
 } else {
-  console.warn("[chosen bbox] no coords in chosen");
+  console.warn("[calc] chosen has no valid coords");
 }
-  
-  window.dispatchEvent(new CustomEvent("planner:calc-done", { detail: { chosen } }));
-  window.PLANNER.ui.photosAllowed = true;
-  try {
+
+const playsPerHourPerScreen = playsPerHourTotalTheory / screensChosenCount;
+
+let warning = "";
+let totalPlaysEffective = totalPlaysTheory;
+
+if (playsPerHourPerScreen > SC_OPT && playsPerHourPerScreen <= SC_MAX) {
+  warning = `⚠️ В среднем получается ${playsPerHourPerScreen.toFixed(1)} выходов/час на экран (выше оптимальных ${SC_OPT}). Выходов может быть меньше: ёмкость экранов ограничена.`;
+} else if (playsPerHourPerScreen > SC_MAX) {
+  const maxPlaysByCapacity = Math.floor(SC_MAX * screensChosenCount * days * hpd);
+  totalPlaysEffective = Math.min(totalPlaysTheory, maxPlaysByCapacity);
+  warning = `⚠️ На заданный бюджет не хватает ёмкости: максимум ${SC_MAX} выходов/час на экран. В расчёте показаны данные по ёмкости (часть бюджета может не утилизироваться).`;
+}
+
+const playsPerDay = totalPlaysEffective / days;
+const playsPerHourTotal = totalPlaysEffective / days / hpd;
+
+const avgOts = avgNumber(pool.map(s => s.ots));
+const otsTotal = (avgOts == null) ? null : totalPlaysEffective * avgOts;
+const otsPerDay = (avgOts == null) ? null : otsTotal / days;
+const otsPerHour = (avgOts == null) ? null : otsTotal / days / hpd;
+
+state.lastChosen = chosen;
+
+// событие (после того как lastChosen записан)
+window.dispatchEvent(new CustomEvent("planner:calc-done", { detail: { chosen } }));
+
+// карусель фото
+window.PLANNER.ui.photosAllowed = true;
+try {
   renderPhotosCarousel(chosen);
 } catch (e) {
   console.error("[photos] renderPhotosCarousel failed:", e);
 }
 
-  const nf = (n) => Math.floor(n).toLocaleString("ru-RU");
-  const of = (n) => Math.round(n).toLocaleString("ru-RU");
+const nf = (n) => Math.floor(n).toLocaleString("ru-RU");
+const of = (n) => Math.round(n).toLocaleString("ru-RU");
 
-  const summaryText =
+const summaryText =
 `Бриф:
 — Бюджет: ${budget.toLocaleString("ru-RU")} ₽
 — Даты: ${brief.dates.start} → ${brief.dates.end} (дней: ${days})
@@ -1651,7 +1648,7 @@ if(pts.length){
 — GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${brief.grp.max.toFixed(2)}` : "не учитываем"}
 — Страта: ${tier}
 
-Расчёт через minBid:
+Расчёт:
 — Средняя ставка: ${bidPlus20.toFixed(2)} ₽
 — Выходов всего: ${nf(totalPlaysEffective)}
 — Выходов/день: ${nf(playsPerDay)}
@@ -1660,22 +1657,23 @@ if(pts.length){
 — OTS всего: ${otsTotal == null ? "—" : of(otsTotal)}
 — OTS/день: ${otsTotal == null ? "—" : of(otsPerDay)}
 — OTS/час: ${otsTotal == null ? "—" : of(otsPerHour)}`
-    + (warning ? `\n\n${warning}` : "")
-    + (grpWarning ? `\n\n${grpWarning}` : "");
+  + (warning ? `\n\n${warning}` : "")
+  + (grpWarning ? `\n\n${grpWarning}` : "");
 
-  if(el("summary")) el("summary").textContent = summaryText;
-  if(el("download-csv")) el("download-csv").disabled = chosen.length === 0;
+if (el("summary")) el("summary").textContent = summaryText;
+if (el("download-csv")) el("download-csv").disabled = chosen.length === 0;
 
-  if(el("results")){
+// результаты (сворачиваемые)
+if (el("results")) {
   el("results").innerHTML = `
     <div id="results-toggle"
          style="font-size:13px; color:#555; cursor:pointer; display:flex; align-items:center; gap:6px; user-select:none;">
-      <span id="results-arrow">▾</span>
+      <span id="results-arrow">▸</span>
       <span>Показаны первые 10 выбранных экранов</span>
     </div>
 
     <div id="results-body"
-         style="margin-top:8px; border:1px solid #eee; border-radius:12px; overflow:hidden;">
+         style="display:none; margin-top:8px; border:1px solid #eee; border-radius:12px; overflow:hidden;">
       <table style="width:100%; border-collapse:collapse; font-size:13px;">
         <thead>
           <tr style="background:#fafafa;">
@@ -1688,7 +1686,7 @@ if(pts.length){
           </tr>
         </thead>
         <tbody>
-          ${chosen.slice(0,10).map(r => `
+          ${(chosen || []).slice(0, 10).map(r => `
             <tr>
               <td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.screen_id || ""}</td>
               <td style="padding:10px; border-bottom:1px solid #f3f3f3;">${r.format || ""}</td>
@@ -1702,22 +1700,19 @@ if(pts.length){
       </table>
     </div>
   `;
-const toggle = document.getElementById("results-toggle");
-  const body   = document.getElementById("results-body");
-  const arrow  = document.getElementById("results-arrow");
 
-  if(toggle && body && arrow){
+  const toggle = document.getElementById("results-toggle");
+  const body = document.getElementById("results-body");
+  const arrow = document.getElementById("results-arrow");
+
+  if (toggle && body && arrow) {
     let opened = false;
-    body.style.display = "none";
-    arrow.textContent = "▸";
-
     toggle.onclick = () => {
       opened = !opened;
       body.style.display = opened ? "block" : "none";
       arrow.textContent = opened ? "▾" : "▸";
     };
   }
-}
 }
   
 // ===== BIND UI =====
