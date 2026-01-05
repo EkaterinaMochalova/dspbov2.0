@@ -769,6 +769,53 @@ function pickScreensUniformGrid(pool, n, grid = 6){
   return picked.slice(0, n);
 }
 
+function pickScreensGridSpread(pool, n){
+  const pts = pool
+    .map(s => ({ s, p: getLatLon(s) }))
+    .filter(x => x.p);
+
+  if(pts.length <= n) return pts.map(x => x.s);
+
+  const lats = pts.map(x => x.p.lat);
+  const lons = pts.map(x => x.p.lon);
+
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+
+  // сетка примерно sqrt(n) x sqrt(n)
+  const k = Math.max(2, Math.ceil(Math.sqrt(n)));
+  const buckets = new Map();
+
+  for(const x of pts){
+    const i = Math.min(k-1, Math.floor(((x.p.lat - minLat) / (maxLat - minLat + 1e-9)) * k));
+    const j = Math.min(k-1, Math.floor(((x.p.lon - minLon) / (maxLon - minLon + 1e-9)) * k));
+    const key = i + ":" + j;
+    if(!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(x.s);
+  }
+
+  // берём по 1 из каждой ячейки, потом добиваем остаток случайно
+  const cells = Array.from(buckets.values()).sort((a,b) => b.length - a.length);
+  const chosen = [];
+
+  // первый проход: по одной из разных ячеек
+  for(const arr of cells){
+    if(chosen.length >= n) break;
+    chosen.push(arr[Math.floor(Math.random() * arr.length)]);
+  }
+
+  // добивка, если ячеек меньше чем n
+  if(chosen.length < n){
+    const flat = cells.flat();
+    while(chosen.length < n && flat.length){
+      chosen.push(flat[Math.floor(Math.random() * flat.length)]);
+    }
+  }
+
+  // уберём дубли, если вдруг
+  return Array.from(new Set(chosen)).slice(0, n);
+}
+
 
 function pickScreensMaxSpread(pool, n, candN = 2500){
   const withGeo = pool.filter(s => Number.isFinite(s.lat) && Number.isFinite(s.lon));
@@ -1524,7 +1571,7 @@ async function onCalcClick(){
       : Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_OPT));
 
   const screensChosenCount = Math.min(pool.length, screensNeeded);
-  const chosen = pickScreensUniformGrid(pool, screensChosenCount, 6);
+  const chosen = pickScreensGridSpread(pool, screensChosenCount);
   const playsPerHourPerScreen = playsPerHourTotalTheory / screensChosenCount;
 
   let warning = "";
