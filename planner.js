@@ -1358,6 +1358,7 @@ async function onCalcClick(){
   const otsPerHour = (avgOts == null) ? null : otsTotal / days / hpd;
 
   state.lastChosen = chosen;
+  window.dispatchEvent(new CustomEvent("planner:calc-done", { detail: { chosen } }));
   window.PLANNER.ui.photosAllowed = true;
   renderPhotosCarousel(chosen);
 
