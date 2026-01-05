@@ -716,58 +716,53 @@ function pickScreensByMinBid(screens, n){
   return sorted.slice(0, n);
 }
 
-function pickScreensUniformGrid(pool, n, grid = 6){
-  const pts = pool.filter(s => Number.isFinite(s.lat) && Number.isFinite(s.lon));
-  if(pts.length === 0) return pool.slice(0, n);
-  if(pts.length <= n) return pts.slice(0, n);
 
-  let minLat=  90, maxLat=-90, minLon= 180, maxLon=-180;
-  for(const s of pts){
-    if(s.lat < minLat) minLat = s.lat;
-    if(s.lat > maxLat) maxLat = s.lat;
-    if(s.lon < minLon) minLon = s.lon;
-    if(s.lon > maxLon) maxLon = s.lon;
-  }
+function gridKey(lat, lon, stepKm = 2) {
+  const kmLat = 111; // км в градусе широты
+  const kmLon = 111 * Math.cos(lat * Math.PI / 180);
 
-  const dLat = (maxLat - minLat) || 1e-9;
-  const dLon = (maxLon - minLon) || 1e-9;
+  const gx = Math.floor(lat * kmLat / stepKm);
+  const gy = Math.floor(lon * kmLon / stepKm);
 
-  const cells = new Map();
-  for(const s of pts){
-    const cx = Math.min(grid-1, Math.max(0, Math.floor(((s.lon - minLon) / dLon) * grid)));
-    const cy = Math.min(grid-1, Math.max(0, Math.floor(((s.lat - minLat) / dLat) * grid)));
-    const key = cy + ":" + cx;
-    if(!cells.has(key)) cells.set(key, []);
-    cells.get(key).push(s);
-  }
-
-  const keys = Array.from(cells.keys());
-  for(let i=keys.length-1;i>0;i--){
-    const j = (Math.random()*(i+1))|0;
-    [keys[i],keys[j]] = [keys[j],keys[i]];
-  }
-
-  const picked = [];
-  for(const k of keys){
-    const arr = cells.get(k);
-    if(!arr?.length) continue;
-    picked.push(arr[(Math.random()*arr.length)|0]);
-    if(picked.length >= n) return picked;
-  }
-
-  let layer = 1;
-  while(picked.length < n && layer < 50){
-    for(const k of keys){
-      const arr = cells.get(k);
-      if(!arr?.length) continue;
-      picked.push(arr[layer % arr.length]);
-      if(picked.length >= n) return picked;
-    }
-    layer++;
-  }
-
-  return picked.slice(0, n);
+  return `${gx}:${gy}`;
 }
+
+function groupByGrid(screens, stepKm = 2) {
+  const map = new Map();
+
+  for (const s of screens) {
+    const lat = Number(s.lat ?? s.latitude);
+    const lon = Number(s.lon ?? s.lng ?? s.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+
+    const key = gridKey(lat, lon, stepKm);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(s);
+  }
+
+  return [...map.values()];
+}
+
+function pickScreensUniformByGrid(pool, count, stepKm = 2) {
+  const cells = groupByGrid(pool, stepKm);
+
+  // перемешиваем ячейки
+  cells.sort(() => Math.random() - 0.5);
+
+  const result = [];
+  let i = 0;
+
+  while (result.length < count && cells.length) {
+    const cell = cells[i % cells.length];
+    if (cell.length) {
+      result.push(cell.pop()); // ❗ цена не учитывается
+    }
+    i++;
+  }
+
+  return result;
+}
+
 
 function pickScreensGridSpread(pool, n){
   const pts = pool
@@ -1571,7 +1566,7 @@ async function onCalcClick(){
       : Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_OPT));
 
   const screensChosenCount = Math.min(pool.length, screensNeeded);
-  const chosen = pickScreensGridSpread(pool, screensChosenCount);
+  const chosen = pickScreensUniformByGrid(pool, screensChosenCount, 2);
   const playsPerHourPerScreen = playsPerHourTotalTheory / screensChosenCount;
 
   let warning = "";
