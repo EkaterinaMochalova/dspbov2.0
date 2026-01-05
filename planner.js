@@ -794,6 +794,7 @@ function clearPhotosCarousel(){
 }
 
 function renderPhotosCarousel(chosen){
+  console.log("[photos] renderPhotosCarousel called", new Error().stack);
   if(!window.PLANNER?.ui?.photosAllowed) return; 
   const box = document.getElementById("screens-photos");
   const row = document.getElementById("screens-photos-row");
