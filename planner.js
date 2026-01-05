@@ -1588,3 +1588,4 @@ Object.assign(window.PLANNER, {
   _fetchOverpass,
   _runOverpassWithFailover
 });
+})();   
