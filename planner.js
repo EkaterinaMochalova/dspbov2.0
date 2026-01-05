@@ -1609,9 +1609,33 @@ console.log("[calc] chosen bbox lon:", Math.min(...lons), Math.max(...lons));
   const otsPerHour = (avgOts == null) ? null : otsTotal / days / hpd;
 
   state.lastChosen = chosen;
+
+  const norm = (v) => {
+  const s = String(v ?? "").trim().replace(",", ".");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
+};
+
+const pts = chosen
+  .map(s => ({ lat: norm(s.lat ?? s.latitude), lon: norm(s.lon ?? s.lng ?? s.longitude) }))
+  .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+
+if(pts.length){
+  const lats = pts.map(p => p.lat);
+  const lons = pts.map(p => p.lon);
+  console.log("[chosen bbox] lat:", Math.min(...lats), Math.max(...lats), "spread:", (Math.max(...lats)-Math.min(...lats)));
+  console.log("[chosen bbox] lon:", Math.min(...lons), Math.max(...lons), "spread:", (Math.max(...lons)-Math.min(...lons)));
+} else {
+  console.warn("[chosen bbox] no coords in chosen");
+}
+  
   window.dispatchEvent(new CustomEvent("planner:calc-done", { detail: { chosen } }));
   window.PLANNER.ui.photosAllowed = true;
+  try {
   renderPhotosCarousel(chosen);
+} catch (e) {
+  console.error("[photos] renderPhotosCarousel failed:", e);
+}
 
   const nf = (n) => Math.floor(n).toLocaleString("ru-RU");
   const of = (n) => Math.round(n).toLocaleString("ru-RU");
