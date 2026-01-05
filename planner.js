@@ -1354,6 +1354,7 @@ async function onCalcClick(){
   const otsPerHour = (avgOts == null) ? null : otsTotal / days / hpd;
 
   state.lastChosen = chosen;
+  renderPhotosCarousel(chosen);
 
   const nf = (n) => Math.floor(n).toLocaleString("ru-RU");
   const of = (n) => Math.round(n).toLocaleString("ru-RU");
@@ -1517,7 +1518,7 @@ async function startPlanner() {
   renderSelectionExtra();
   bindPlannerUI();
   await loadTiers();
-  await loadCityRegions();
+  await loadCityRegions(); clearPhotosCarousel();
   await loadScreens();
 }
 
