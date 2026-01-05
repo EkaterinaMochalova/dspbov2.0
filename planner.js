@@ -716,6 +716,82 @@ function pickScreensByMinBid(screens, n){
   return sorted.slice(0, n);
 }
 
+function pickScreensMaxSpread(pool, n, candN = 2500){
+  const withGeo = pool.filter(s => Number.isFinite(s.lat) && Number.isFinite(s.lon));
+  if(withGeo.length === 0) return pool.slice(0, n);
+  if(withGeo.length <= n) return withGeo.slice(0, n);
+
+  // чтобы не O(N^2) на десятках тысяч — берём случайную подвыборку кандидатов (НО без цены)
+  let candidates = withGeo;
+  if(withGeo.length > candN){
+    candidates = withGeo.slice();
+    for(let i = candidates.length - 1; i > 0; i--){
+      const j = (Math.random() * (i + 1)) | 0;
+      [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+    }
+    candidates = candidates.slice(0, candN);
+  }
+
+  // seed: самый близкий к "центру" (по средним lat/lon) — стартует стабильно
+  let sumLat = 0, sumLon = 0;
+  for(const s of candidates){ sumLat += s.lat; sumLon += s.lon; }
+  const cLat = sumLat / candidates.length, cLon = sumLon / candidates.length;
+
+  function dist2(a,b){
+    const dx = a.lat - b.lat;
+    const dy = a.lon - b.lon;
+    return dx*dx + dy*dy;
+  }
+
+  let seed = candidates[0];
+  let bestD = Infinity;
+  for(const s of candidates){
+    const d = (s.lat - cLat)*(s.lat - cLat) + (s.lon - cLon)*(s.lon - cLon);
+    if(d < bestD){ bestD = d; seed = s; }
+  }
+
+  const picked = [seed];
+  const pickedSet = new Set([seed.screen_id || seed.gid || seed.id || JSON.stringify([seed.lat,seed.lon])]);
+
+  // для каждого кандидата храним расстояние до ближайшего уже выбранного
+  const minD = new Array(candidates.length).fill(Infinity);
+
+  for(let i=0;i<candidates.length;i++){
+    minD[i] = dist2(candidates[i], seed);
+  }
+
+  while(picked.length < n){
+    let bestIdx = -1;
+    let bestMinD = -1;
+
+    for(let i=0;i<candidates.length;i++){
+      const s = candidates[i];
+      const key = s.screen_id || s.gid || s.id || JSON.stringify([s.lat,s.lon]);
+      if(pickedSet.has(key)) continue;
+
+      if(minD[i] > bestMinD){
+        bestMinD = minD[i];
+        bestIdx = i;
+      }
+    }
+
+    if(bestIdx === -1) break;
+
+    const chosen = candidates[bestIdx];
+    const key = chosen.screen_id || chosen.gid || chosen.id || JSON.stringify([chosen.lat,chosen.lon]);
+    picked.push(chosen);
+    pickedSet.add(key);
+
+    // обновляем min distance для остальных
+    for(let i=0;i<candidates.length;i++){
+      const d = dist2(candidates[i], chosen);
+      if(d < minD[i]) minD[i] = d;
+    }
+  }
+
+  return picked;
+}
+
 function pickScreensEvenlyByGrid(pool, n, grid = 4){
   const withGeo = pool.filter(s => Number.isFinite(s.lat) && Number.isFinite(s.lon));
   if(withGeo.length < Math.min(n, 3)) {
@@ -1394,7 +1470,7 @@ async function onCalcClick(){
       : Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_OPT));
 
   const screensChosenCount = Math.min(pool.length, screensNeeded);
-  const chosen = pickScreensEvenlyByGrid(pool, screensChosenCount, 4);
+  const chosen = pickScreensMaxSpread(pool, screensChosenCount, 2500);
 
   const playsPerHourPerScreen = playsPerHourTotalTheory / screensChosenCount;
 
