@@ -1567,6 +1567,26 @@ async function onCalcClick(){
 
   const screensChosenCount = Math.min(pool.length, screensNeeded);
   const chosen = pickScreensUniformByGrid(pool, screensChosenCount, 2);
+
+  console.log("[calc] pool:", pool.length, "chosen:", chosen.length);
+
+// bbox выбранных
+const norm = (v) => {
+  const s = String(v ?? "").trim().replace(",", ".");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
+};
+const pts = chosen
+  .map(s => ({ lat: norm(s.lat ?? s.latitude), lon: norm(s.lon ?? s.lng ?? s.longitude) }))
+  .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+
+const lats = pts.map(p => p.lat);
+const lons = pts.map(p => p.lon);
+
+console.log("[calc] chosen bbox lat:", Math.min(...lats), Math.max(...lats));
+console.log("[calc] chosen bbox lon:", Math.min(...lons), Math.max(...lons));
+
+  
   const playsPerHourPerScreen = playsPerHourTotalTheory / screensChosenCount;
 
   let warning = "";
