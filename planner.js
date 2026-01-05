@@ -784,6 +784,61 @@ function downloadPOIsXLSX(pois){
   XLSX.writeFile(wb, "pois.xlsx");
 }
 
+function clearPhotosCarousel(){
+  const box = document.getElementById("screens-photos");
+  const row = document.getElementById("screens-photos-row");
+  if(row) row.innerHTML = "";
+  if(box) box.style.display = "none";
+}
+
+function renderPhotosCarousel(chosen){
+  const box = document.getElementById("screens-photos");
+  const row = document.getElementById("screens-photos-row");
+  if(!box || !row) return;
+
+  row.innerHTML = "";
+
+  const items = Array.isArray(chosen) ? chosen : [];
+  // показываем только те, у кого есть image_url
+  const withImg = items.filter(s => String(s.image_url || "").trim());
+
+  if(!withImg.length){
+    box.style.display = "none";
+    return;
+  }
+
+  // ограничим, чтобы не грузить 1000 фоток сразу
+  const MAX = 25;
+
+  for(const s of withImg.slice(0, MAX)){
+    const gid = s.screen_id || s.gid || "";
+    const owner = s.owner || s.owner_name || "";
+    const addr = s.address || "";
+    const img = String(s.image_url || "").trim();
+
+    const card = document.createElement("div");
+    card.className = "photo-card";
+
+    card.innerHTML = `
+      <img src="${escapeHtml(img)}" alt="">
+      <div class="meta">
+        <div class="gid">${escapeHtml(gid)}</div>
+        <div class="sub">${escapeHtml(owner)}</div>
+        <div class="sub">${escapeHtml(addr)}</div>
+      </div>
+    `;
+
+    // (опц.) клик — открыть в новом окне
+    card.addEventListener("click", () => {
+      try { window.open(img, "_blank"); } catch(e){}
+    });
+
+    row.appendChild(card);
+  }
+
+  box.style.display = "block";
+}
+
 function renderPOIList(pois){
   const wrap = document.getElementById("poi-results");
   if(!wrap) return;
