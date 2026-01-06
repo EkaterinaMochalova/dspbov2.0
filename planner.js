@@ -8,7 +8,7 @@ const SCREENS_CSV_URL =
   "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@24ada9ff4b42b7426b4c954e8b7bebc97efed72c/inventories_sync.csv?v=" + Date.now();
 
 const TIERS_JSON_URL =
-  "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@main/tiers_v1.json?v=" + Date.now();
+  "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@8684fb51e3081987ae494eaaf5bacbd7b5e47160/tiers_v1.json?v=" + Date.now();
 
 // ===== CITY -> REGION =====
 const CITY_REGIONS_URL =
@@ -648,7 +648,7 @@ async function loadTiers(){
     if(!res.ok) throw new Error("tiers json http " + res.status);
     const json = await res.json();
 
-    // ожидаем { tiers: {city: tier} }
+    // ожидаем { tiers: { "<REGION>": "A|B|C|D|M|SP" } }
     const tiers = json?.tiers && typeof json.tiers === "object" ? json.tiers : null;
     if(!tiers) throw new Error("tiers json has no 'tiers' object");
 
@@ -658,50 +658,23 @@ async function loadTiers(){
       generated_at: json?.generated_at || null
     };
 
-    console.log("[tiers] loaded:", Object.keys(tiers).length, "cities", window.PLANNER.tiersMeta);
+    console.log("[tiers] loaded:", Object.keys(tiers).length, "regions", window.PLANNER.tiersMeta);
     return true;
   } catch(e){
     console.warn("[tiers] load failed:", e);
-    window.PLANNER.tiers = {}; // чтобы код дальше не падал
+    window.PLANNER.tiers = {};
     window.PLANNER.tiersMeta = { version: "missing", generated_at: null };
     return false;
   }
 }
 
+// теперь name = REGION (то, что лежит в brief.geo.region)
 function getTierForGeo(name){
   const key = String(name || "").trim();
   const t = window.PLANNER?.tiers?.[key];
-  return (t === "A" || t === "B" || t === "C" || t === "D") ? t : "C";
-}
 
-function getTierForRegion(region, poolScreens){
-  // poolScreens: экраны уже отфильтрованы по region
-  const tiers = window.PLANNER?.tiers || {};
-
-  // веса tier'ов по числу экранов
-  const w = { A: 0, B: 0, C: 0, D: 0, U: 0 };
-
-  for(const s of (poolScreens || [])){
-    const city = String(s.city || "").trim();
-    if(!city) continue;
-
-    const t = tiers[city]; // tiers.json по городам
-    if(t === "A" || t === "B" || t === "C" || t === "D") w[t] += 1;
-    else w.U += 1; // unknown
-  }
-
-  // выбираем максимум (если все unknown — дефолт C)
-  const order = ["A","B","C","D"];
-  let best = "C";
-  let bestW = -1;
-
-  for(const t of order){
-    if(w[t] > bestW){ bestW = w[t]; best = t; }
-  }
-
-  // если вообще нет экранов или все unknown
-  if(bestW <= 0) return "C";
-  return best;
+  // поддерживаем спец-страты + обычные
+  return (t === "M" || t === "SP" || t === "A" || t === "B" || t === "C" || t === "D") ? t : "C";
 }
 
 
@@ -1540,7 +1513,14 @@ async function onCalcClick(){
     const maxPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * screensCount * days);
     const maxBudget = maxPlays * bidPlus20;
 
-    const BASE_MONTHLY_BY_TIER = { A: 2000000, B: 1000000, C: 500000, D: 200000 };
+   const BASE_MONTHLY_BY_TIER = {
+  M: 2000000,   // Москва
+  SP: 1500000,  // Санкт-Петербург
+  A: 1000000,   // страта A (Казань, Екб и т.п.)
+  B: 500000,
+  C: 300000,
+  D: 100000
+};
     const DAYS_IN_MONTH = 30;
 
     const baseMonthly = BASE_MONTHLY_BY_TIER[tier] ?? BASE_MONTHLY_BY_TIER.C;
