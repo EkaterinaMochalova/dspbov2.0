@@ -5,14 +5,17 @@ window.PLANNER = window.PLANNER || {};
 
 const REF = "planner";
 const SCREENS_CSV_URL =
-  "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@24ada9ff4b42b7426b4c954e8b7bebc97efed72c/inventories_sync.csv?v=" + Date.now();
+  "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@24ada9ff4b42b7426b4c954e8b7bebc97efed72c/inventories_sync.csv?v=" +
+  Date.now();
 
 const TIERS_JSON_URL =
-  "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@8684fb51e3081987ae494eaaf5bacbd7b5e47160/tiers_v1.json?v=" + Date.now();
+  "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@8684fb51e3081987ae494eaaf5bacbd7b5e47160/tiers_v1.json?v=" +
+  Date.now();
 
 // ===== CITY -> REGION =====
 const CITY_REGIONS_URL =
-  "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@f6f96a16980cda4d7165e692526ef08f2cd0c22e/city_regions.json?v=" + Date.now();
+  "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@f6f96a16980cda4d7165e692526ef08f2cd0c22e/city_regions.json?v=" +
+  Date.now();
 
 // ===== Labels =====
 const FORMAT_LABELS = {
@@ -32,10 +35,13 @@ const FORMAT_LABELS = {
   SUPERSITE: { label: "Суперсайты", desc: "крупные конструкции с высокой дальностью видимости" }
 };
 
+// Экспортируем метки форматов наружу (для UI-скриптов в Tilda)
 window.PLANNER = window.PLANNER || {};
 window.PLANNER.FORMAT_LABELS = FORMAT_LABELS;
 window.PLANNER.ui = window.PLANNER.ui || {};
 window.PLANNER.ui.photosAllowed = false;
+
+// (опционально) чтобы проще было обращаться из любого места
 window.FORMAT_LABELS = window.FORMAT_LABELS || FORMAT_LABELS;
 
 // ===== POI =====
@@ -116,7 +122,7 @@ const POI_LABELS = {
 const BID_MULTIPLIER = 1.2;
 const SC_OPT = 30;
 const SC_MAX = 60;
-const RECO_HOURS_PER_DAY = 12;  // для режима "нужна рекомендация"
+const RECO_HOURS_PER_DAY = 12; // для режима "нужна рекомендация"
 
 // ===== State =====
 const state = {
@@ -124,32 +130,48 @@ const state = {
   citiesAll: [],
   formatsAll: [],
 
-  regionsAll: [],        // ["Москва", "Санкт-Петербург", ...]
-  regionsByCity: {},     // { "Москва": "Москва", "Химки": "Московская область", ... }
+  // ===== Regions =====
+  regionsAll: [],
+  regionsByCity: {},
 
+  // ===== Diagnostics =====
   unknownCities: [],
   unknownCitiesTop: [],
 
-  // UI
-  selectedCity: null,           // (оставляем, но сейчас выбор идёт по регионам)
-  selectedRegion: null,         // совместимость
-  selectedRegions: [],          // ✅ новый мультивыбор
+  // ===== UI =====
+  selectedCity: null,
   selectedFormats: new Set(),
+  selectedRegions: [], // ✅ мультивыбор регионов
+  selectedRegion: null, // ✅ обратная совместимость
   lastChosen: []
 };
 
 window.PLANNER.state = state;
 
 // ===== Utils =====
-function el(id){ return document.getElementById(id); }
+function el(id) { return document.getElementById(id); }
 
-function setStatus(msg){
+function setStatus(msg) {
   const s = el("status");
-  if(s) s.textContent = msg || "";
+  if (s) s.textContent = msg || "";
 }
 
-function cssButtonBase(btn){
-  if(!btn) return;
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, m => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+  }[m]));
+}
+
+function normalizeKey(s) {
+  return String(s ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/\s+/g, " ");
+}
+
+function cssButtonBase(btn) {
+  if (!btn) return;
   btn.classList.add("ux-btn");
   btn.style.padding = "8px 10px";
   btn.style.borderRadius = "999px";
@@ -159,88 +181,69 @@ function cssButtonBase(btn){
   btn.style.fontSize = "13px";
 }
 
-function escapeHtml(s) {
-  return String(s ?? "").replace(/[&<>"']/g, m => ({
-    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
-  }[m]));
+function getBudgetMode() {
+  return document.querySelector('input[name="budget_mode"]:checked')?.value || "fixed";
 }
 
-function parseCSV(text){
+// ✅ ВАЖНО: значения должны совпадать с тем, что ждёт hoursPerDay()
+function getScheduleType() {
+  // ожидаемые значения: all_day | peak | custom
+  return document.querySelector('input[name="schedule"]:checked')?.value || "all_day";
+}
+
+function parseCSV(text) {
   const res = Papa.parse(text, { header: true, skipEmptyLines: true, dynamicTyping: false });
   if (res.errors && res.errors.length) console.warn("CSV parse errors:", res.errors.slice(0, 8));
   return res.data || [];
 }
 
-function toNumber(x){
-  if(x == null) return NaN;
+function toNumber(x) {
+  if (x == null) return NaN;
   const s = String(x).trim().replace(/\s+/g, "").replace(",", ".");
   const n = Number(s);
   return Number.isFinite(n) ? n : NaN;
 }
 
-function avgNumber(arr){
+function avgNumber(arr) {
   let sum = 0, cnt = 0;
-  for(const v of arr){
-    if(Number.isFinite(v)){ sum += v; cnt++; }
+  for (const v of arr) {
+    if (Number.isFinite(v)) { sum += v; cnt++; }
   }
   return cnt ? (sum / cnt) : null;
 }
 
-function daysInclusive(startStr, endStr){
+function daysInclusive(startStr, endStr) {
   const s = new Date(startStr + "T00:00:00");
   const e = new Date(endStr + "T00:00:00");
-  return Math.floor((e - s) / (24*3600*1000)) + 1;
+  return Math.floor((e - s) / (24 * 3600 * 1000)) + 1;
 }
 
-// schedule: приводим к каноничным значениям all_day | peak | custom
-function normalizeScheduleType(v){
-  const s = String(v || "").trim().toLowerCase();
-
-  // уже канон
-  if(s === "all_day" || s === "peak" || s === "custom") return s;
-
-  // русские / разные варианты
-  if(s.includes("весь") || s.includes("день") || s.includes("all")) return "all_day";
-  if(s.includes("прайм") || s.includes("peak")) return "peak";
-  if(s.includes("custom") || s.includes("свой") || s.includes("время")) return "custom";
-
-  // дефолт
-  return "all_day";
-}
-
-function getBudgetMode(){
-  return document.querySelector('input[name="budget_mode"]:checked')?.value || "fixed";
-}
-
-function getScheduleType(){
-  const raw = document.querySelector('input[name="schedule"]:checked')?.value || "all_day";
-  return normalizeScheduleType(raw);
-}
-
-function hoursPerDay(schedule){
-  const t = normalizeScheduleType(schedule?.type);
-  if(t === "all_day") return 15;
-  if(t === "peak") return 7;
-  if(t === "custom"){
-    const [fh,fm] = (schedule.from || "07:00").split(":").map(Number);
-    const [th,tm] = (schedule.to || "22:00").split(":").map(Number);
-    return Math.max(0, (th + tm/60) - (fh + fm/60));
+function hoursPerDay(schedule) {
+  if (schedule.type === "all_day") return 15;
+  if (schedule.type === "peak") return 7;
+  if (schedule.type === "custom") {
+    const [fh, fm] = (schedule.from || "07:00").split(":").map(Number);
+    const [th, tm] = (schedule.to || "22:00").split(":").map(Number);
+    return Math.max(0, (th + tm / 60) - (fh + fm / 60));
   }
   return 15;
 }
 
-function formatMeta(fmt){
-  return FORMAT_LABELS[fmt] || { label: fmt, desc: "Описание формата пока не задано." };
+function formatMeta(fmt) {
+  return FORMAT_LABELS[fmt] || {
+    label: fmt,
+    desc: "Описание формата пока не задано (можно добавить в словарь FORMAT_LABELS)."
+  };
 }
 
 // ===== UI: selection extra =====
-function renderSelectionExtra(){
+function renderSelectionExtra() {
   const mode = el("selection-mode")?.value || "city_even";
   const extra = el("selection-extra");
-  if(!extra) return;
+  if (!extra) return;
   extra.innerHTML = "";
 
-  if(mode === "near_address"){
+  if (mode === "near_address") {
     extra.innerHTML = `
       <input id="planner-addr" type="text" placeholder="Адрес"
              style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
@@ -253,9 +256,9 @@ function renderSelectionExtra(){
     return;
   }
 
-  if(mode === "poi"){
+  if (mode === "poi") {
     const keys = Object.keys(POI_QUERIES || {});
-    const options = keys.map(k => `<option value="${k}">${escapeHtml(POI_LABELS[k] || k)}</option>`).join("");
+    const options = keys.map(k => `<option value="${k}">${POI_LABELS[k] || k}</option>`).join("");
 
     extra.innerHTML = `
       <select id="poi-type"
@@ -273,7 +276,7 @@ function renderSelectionExtra(){
     return;
   }
 
-  if(mode === "route"){
+  if (mode === "route") {
     extra.innerHTML = `
       <input id="route-from" type="text" placeholder="Точка А"
              style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
@@ -289,23 +292,15 @@ function renderSelectionExtra(){
   }
 }
 
-// ===== City -> Region mapping load =====
-function normalizeCityKey(s){
-  return String(s || "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase()
-    .replace(/ё/g, "е");
-}
-
-async function loadCityRegions(){
+// ===== City -> Region loader =====
+async function loadCityRegions() {
   try {
     const res = await fetch(CITY_REGIONS_URL, { cache: "no-store" });
-    if(!res.ok) throw new Error("city_regions http " + res.status);
+    if (!res.ok) throw new Error("city_regions http " + res.status);
 
     const json = await res.json();
     const regionsRaw = (json?.regions && typeof json.regions === "object") ? json.regions : null;
-    if(!regionsRaw) throw new Error("city_regions has no 'regions' object");
+    if (!regionsRaw) throw new Error("city_regions has no 'regions' object");
 
     const cityToRegion = {};
     let citiesCount = 0;
@@ -314,19 +309,20 @@ async function loadCityRegions(){
     for (const [k, v] of Object.entries(regionsRaw)) {
       // A) "Москва": "Москва"
       if (typeof v === "string") {
-        const key = normalizeCityKey(k);
+        const key = normalizeKey(k);
         if (key) {
           cityToRegion[key] = String(v).trim();
           citiesCount++;
         }
         continue;
       }
+
       // B) "Московская область": ["Химки", ...]
       if (Array.isArray(v)) {
         const region = String(k).trim();
         regionsCount++;
         for (const city of v) {
-          const key = normalizeCityKey(city);
+          const key = normalizeKey(city);
           if (!key) continue;
           cityToRegion[key] = region;
           citiesCount++;
@@ -340,7 +336,6 @@ async function loadCityRegions(){
 
     console.log("[city_regions] loaded:", { cities: citiesCount, regions: regionsCount || "n/a" });
     return true;
-
   } catch (e) {
     console.warn("[city_regions] load failed:", e);
     window.PLANNER.cityRegions = {};
@@ -349,20 +344,118 @@ async function loadCityRegions(){
   }
 }
 
-function getRegionForCity(city){
-  const key = normalizeCityKey(city);
+function getRegionForCity(city) {
+  const key = normalizeKey(city);
   const r = window.PLANNER?.cityRegions?.[key];
   return (typeof r === "string" && r.trim()) ? r.trim() : "Не назначено";
 }
 
+// ===== (Optional) City chip UI (если нужен одиночный город) =====
+function renderSelectedCity() {
+  const box = el("city-selected");
+  if (!box) return;
+
+  const city = state.selectedCity || "";
+  if (!city) { box.innerHTML = ""; return; }
+
+  box.innerHTML = `
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <span style="padding:6px 10px; border:1px solid #ddd; border-radius:999px; background:#fafafa;">
+        ${escapeHtml(city)}
+      </span>
+      <button type="button" id="city-clear"
+        style="padding:6px 10px; border:1px solid #ddd; border-radius:10px; background:#fff; cursor:pointer;">
+        Очистить
+      </button>
+    </div>
+  `;
+
+  const btn = el("city-clear");
+  if (btn) {
+    btn.onclick = () => {
+      state.selectedCity = null;
+      renderSelectedCity();
+      // ⚠️ намеренно НЕ зовём несуществующий renderCitySuggestions()
+    };
+  }
+}
+
+// ===== Regions UI (мультивыбор) =====
+function renderSelectedRegions() {
+  const wrap = el("region-selected"); // ✅ отдельный контейнер
+  if (!wrap) return;
+
+  if (!Array.isArray(state.selectedRegions)) state.selectedRegions = [];
+  wrap.innerHTML = "";
+
+  if (state.selectedRegions.length === 0) {
+    state.selectedRegion = null;
+    wrap.innerHTML = `<div style="font-size:12px; color:#666;">Регион не выбран</div>`;
+    return;
+  }
+
+  state.selectedRegions.forEach((region, idx) => {
+    const chip = document.createElement("button");
+    cssButtonBase(chip);
+    chip.style.display = "inline-flex";
+    chip.style.alignItems = "center";
+    chip.style.gap = "6px";
+    chip.textContent = "✕ " + region;
+    if (idx === 0) chip.style.fontWeight = "600";
+
+    chip.addEventListener("click", () => {
+      state.selectedRegions = state.selectedRegions.filter(r => r !== region);
+      state.selectedRegion = state.selectedRegions[0] || null;
+      renderSelectedRegions();
+    });
+
+    wrap.appendChild(chip);
+  });
+
+  state.selectedRegion = state.selectedRegions[0] || null;
+}
+
+function renderRegionSuggestions(q) {
+  const sug = el("city-suggestions"); // suggestions dropdown
+  if (!sug) return;
+  sug.innerHTML = "";
+  if (!q) return;
+
+  if (!Array.isArray(state.selectedRegions)) state.selectedRegions = [];
+
+  const qq = q.toLowerCase();
+  const matches = state.regionsAll
+    .filter(r => r.toLowerCase().includes(qq))
+    .slice(0, 12);
+
+  matches.forEach(r => {
+    const b = document.createElement("button");
+    cssButtonBase(b);
+    b.textContent = "+ " + r;
+
+    b.addEventListener("click", () => {
+      if (!state.selectedRegions.includes(r)) state.selectedRegions.push(r);
+
+      state.selectedRegion = state.selectedRegions[0] || null;
+
+      if (el("city-search")) el("city-search").value = "";
+      sug.innerHTML = "";
+
+      renderSelectedRegions();
+    });
+
+    sug.appendChild(b);
+  });
+}
+
 // ===== Data load =====
-async function loadScreens(){
+async function loadScreens() {
   setStatus("Загружаю список экранов…");
   console.log("[screens] url:", SCREENS_CSV_URL);
 
   const res = await fetch(SCREENS_CSV_URL, { cache: "no-store" });
   console.log("[screens] status:", res.status, res.statusText);
-  if(!res.ok) throw new Error("Не удалось загрузить CSV: " + res.status);
+  if (!res.ok) throw new Error("Не удалось загрузить CSV: " + res.status);
 
   const text = await res.text();
   const rows = parseCSV(text);
@@ -388,17 +481,16 @@ async function loadScreens(){
       grp: toNumber(r.grp ?? r.GRP),
       lat: toNumber(r.lat ?? r.Lat ?? r.LAT),
       lon: toNumber(r.lon ?? r.Lon ?? r.LON ?? r.lng ?? r.Lng ?? r.LNG)
-      // region позже
     };
   });
 
   state.citiesAll = [...new Set(state.screens.map(s => s.city).filter(Boolean))]
-    .sort((a,b)=>a.localeCompare(b, "ru"));
+    .sort((a, b) => a.localeCompare(b, "ru"));
 
   state.formatsAll = [...new Set(state.screens.map(s => s.format).filter(Boolean))]
-    .sort((a,b)=>a.localeCompare(b));
+    .sort((a, b) => a.localeCompare(b));
 
-  // regionsByCity + regionsAll (ОДИН раз, без дубля)
+  // regionsByCity + regionsAll (один проход)
   state.regionsByCity = {};
   state.regionsAll = [];
 
@@ -407,15 +499,16 @@ async function loadScreens(){
     state.regionsByCity[c] = reg;
     if (!state.regionsAll.includes(reg)) state.regionsAll.push(reg);
   }
-  state.regionsAll.sort((a,b)=>a.localeCompare(b,"ru"));
+  state.regionsAll.sort((a, b) => a.localeCompare(b, "ru"));
 
-  // проставим region каждому экрану
+  // проставляем region каждому экрану
   for (const s of state.screens) {
     s.region = state.regionsByCity[s.city] || "Не назначено";
   }
 
   renderFormats();
-  renderSelectedRegion();
+  renderSelectedCity();
+  renderSelectedRegions();
 
   setStatus(
     `Всего доступно: ` +
@@ -430,9 +523,9 @@ async function loadScreens(){
 }
 
 // ===== UI: formats =====
-function renderFormats(){
+function renderFormats() {
   const wrap = el("formats-wrap");
-  if(!wrap) return;
+  if (!wrap) return;
   wrap.innerHTML = "";
 
   state.formatsAll.forEach(fmt => {
@@ -454,8 +547,8 @@ function renderFormats(){
     sync();
 
     b.addEventListener("click", () => {
-      if(el("formats-auto")?.checked) return;
-      if(state.selectedFormats.has(fmt)) state.selectedFormats.delete(fmt);
+      if (el("formats-auto")?.checked) return;
+      if (state.selectedFormats.has(fmt)) state.selectedFormats.delete(fmt);
       else state.selectedFormats.add(fmt);
       sync();
     });
@@ -464,87 +557,20 @@ function renderFormats(){
   });
 }
 
-// ===== UI: regions (multi) =====
-function renderSelectedRegion(){
-  const wrap = el("city-selected");
-  if(!wrap) return;
-
-  if(!Array.isArray(state.selectedRegions)) state.selectedRegions = [];
-  wrap.innerHTML = "";
-
-  if(state.selectedRegions.length === 0){
-    state.selectedRegion = null;
-    wrap.innerHTML = `<div style="font-size:12px; color:#666;">Регион не выбран</div>`;
-    return;
-  }
-
-  state.selectedRegions.forEach((region, idx) => {
-    const chip = document.createElement("button");
-    cssButtonBase(chip);
-    chip.style.display = "inline-flex";
-    chip.style.alignItems = "center";
-    chip.style.gap = "6px";
-    chip.textContent = "✕ " + region;
-    if(idx === 0) chip.style.fontWeight = "600";
-
-    chip.addEventListener("click", () => {
-      state.selectedRegions = state.selectedRegions.filter(r => r !== region);
-      state.selectedRegion = state.selectedRegions[0] || null;
-      renderSelectedRegion();
-    });
-
-    wrap.appendChild(chip);
-  });
-
-  state.selectedRegion = state.selectedRegions[0] || null;
-}
-
-function renderRegionSuggestions(q){
-  const sug = el("city-suggestions");
-  if(!sug) return;
-  sug.innerHTML = "";
-  if(!q) return;
-
-  if(!Array.isArray(state.selectedRegions)) state.selectedRegions = [];
-
-  const qq = q.toLowerCase();
-  const matches = state.regionsAll
-    .filter(r => r.toLowerCase().includes(qq))
-    .slice(0, 12);
-
-  matches.forEach(r => {
-    const b = document.createElement("button");
-    cssButtonBase(b);
-    b.textContent = "+ " + r;
-
-    b.addEventListener("click", () => {
-      if(!state.selectedRegions.includes(r)){
-        state.selectedRegions.push(r);
-      }
-      state.selectedRegion = state.selectedRegions[0] || null;
-
-      if(el("city-search")) el("city-search").value = "";
-      sug.innerHTML = "";
-      renderSelectedRegion();
-    });
-
-    sug.appendChild(b);
-  });
-}
-
 // ===== Brief =====
-function buildBrief(){
+function buildBrief() {
   const root = document.getElementById("planner-widget") || document;
 
   const budgetMode = getBudgetMode();
   const budgetVal = el("budget-input")?.value;
 
-  const scheduleType = getScheduleType();
+  const scheduleType = getScheduleType(); // all_day | peak | custom
   const timeFrom = el("time-from")?.value;
   const timeTo = el("time-to")?.value;
 
   const selectionMode = el("selection-mode")?.value || "city_even";
 
+  // ✅ регионы: поддержим и старое (selectedRegion), и новое (selectedRegions[])
   const regions = Array.isArray(state.selectedRegions)
     ? state.selectedRegions.map(r => String(r || "").trim()).filter(Boolean)
     : [];
@@ -602,17 +628,17 @@ function buildBrief(){
     return "";
   };
 
-  if(selectionMode === "near_address"){
+  if (selectionMode === "near_address") {
     brief.selection.address = pickAnyVal("#planner-addr", "#addr");
     brief.selection.radius_m = pickAnyNum(500, "#planner-radius", "#radius");
   }
-  if(selectionMode === "poi"){
+  if (selectionMode === "poi") {
     brief.selection.poi_type = String(qsVal("#poi-type") || "pet_store").trim();
     brief.selection.radius_m = pickAnyNum(500, "#planner-radius", "#radius");
   }
-  if(selectionMode === "route"){
+  if (selectionMode === "route") {
     brief.selection.from = pickAnyVal("#route-from");
-    brief.selection.to   = pickAnyVal("#route-to");
+    brief.selection.to = pickAnyVal("#route-to");
     brief.selection.radius_m = pickAnyNum(300, "#planner-radius", "#radius");
   }
 
@@ -626,14 +652,14 @@ function buildBrief(){
 }
 
 // ===== Tiers =====
-async function loadTiers(){
+async function loadTiers() {
   try {
     const res = await fetch(TIERS_JSON_URL, { cache: "no-store" });
-    if(!res.ok) throw new Error("tiers json http " + res.status);
+    if (!res.ok) throw new Error("tiers json http " + res.status);
     const json = await res.json();
 
     const tiers = json?.tiers && typeof json.tiers === "object" ? json.tiers : null;
-    if(!tiers) throw new Error("tiers json has no 'tiers' object");
+    if (!tiers) throw new Error("tiers json has no 'tiers' object");
 
     window.PLANNER.tiers = tiers;
     window.PLANNER.tiersMeta = {
@@ -643,7 +669,7 @@ async function loadTiers(){
 
     console.log("[tiers] loaded:", Object.keys(tiers).length, "regions", window.PLANNER.tiersMeta);
     return true;
-  } catch(e){
+  } catch (e) {
     console.warn("[tiers] load failed:", e);
     window.PLANNER.tiers = {};
     window.PLANNER.tiersMeta = { version: "missing", generated_at: null };
@@ -651,13 +677,24 @@ async function loadTiers(){
   }
 }
 
-function getTierForGeo(name){
+// now name = REGION
+function getTierForGeo(name) {
   const key = String(name || "").trim();
   const t = window.PLANNER?.tiers?.[key];
   return (t === "M" || t === "SP" || t === "A" || t === "B" || t === "C" || t === "D") ? t : "C";
 }
 
-// ===== Picking (no price influence) =====
+// ===== Helpers =====
+function pickScreensByMinBid(screens, n) {
+  const sorted = [...screens].sort((a, b) => {
+    const aa = Number.isFinite(a.minBid) ? a.minBid : 1e18;
+    const bb = Number.isFinite(b.minBid) ? b.minBid : 1e18;
+    if (aa !== bb) return aa - bb;
+    return String(a.screen_id || "").localeCompare(String(b.screen_id || ""));
+  });
+  return sorted.slice(0, n);
+}
+
 function gridKey(lat, lon, stepKm = 2) {
   const kmLat = 111;
   const kmLon = 111 * Math.cos(lat * Math.PI / 180);
@@ -679,34 +716,45 @@ function groupByGrid(screens, stepKm = 2) {
   return [...map.values()];
 }
 
+/**
+ * Равномерный отбор по сетке.
+ * Внутри ячейки выбираем самый дешёвый экран (minBid),
+ * чтобы не получалось «рандомно дорогие».
+ */
 function pickScreensUniformByGrid(pool, count, stepKm = 2) {
   const cells = groupByGrid(pool, stepKm);
+
+  // внутри каждой ячейки сортируем по цене (minBid)
+  for (const cell of cells) {
+    cell.sort((a, b) => (a.minBid ?? 1e18) - (b.minBid ?? 1e18));
+  }
+
+  // перемешиваем ячейки
   cells.sort(() => Math.random() - 0.5);
 
   const result = [];
   let i = 0;
-
   while (result.length < count && cells.length) {
     const cell = cells[i % cells.length];
-    if (cell.length) result.push(cell.pop());
+    if (cell.length) result.push(cell.shift()); // ✅ cheapest in cell
     i++;
   }
 
-  // если гео-ячейки пустые (нет координат) — fallback просто первые N
-  if(result.length === 0){
-    return (pool || []).slice(0, count);
+  // добивка если не хватило (например, много ячеек без geo)
+  if (result.length < count) {
+    const picked = new Set(result);
+    const rest = pool.filter(s => !picked.has(s));
+    result.push(...pickScreensByMinBid(rest, count - result.length));
   }
 
-  return result;
+  return result.slice(0, count);
 }
 
-// ===== Downloads =====
-function downloadXLSX(rows){
-  if(!rows || !rows.length) return;
+function downloadXLSX(rows) {
+  if (!rows || !rows.length) return;
 
   const out = rows.map(r => ({
     GID: r.screen_id ?? "",
-    region: r.region ?? "",
     format: r.format ?? "",
     placement: r.placement ?? "",
     installation: r.installation ?? "",
@@ -719,11 +767,11 @@ function downloadXLSX(rows){
   }));
 
   const ws = XLSX.utils.json_to_sheet(out, {
-    header: ["GID","region","format","placement","installation","owner_id","owner","city","address","lat","lon"]
+    header: ["GID", "format", "placement", "installation", "owner_id", "owner", "city", "address", "lat", "lon"]
   });
 
   ws["!cols"] = [
-    { wch: 18 }, { wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 12 },
+    { wch: 18 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 12 },
     { wch: 18 }, { wch: 16 }, { wch: 40 }, { wch: 12 }, { wch: 12 }
   ];
 
@@ -732,14 +780,15 @@ function downloadXLSX(rows){
   XLSX.writeFile(wb, "screens_selected.xlsx");
 }
 
-function downloadPOIsCSV(pois){
-  if(!pois || !pois.length) return;
+function downloadPOIsCSV(pois) {
+  if (!pois || !pois.length) return;
+  const regions = Array.isArray(state.selectedRegions) ? state.selectedRegions : [];
   const rows = pois.map(p => ({
     id: p.id || "",
     name: p.name || "",
     lat: p.lat,
     lon: p.lon,
-    region: p.region || ""
+    regions: regions.join("; ")
   }));
   const csv = Papa.unparse(rows, { quotes: true });
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -753,51 +802,51 @@ function downloadPOIsCSV(pois){
   URL.revokeObjectURL(url);
 }
 
-function downloadPOIsXLSX(pois){
-  if(!pois || !pois.length) return;
+function downloadPOIsXLSX(pois) {
+  if (!pois || !pois.length) return;
 
+  const regions = Array.isArray(state.selectedRegions) ? state.selectedRegions : [];
   const rows = pois.map(p => ({
     id: p.id || "",
     name: p.name || "",
     lat: p.lat,
     lon: p.lon,
-    region: p.region || ""
+    regions: regions.join("; ")
   }));
 
-  const ws = XLSX.utils.json_to_sheet(rows, { header: ["id","name","lat","lon","region"] });
-  ws["!cols"] = [{wch:22},{wch:40},{wch:12},{wch:12},{wch:22}];
+  const ws = XLSX.utils.json_to_sheet(rows, { header: ["id", "name", "lat", "lon", "regions"] });
+  ws["!cols"] = [{ wch: 22 }, { wch: 40 }, { wch: 12 }, { wch: 12 }, { wch: 40 }];
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "POIs");
   XLSX.writeFile(wb, "pois.xlsx");
 }
 
-// ===== Photos =====
-function clearPhotosCarousel(){
+function clearPhotosCarousel() {
   const box = document.getElementById("screens-photos");
   const row = document.getElementById("screens-photos-row");
-  if(row) row.innerHTML = "";
-  if(box) box.style.display = "none";
+  if (row) row.innerHTML = "";
+  if (box) box.style.display = "none";
 }
 
-function renderPhotosCarousel(chosen){
-  if(!window.PLANNER?.ui?.photosAllowed) return;
+function renderPhotosCarousel(chosen) {
+  if (!window.PLANNER?.ui?.photosAllowed) return;
+
   const box = document.getElementById("screens-photos");
   const row = document.getElementById("screens-photos-row");
-  if(!box || !row) return;
+  if (!box || !row) return;
 
   row.innerHTML = "";
-
   const items = Array.isArray(chosen) ? chosen : [];
   const withImg = items.filter(s => String(s.image_url || "").trim());
 
-  if(!withImg.length){
+  if (!withImg.length) {
     box.style.display = "none";
     return;
   }
 
   const MAX = 25;
-  for(const s of withImg.slice(0, MAX)){
+  for (const s of withImg.slice(0, MAX)) {
     const gid = s.screen_id || s.gid || "";
     const owner = s.owner || s.owner_name || "";
     const addr = s.address || "";
@@ -805,7 +854,6 @@ function renderPhotosCarousel(chosen){
 
     const card = document.createElement("div");
     card.className = "photo-card";
-
     card.innerHTML = `
       <img src="${escapeHtml(img)}" alt="">
       <div class="meta">
@@ -816,7 +864,7 @@ function renderPhotosCarousel(chosen){
     `;
 
     card.addEventListener("click", () => {
-      try { window.open(img, "_blank"); } catch(e){}
+      try { window.open(img, "_blank"); } catch (e) { }
     });
 
     row.appendChild(card);
@@ -825,12 +873,11 @@ function renderPhotosCarousel(chosen){
   box.style.display = "block";
 }
 
-// ===== POI list =====
-function renderPOIList(pois){
+function renderPOIList(pois) {
   const wrap = document.getElementById("poi-results");
-  if(!wrap) return;
+  if (!wrap) return;
 
-  if(!pois || !pois.length){
+  if (!pois || !pois.length) {
     wrap.innerHTML = `<div style="font-size:13px; color:#666;">POI не найдены.</div>`;
     return;
   }
@@ -841,15 +888,13 @@ function renderPOIList(pois){
     `<table style="width:100%; border-collapse:collapse; font-size:13px;">` +
     `<thead><tr style="background:#fafafa;">` +
     `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">name</th>` +
-    `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">region</th>` +
     `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">lat</th>` +
     `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">lon</th>` +
     `<th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">id</th>` +
     `</tr></thead><tbody>` +
-    pois.slice(0,20).map(p => (
+    pois.slice(0, 20).map(p => (
       `<tr>` +
       `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${escapeHtml(p.name || "—")}</td>` +
-      `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${escapeHtml(p.region || "—")}</td>` +
       `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number(p.lat).toFixed(6)}</td>` +
       `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${Number(p.lon).toFixed(6)}</td>` +
       `<td style="padding:10px; border-bottom:1px solid #f3f3f3;">${escapeHtml(p.id || "")}</td>` +
@@ -858,13 +903,13 @@ function renderPOIList(pois){
     `</tbody></table></div>`;
 }
 
-function cityCenterFromScreens(screens){
+function cityCenterFromScreens(screens) {
   const pts = (screens || [])
     .map(s => ({ lat: Number(s.lat), lon: Number(s.lon) }))
     .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
   if (!pts.length) return null;
-  const lat = pts.reduce((a,p)=>a+p.lat,0) / pts.length;
-  const lon = pts.reduce((a,p)=>a+p.lon,0) / pts.length;
+  const lat = pts.reduce((a, p) => a + p.lat, 0) / pts.length;
+  const lon = pts.reduce((a, p) => a + p.lon, 0) / pts.length;
   return { lat, lon };
 }
 
@@ -921,22 +966,22 @@ async function _runOverpassWithFailover(body, timeoutMs = 45000) {
   throw lastErr || new Error("Overpass failed (all endpoints)");
 }
 
-function _escapeOverpassString(s){
+function _escapeOverpassString(s) {
   return String(s || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"').trim();
 }
 
-function _normalizePOIs(json, regionName){
+function _normalizePOIs(json) {
   const els = Array.isArray(json?.elements) ? json.elements : [];
   return els.map(el => {
     const name = el.tags?.name || "";
     const lat0 = Number(el.lat ?? el.center?.lat);
     const lon0 = Number(el.lon ?? el.center?.lon);
     if (!Number.isFinite(lat0) || !Number.isFinite(lon0)) return null;
-    return { id: `${el.type}/${el.id}`, name, lat: lat0, lon: lon0, region: regionName || "", raw: el };
+    return { id: `${el.type}/${el.id}`, name, lat: lat0, lon: lon0, raw: el };
   }).filter(Boolean);
 }
 
-function pickScreensNearPOIs(screens, pois, radiusMeters){
+function pickScreensNearPOIs(screens, pois, radiusMeters) {
   const r = Number(radiusMeters || 0);
   if (!r || !Array.isArray(pois) || !pois.length) return [];
 
@@ -944,12 +989,12 @@ function pickScreensNearPOIs(screens, pois, radiusMeters){
   if (!dist) throw new Error("GeoUtils.haversineMeters is missing");
 
   const picked = [];
-  for (const s of (screens || [])){
+  for (const s of (screens || [])) {
     const slat = Number(s.lat), slon = Number(s.lon);
     if (!Number.isFinite(slat) || !Number.isFinite(slon)) continue;
 
     let ok = false;
-    for (const p of pois){
+    for (const p of pois) {
       if (dist(slat, slon, p.lat, p.lon) <= r) { ok = true; break; }
     }
     if (ok) picked.push(s);
@@ -957,53 +1002,59 @@ function pickScreensNearPOIs(screens, pois, radiusMeters){
   return picked;
 }
 
-function _poiQueryWithScope(poiType, scopeExpr){
+function _poiQueryWithScope(poiType, scopeExpr) {
   const raw = POI_QUERIES[poiType];
-  if(!raw) throw new Error("Unknown poi_type: " + poiType);
+  if (!raw) throw new Error("Unknown poi_type: " + poiType);
   return String(raw).replace(/nwr\s*\(\s*area\.a\s*\)/g, `nwr(${scopeExpr})`);
 }
 
-function _bboxFromScreens(screens){
+function _bboxFromScreens(screens) {
   const pts = (screens || [])
     .map(s => ({ lat: Number(s.lat), lon: Number(s.lon) }))
     .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
-  if(!pts.length) return null;
 
-  let minLat =  90, maxLat = -90, minLon =  180, maxLon = -180;
-  for(const p of pts){
-    if(p.lat < minLat) minLat = p.lat;
-    if(p.lat > maxLat) maxLat = p.lat;
-    if(p.lon < minLon) minLon = p.lon;
-    if(p.lon > maxLon) maxLon = p.lon;
+  if (!pts.length) return null;
+
+  let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
+  for (const p of pts) {
+    if (p.lat < minLat) minLat = p.lat;
+    if (p.lat > maxLat) maxLat = p.lat;
+    if (p.lon < minLon) minLon = p.lon;
+    if (p.lon > maxLon) maxLon = p.lon;
   }
 
   const padLat = 0.05;
   const padLon = 0.08;
 
-  return { minLat: minLat - padLat, minLon: minLon - padLon, maxLat: maxLat + padLat, maxLon: maxLon + padLon };
+  return {
+    minLat: minLat - padLat,
+    minLon: minLon - padLon,
+    maxLat: maxLat + padLat,
+    maxLon: maxLon + padLon
+  };
 }
 
-function _centerFromBbox(bb){
-  if(!bb) return null;
-  return { lat: (bb.minLat + bb.maxLat)/2, lon: (bb.minLon + bb.maxLon)/2 };
+function _centerFromBbox(bb) {
+  if (!bb) return null;
+  return { lat: (bb.minLat + bb.maxLat) / 2, lon: (bb.minLon + bb.maxLon) / 2 };
 }
 
-function _estimateRadiusFromBbox(bb){
-  if(!bb) return 25000;
+function _estimateRadiusFromBbox(bb) {
+  if (!bb) return 25000;
   const latSpan = Math.abs(bb.maxLat - bb.minLat);
   const lonSpan = Math.abs(bb.maxLon - bb.minLon);
   const latKm = latSpan * 111;
-  const midLat = (bb.minLat + bb.maxLat)/2;
-  const lonKm = lonSpan * 111 * Math.cos((midLat * Math.PI)/180);
-  const diagKm = Math.sqrt(latKm*latKm + lonKm*lonKm);
+  const midLat = (bb.minLat + bb.maxLat) / 2;
+  const lonKm = lonSpan * 111 * Math.cos((midLat * Math.PI) / 180);
+  const diagKm = Math.sqrt(latKm * latKm + lonKm * lonKm);
   const r = Math.max(8000, Math.min(120000, (diagKm * 0.6) * 1000));
   return Math.round(r);
 }
 
 /**
- * POI in REGION administrative area (Oblast/Republic/Federal city)
+ * POI in REGION administrative area
  */
-async function fetchPOIsOverpassInRegion(poiType, regionName, screensInRegion, limit = 50){
+async function fetchPOIsOverpassInRegion(poiType, regionName, screensInRegion, limit = 50) {
   const t = String(poiType || "").trim();
   if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
 
@@ -1033,9 +1084,9 @@ async function fetchPOIsOverpassInRegion(poiType, regionName, screensInRegion, l
     `;
 
     const json = await _runOverpassWithFailover(bodyArea, 55000);
-    const pois = _normalizePOIs(json, regionName).slice(0, safeLimit);
+    const pois = _normalizePOIs(json).slice(0, safeLimit);
     if (pois.length) return pois;
-  } catch(e){
+  } catch (e) {
     console.warn("[poi] area attempt failed:", String(e));
   }
 
@@ -1055,9 +1106,9 @@ async function fetchPOIsOverpassInRegion(poiType, regionName, screensInRegion, l
       `;
 
       const json2 = await _runOverpassWithFailover(bodyBbox, 55000);
-      const pois2 = _normalizePOIs(json2, regionName).slice(0, safeLimit);
+      const pois2 = _normalizePOIs(json2).slice(0, safeLimit);
       if (pois2.length) return pois2;
-    } catch(e){
+    } catch (e) {
       console.warn("[poi] bbox attempt failed:", String(e));
     }
   }
@@ -1079,9 +1130,9 @@ async function fetchPOIsOverpassInRegion(poiType, regionName, screensInRegion, l
       `;
 
       const json3 = await _runOverpassWithFailover(bodyAround, 55000);
-      const pois3 = _normalizePOIs(json3, regionName).slice(0, safeLimit);
+      const pois3 = _normalizePOIs(json3).slice(0, safeLimit);
       if (pois3.length) return pois3;
-    } catch(e){
+    } catch (e) {
       console.warn("[poi] around attempt failed:", String(e));
     }
   }
@@ -1090,29 +1141,27 @@ async function fetchPOIsOverpassInRegion(poiType, regionName, screensInRegion, l
 }
 
 // ===== MULTI-REGION BUDGET ALLOCATION =====
-function _tierWeight(t){
-  switch(String(t || "").toUpperCase()){
-    case "M":  return 6;
+function _tierWeight(t) {
+  switch (String(t || "").toUpperCase()) {
+    case "M": return 6;
     case "SP": return 5;
-    case "A":  return 4;
-    case "B":  return 3;
-    case "C":  return 2;
-    case "D":  return 1;
-    default:   return 2;
+    case "A": return 4;
+    case "B": return 3;
+    case "C": return 2;
+    case "D": return 1;
+    default: return 2;
   }
 }
 
-function allocateBudgetAcrossRegions(totalBudget, regions, opts){
+function allocateBudgetAcrossRegions(totalBudget, regions, opts) {
   const cfg = Object.assign({ minShare: 0.10, maxShare: 0.70 }, (opts || {}));
-
   const n = (regions || []).length;
-  if(!Number.isFinite(totalBudget) || totalBudget <= 0 || n === 0) return [];
-  if(n === 1) return [{ region: regions[0].key, budget: Math.floor(totalBudget) }];
+  if (!Number.isFinite(totalBudget) || totalBudget <= 0 || n === 0) return [];
+  if (n === 1) return [{ region: regions[0].key, budget: Math.floor(totalBudget) }];
 
   let minShare = cfg.minShare;
-  if(n >= 5) minShare = Math.min(minShare, 0.05);
-  if(n * minShare > 1) minShare = 1 / n;
-
+  if (n >= 5) minShare = Math.min(minShare, 0.05);
+  if (n * minShare > 1) minShare = 1 / n;
   const maxShare = Math.max(minShare, cfg.maxShare);
 
   const items = regions.map(r => {
@@ -1120,14 +1169,14 @@ function allocateBudgetAcrossRegions(totalBudget, regions, opts){
     return { region: r.key, tier: r.tier, w, share: 0, locked: false };
   });
 
-  const sumW = items.reduce((a,b)=>a + (Number.isFinite(b.w) ? b.w : 0), 0) || 1;
+  const sumW = items.reduce((a, b) => a + (Number.isFinite(b.w) ? b.w : 0), 0) || 1;
   items.forEach(it => it.share = it.w / sumW);
 
-  // cap by maxShare
+  // cap maxShare
   let lockedSum = 0;
   let freeW = 0;
   items.forEach(it => {
-    if(it.share > maxShare){
+    if (it.share > maxShare) {
       it.share = maxShare;
       it.locked = true;
       lockedSum += it.share;
@@ -1137,30 +1186,29 @@ function allocateBudgetAcrossRegions(totalBudget, regions, opts){
   });
 
   let remaining = 1 - lockedSum;
-  if(remaining < 0) remaining = 0;
-  if(freeW > 0){
+  if (remaining < 0) remaining = 0;
+
+  if (freeW > 0) {
     items.forEach(it => {
-      if(!it.locked){
-        it.share = remaining * (it.w / freeW);
-      }
+      if (!it.locked) it.share = remaining * (it.w / freeW);
     });
   }
 
-  // floor by minShare
+  // raise minShare
   let need = 0;
   items.forEach(it => {
-    if(it.share < minShare){
+    if (it.share < minShare) {
       need += (minShare - it.share);
       it.share = minShare;
-      it.locked = true;
+      it.locked = true; // locked by min
     }
   });
 
-  if(need > 0){
+  if (need > 0) {
     const donors = items.filter(it => !it.locked && it.share > minShare);
-    const donorSum = donors.reduce((a,b)=>a + (b.share - minShare), 0);
+    const donorSum = donors.reduce((a, b) => a + (b.share - minShare), 0);
 
-    if(donorSum > 0){
+    if (donorSum > 0) {
       donors.forEach(d => {
         const giveCap = d.share - minShare;
         const give = need * (giveCap / donorSum);
@@ -1178,26 +1226,21 @@ function allocateBudgetAcrossRegions(totalBudget, regions, opts){
     budget: Math.floor(totalBudget * it.share)
   }));
 
-  let sum = raw.reduce((a,b)=>a + b.budget, 0);
+  let sum = raw.reduce((a, b) => a + b.budget, 0);
   let diff = Math.floor(totalBudget) - sum;
 
-  if(diff !== 0){
+  if (diff !== 0) {
     const order = raw
       .map((r, idx) => ({ idx, share: r.share }))
-      .sort((a,b)=>b.share - a.share)
+      .sort((a, b) => b.share - a.share)
       .map(x => x.idx);
 
     let k = 0;
-    while(diff !== 0 && k < 1000000){
+    while (diff !== 0 && k < 1000000) {
       const i = order[k % order.length];
-      if(diff > 0){
-        raw[i].budget += 1;
-        diff -= 1;
-      } else {
-        if(raw[i].budget > 0){
-          raw[i].budget -= 1;
-          diff += 1;
-        }
+      if (diff > 0) { raw[i].budget += 1; diff -= 1; }
+      else {
+        if (raw[i].budget > 0) { raw[i].budget -= 1; diff += 1; }
       }
       k++;
     }
@@ -1206,22 +1249,11 @@ function allocateBudgetAcrossRegions(totalBudget, regions, opts){
   return raw.map(r => ({ region: r.region, budget: r.budget }));
 }
 
-function getRecoMonthlyByTier(tier){
-  const T = String(tier || "").toUpperCase();
-  if(T === "M")  return 2000000;
-  if(T === "SP") return 1500000;
-  if(T === "A")  return 1000000;
-  if(T === "B")  return 500000;
-  if(T === "C")  return 300000;
-  if(T === "D")  return 100000;
-  return 300000;
-}
-
 // ===== MAIN =====
-async function onCalcClick(){
+async function onCalcClick() {
   const brief = buildBrief();
 
-  if(!brief.dates.start || !brief.dates.end){
+  if (!brief.dates.start || !brief.dates.end) {
     alert("Выберите даты начала и окончания.");
     return;
   }
@@ -1230,37 +1262,32 @@ async function onCalcClick(){
     ? brief.geo.regions.map(x => String(x || "").trim()).filter(Boolean)
     : (brief?.geo?.region ? [String(brief.geo.region).trim()] : []);
 
-  if(!regions.length){
+  if (!regions.length) {
     alert("Выберите регион(ы).");
     return;
   }
 
-  if(brief.budget.mode === "fixed" && (!brief.budget.amount || brief.budget.amount <= 0)){
+  if (brief.budget.mode === "fixed" && (!brief.budget.amount || brief.budget.amount <= 0)) {
     alert("Введите бюджет или выберите «нужна рекомендация».");
     return;
   }
 
   const days = daysInclusive(brief.dates.start, brief.dates.end);
-  if(!Number.isFinite(days) || days <= 0){
+  if (!Number.isFinite(days) || days <= 0) {
     alert("Выберите корректные даты начала и окончания.");
     return;
   }
 
-  // форматы единые
   let selectedFormatsText = "—";
   const formatsMode = brief?.formats?.mode || "auto";
   const manualFormats = Array.isArray(brief?.formats?.selected) ? brief.formats.selected : [];
 
-  if(formatsMode === "manual" && manualFormats.length > 0){
-    selectedFormatsText = manualFormats.join(", ");
-  } else if(formatsMode === "auto"){
-    selectedFormatsText = "рекомендация";
-  } else {
-    selectedFormatsText = "не выбраны";
-  }
+  if (formatsMode === "manual" && manualFormats.length > 0) selectedFormatsText = manualFormats.join(", ");
+  else if (formatsMode === "auto") selectedFormatsText = "рекомендация";
+  else selectedFormatsText = "не выбраны";
 
   const hpdFixed = hoursPerDay(brief.schedule);
-  if(!Number.isFinite(hpdFixed) || hpdFixed <= 0){
+  if (!Number.isFinite(hpdFixed) || hpdFixed <= 0) {
     alert("Проверь расписание.");
     return;
   }
@@ -1268,7 +1295,7 @@ async function onCalcClick(){
 
   // fixed allocation
   let fixedAllocation = null;
-  if(brief.budget.mode === "fixed"){
+  if (brief.budget.mode === "fixed") {
     const totalBudget = Number(brief.budget.amount);
     fixedAllocation = allocateBudgetAcrossRegions(
       totalBudget,
@@ -1277,6 +1304,7 @@ async function onCalcClick(){
     );
   }
 
+  // aggregates
   let chosenAll = [];
   let totalBudgetFinal = 0;
   let totalPlaysEffectiveAll = 0;
@@ -1286,41 +1314,42 @@ async function onCalcClick(){
 
   let warnings = [];
   let anyPOIs = [];
+  let perRegionRows = [];
 
   const isPOI = (brief.selection?.mode === "poi");
-  if(isPOI && !window.GeoUtils?.haversineMeters){
+
+  if (isPOI && !window.GeoUtils?.haversineMeters) {
     alert("GeoUtils не найден. Проверь подключение geo.js");
     return;
   }
 
-  for(const region of regions){
+  for (const region of regions) {
     const tier = getTierForGeo(region);
 
     let pool = state.screens.filter(s => String(s.region || "").trim() === region);
 
-    // форматы
-    if(formatsMode === "manual" && manualFormats.length > 0){
+    if (formatsMode === "manual" && manualFormats.length > 0) {
       const fset = new Set(manualFormats);
       pool = pool.filter(s => fset.has(s.format));
     }
 
-    // фильтр владельца
     if (window.PLANNER?.getScreensFilteredByOwner) {
       pool = window.PLANNER.getScreensFilteredByOwner(pool);
     }
 
-    if(pool.length === 0){
+    if (pool.length === 0) {
+      perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "нет экранов" });
       continue;
     }
 
-    // POI
+    // POI mode per region
+    let pois = [];
     if (isPOI) {
       const poiType = String(brief.selection.poi_type || "").trim();
       const screenRadius = Number(brief.selection.radius_m || 500);
 
       setStatus(`Ищу POI в регионе «${region}»: ${POI_LABELS?.[poiType] || poiType}…`);
 
-      let pois = [];
       try {
         pois = await fetchPOIsOverpassInRegion(poiType, region, pool, 50);
       } catch (e) {
@@ -1331,13 +1360,15 @@ async function onCalcClick(){
       }
 
       anyPOIs = anyPOIs.concat(pois);
-      window.PLANNER.lastPOIs = anyPOIs;   // ✅ важно для кнопок скачивания
+      window.PLANNER.lastPOIs = anyPOIs; // ✅ чтобы download-кнопки работали
+
       renderPOIList(anyPOIs);
 
       const before = pool.length;
       pool = pickScreensNearPOIs(pool, pois, screenRadius);
 
       if (!pool.length) {
+        perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "нет экранов у POI" });
         continue;
       }
 
@@ -1345,8 +1376,9 @@ async function onCalcClick(){
     }
 
     // GRP filter
+    let grpDroppedNoValue = 0;
     if (brief.grp?.enabled) {
-      const dropped = pool.filter(s => !Number.isFinite(s.grp)).length;
+      grpDroppedNoValue = pool.filter(s => !Number.isFinite(s.grp)).length;
 
       pool = pool.filter(s =>
         Number.isFinite(s.grp) &&
@@ -1355,41 +1387,47 @@ async function onCalcClick(){
       );
 
       if (pool.length === 0) {
-        warnings.push(`⚠️ Регион «${region}»: GRP-фильтр исключил все экраны (без GRP было: ${dropped}).`);
+        perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "GRP выкинул всё" });
+        warnings.push(`⚠️ Регион «${region}»: GRP-фильтр исключил все экраны (без GRP было: ${grpDroppedNoValue}).`);
         continue;
       }
 
-      warnings.push(`⚠️ Регион «${region}»: GRP-фильтр включён, без GRP исключены (без GRP: ${dropped}).`);
+      warnings.push(`⚠️ Регион «${region}»: GRP-фильтр включён, без GRP исключены (без GRP: ${grpDroppedNoValue}).`);
     }
 
-    // bid
     const avgBid = avgNumber(pool.map(s => s.minBid));
-    if(avgBid == null) continue;
+    if (avgBid == null) {
+      perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "нет minBid" });
+      continue;
+    }
     const bidPlus20 = avgBid * BID_MULTIPLIER;
 
-    // budget for region
     let budget = 0;
-
-    if(brief.budget.mode === "fixed"){
+    if (brief.budget.mode === "fixed") {
       const found = fixedAllocation?.find(x => x.region === region);
       budget = found ? Number(found.budget) : 0;
-      if(!Number.isFinite(budget) || budget <= 0) continue;
+      if (!Number.isFinite(budget) || budget <= 0) {
+        perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "budget=0" });
+        continue;
+      }
     } else {
       const screensCount = pool.length;
-
       const maxPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * screensCount * days);
       const maxBudget = maxPlays * bidPlus20;
 
-      const baseMonthly = getRecoMonthlyByTier(tier);
+      const BASE_MONTHLY_BY_TIER = { M: 2000000, SP: 1500000, A: 1000000, B: 500000, C: 300000, D: 100000 };
+      const baseMonthly = BASE_MONTHLY_BY_TIER[tier] ?? BASE_MONTHLY_BY_TIER.C;
       const baseBudgetForPeriod = Math.floor(baseMonthly * (days / 30));
 
       budget = Math.floor(Math.min(baseBudgetForPeriod, maxBudget));
-      if(!Number.isFinite(budget) || budget <= 0) continue;
+      if (!Number.isFinite(budget) || budget <= 0) {
+        perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "reco=0" });
+        continue;
+      }
     }
 
     totalBudgetFinal += budget;
 
-    // calc plays + screens count
     const totalPlaysTheory = Math.floor(budget / bidPlus20);
     const playsPerHourTotalTheory = totalPlaysTheory / days / hpd;
 
@@ -1400,6 +1438,7 @@ async function onCalcClick(){
 
     const screensChosenCount = Math.min(pool.length, screensNeeded);
 
+    // выбор (равномерный по сетке, внутри ячейки — дешевле)
     const chosen = pickScreensUniformByGrid(pool, screensChosenCount, 2);
 
     const playsPerHourPerScreen = playsPerHourTotalTheory / screensChosenCount;
@@ -1417,28 +1456,37 @@ async function onCalcClick(){
 
     const avgOts = avgNumber(pool.map(s => s.ots));
     const otsTotal = (avgOts == null) ? null : totalPlaysEffective * avgOts;
-    if(avgOts == null) hasOts = false;
-    if(otsTotal != null) otsTotalAll += otsTotal;
+    if (avgOts == null) hasOts = false;
+    if (otsTotal != null) otsTotalAll += otsTotal;
 
     chosenAll = chosenAll.concat(chosen);
+
+    perRegionRows.push({
+      region,
+      tier,
+      budget,
+      screens: chosen.length,
+      plays: totalPlaysEffective,
+      ots: otsTotal,
+      note: ""
+    });
   }
 
-  if(!chosenAll.length){
+  if (!chosenAll.length) {
     alert("Не удалось подобрать экраны: по выбранным условиям не осталось доступных экранов.");
     setStatus("");
     return;
   }
 
-  // POI download buttons
   const b1 = el("download-poi-csv");
   const b2 = el("download-poi-xlsx");
-  if (b1) b1.disabled = !(window.PLANNER.lastPOIs && window.PLANNER.lastPOIs.length);
-  if (b2) b2.disabled = !(window.PLANNER.lastPOIs && window.PLANNER.lastPOIs.length);
+  if (b1) b1.disabled = !(window.PLANNER.lastPOIs || []).length;
+  if (b2) b2.disabled = !(window.PLANNER.lastPOIs || []).length;
 
   state.lastChosen = chosenAll;
 
   window.dispatchEvent(new CustomEvent("planner:calc-done", {
-    detail: { chosen: chosenAll }
+    detail: { chosen: chosenAll, perRegion: perRegionRows }
   }));
 
   window.PLANNER.ui.photosAllowed = true;
@@ -1460,18 +1508,17 @@ async function onCalcClick(){
 — Подбор: ${brief.selection.mode}
 — GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${brief.grp.max.toFixed(2)}` : "не учитываем"}
 
-Итог:
+Итог (по всем регионам):
 — Выходов всего: ${nf(totalPlaysEffectiveAll)}
 — Выходов/день: ${nf(playsPerDayAll)}
 — Выходов/час (в сумме): ${nf(playsPerHourAll)}
 — Экранов выбрано: ${chosenAll.length}
 — OTS всего: ${hasOts ? of(otsTotalAll) : "—"}`
-    + (warnings.length ? `\n\n${warnings.slice(0,6).join("\n")}${warnings.length>6 ? "\n…" : ""}` : "");
+    + (warnings.length ? `\n\n${warnings.slice(0, 6).join("\n")}${warnings.length > 6 ? "\n…" : ""}` : "");
 
   if (el("summary")) el("summary").textContent = summaryText;
   if (el("download-csv")) el("download-csv").disabled = chosenAll.length === 0;
 
-  // results first 10
   if (el("results")) {
     el("results").innerHTML = `
       <div id="results-toggle"
@@ -1566,7 +1613,7 @@ function bindPlannerUI() {
   if (formatsAuto) {
     formatsAuto.addEventListener("change", (e) => {
       const wrap = el("formats-wrap");
-      if(e.target.checked){
+      if (e.target.checked) {
         state.selectedFormats.clear();
         if (wrap) [...wrap.querySelectorAll("button")].forEach(btn => btn.style.borderColor = "#ddd");
       }
@@ -1576,8 +1623,8 @@ function bindPlannerUI() {
   const selectionMode = el("selection-mode");
   if (selectionMode) selectionMode.addEventListener("change", renderSelectionExtra);
 
-  const citySearch = el("city-search");
-  if (citySearch) citySearch.addEventListener("input", (e) => renderRegionSuggestions(e.target.value));
+  const regionSearch = el("city-search");
+  if (regionSearch) regionSearch.addEventListener("input", (e) => renderRegionSuggestions(e.target.value));
 
   const downloadBtn = el("download-csv");
   if (downloadBtn) downloadBtn.addEventListener("click", () => downloadXLSX(state.lastChosen));
@@ -1602,23 +1649,17 @@ function bindPlannerUI() {
 async function startPlanner() {
   renderSelectionExtra();
   bindPlannerUI();
-
   window.PLANNER.ui.photosAllowed = false;
   clearPhotosCarousel();
 
   await loadTiers();
   await loadCityRegions();
-  await loadScreens();
 
-  // кнопки POI на старте выключены
-  window.PLANNER.lastPOIs = [];
-  const b1 = el("download-poi-csv");
-  const b2 = el("download-poi-xlsx");
-  if (b1) b1.disabled = true;
-  if (b2) b2.disabled = true;
+  clearPhotosCarousel();
+  await loadScreens();
 }
 
-function bootPlanner(){
+function bootPlanner() {
   startPlanner().catch(e => {
     console.error("Planner init failed:", e);
     setStatus("Ошибка инициализации. Открой консоль — там причина (Planner init failed).");
