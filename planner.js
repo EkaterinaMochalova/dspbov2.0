@@ -139,10 +139,8 @@ const state = {
   unknownCitiesTop: [],
 
   // ===== UI =====
-  selectedCity: null,
   selectedFormats: new Set(),
   selectedRegions: [], // ✅ мультивыбор регионов
-  selectedRegion: null, // ✅ обратная совместимость
   lastChosen: []
 };
 
@@ -382,46 +380,46 @@ function renderSelectedCity() {
 
 // ===== Regions UI (мультивыбор) =====
 function renderSelectedRegions() {
-  const wrap = el("region-selected"); // ✅ отдельный контейнер
+  const wrap = el("region-selected");
   if (!wrap) return;
 
-  if (!Array.isArray(state.selectedRegions)) state.selectedRegions = [];
+  if (!(state.selectedRegions instanceof Set)) state.selectedRegions = new Set();
   wrap.innerHTML = "";
 
-  if (state.selectedRegions.length === 0) {
-    state.selectedRegion = null;
+  const arr = [...state.selectedRegions];
+
+  if (arr.length === 0) {
     wrap.innerHTML = `<div style="font-size:12px; color:#666;">Регион не выбран</div>`;
     return;
   }
 
-  state.selectedRegions.forEach((region, idx) => {
+  arr.forEach((region) => {
     const chip = document.createElement("button");
     cssButtonBase(chip);
     chip.style.display = "inline-flex";
     chip.style.alignItems = "center";
     chip.style.gap = "6px";
     chip.textContent = "✕ " + region;
-    if (idx === 0) chip.style.fontWeight = "600";
 
     chip.addEventListener("click", () => {
-      state.selectedRegions = state.selectedRegions.filter(r => r !== region);
-      state.selectedRegion = state.selectedRegions[0] || null;
+      state.selectedRegions.delete(region);
       renderSelectedRegions();
     });
 
     wrap.appendChild(chip);
   });
+}
 
   state.selectedRegion = state.selectedRegions[0] || null;
 }
 
 function renderRegionSuggestions(q) {
-  const sug = el("city-suggestions"); // suggestions dropdown
+  const sug = el("city-suggestions");
   if (!sug) return;
   sug.innerHTML = "";
   if (!q) return;
 
-  if (!Array.isArray(state.selectedRegions)) state.selectedRegions = [];
+  if (!(state.selectedRegions instanceof Set)) state.selectedRegions = new Set();
 
   const qq = q.toLowerCase();
   const matches = state.regionsAll
@@ -434,9 +432,7 @@ function renderRegionSuggestions(q) {
     b.textContent = "+ " + r;
 
     b.addEventListener("click", () => {
-      if (!state.selectedRegions.includes(r)) state.selectedRegions.push(r);
-
-      state.selectedRegion = state.selectedRegions[0] || null;
+      state.selectedRegions.add(r);
 
       if (el("city-search")) el("city-search").value = "";
       sug.innerHTML = "";
@@ -571,10 +567,11 @@ function buildBrief() {
   const selectionMode = el("selection-mode")?.value || "city_even";
 
   // ✅ регионы: поддержим и старое (selectedRegion), и новое (selectedRegions[])
-  const regions = Array.isArray(state.selectedRegions)
-    ? state.selectedRegions.map(r => String(r || "").trim()).filter(Boolean)
+  const regions =
+  (state.selectedRegions instanceof Set)
+    ? [...state.selectedRegions].map(r => String(r || "").trim()).filter(Boolean)
     : [];
-
+  
   const singleRegionFallback = String(state.selectedRegion || "").trim();
   const regionOne = regions.length ? regions[0] : (singleRegionFallback || null);
 
@@ -593,10 +590,7 @@ function buildBrief() {
       from: scheduleType === "custom" ? timeFrom : null,
       to: scheduleType === "custom" ? timeTo : null
     },
-    geo: {
-      region: regionOne,
-      regions: regions.length ? regions : (regionOne ? [regionOne] : [])
-    },
+    geo: { regions },
     formats: {
       mode: el("formats-auto")?.checked ? "auto" : "manual",
       selected: el("formats-auto")?.checked ? [] : [...state.selectedFormats]
