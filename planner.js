@@ -140,9 +140,17 @@ const state = {
 
   // ===== UI =====
   selectedFormats: new Set(),
-  selectedRegions: [], // ✅ мультивыбор регионов
+
+  // ✅ мультивыбор регионов — ТОЛЬКО Set
+  selectedRegions: new Set(),
+
+  // (legacy) если где-то ещё ожидается single-region
+  selectedRegion: null,
+
   lastChosen: []
 };
+
+window.PLANNER.state = state;
 
 window.PLANNER.state = state;
 
@@ -379,17 +387,22 @@ function renderSelectedCity() {
 }
 
 // ===== Regions UI (мультивыбор) =====
+function syncLegacySelectedRegion() {
+  // legacy single region: берём первый выбранный или null
+  state.selectedRegion = (state.selectedRegions.size ? [...state.selectedRegions][0] : null);
+}
+
 function renderSelectedRegions() {
   const wrap = el("region-selected");
   if (!wrap) return;
 
-  if (!(state.selectedRegions instanceof Set)) state.selectedRegions = new Set();
   wrap.innerHTML = "";
 
   const arr = [...state.selectedRegions];
 
   if (arr.length === 0) {
     wrap.innerHTML = `<div style="font-size:12px; color:#666;">Регион не выбран</div>`;
+    syncLegacySelectedRegion();
     return;
   }
 
@@ -403,23 +416,23 @@ function renderSelectedRegions() {
 
     chip.addEventListener("click", () => {
       state.selectedRegions.delete(region);
+      syncLegacySelectedRegion();
       renderSelectedRegions();
+      window.dispatchEvent(new CustomEvent("planner:filters-changed"));
     });
 
     wrap.appendChild(chip);
   });
-}
 
-  state.selectedRegion = state.selectedRegions[0] || null;
+  syncLegacySelectedRegion();
 }
 
 function renderRegionSuggestions(q) {
   const sug = el("city-suggestions");
   if (!sug) return;
+
   sug.innerHTML = "";
   if (!q) return;
-
-  if (!(state.selectedRegions instanceof Set)) state.selectedRegions = new Set();
 
   const qq = q.toLowerCase();
   const matches = state.regionsAll
@@ -429,15 +442,19 @@ function renderRegionSuggestions(q) {
   matches.forEach(r => {
     const b = document.createElement("button");
     cssButtonBase(b);
-    b.textContent = "+ " + r;
+    b.textContent = (state.selectedRegions.has(r) ? "✓ " : "+ ") + r;
 
     b.addEventListener("click", () => {
-      state.selectedRegions.add(r);
+      // toggle по клику (удобнее)
+      if (state.selectedRegions.has(r)) state.selectedRegions.delete(r);
+      else state.selectedRegions.add(r);
 
       if (el("city-search")) el("city-search").value = "";
       sug.innerHTML = "";
 
+      syncLegacySelectedRegion();
       renderSelectedRegions();
+      window.dispatchEvent(new CustomEvent("planner:filters-changed"));
     });
 
     sug.appendChild(b);
@@ -567,14 +584,8 @@ function buildBrief() {
   const selectionMode = el("selection-mode")?.value || "city_even";
 
   // ✅ регионы: поддержим и старое (selectedRegion), и новое (selectedRegions[])
-  const regions =
-  (state.selectedRegions instanceof Set)
-    ? [...state.selectedRegions].map(r => String(r || "").trim()).filter(Boolean)
-    : [];
-  
-  const singleRegionFallback = String(state.selectedRegion || "").trim();
-  const regionOne = regions.length ? regions[0] : (singleRegionFallback || null);
-
+  const regions = [...state.selectedRegions].map(r => String(r || "").trim()).filter(Boolean);
+ 
   const brief = {
     budget: {
       mode: budgetMode,
@@ -776,7 +787,7 @@ function downloadXLSX(rows) {
 
 function downloadPOIsCSV(pois) {
   if (!pois || !pois.length) return;
-  const regions = Array.isArray(state.selectedRegions) ? state.selectedRegions : [];
+  const regions = [...(state.selectedRegions || new Set())];
   const rows = pois.map(p => ({
     id: p.id || "",
     name: p.name || "",
@@ -1492,25 +1503,90 @@ async function onCalcClick() {
   const playsPerDayAll = totalPlaysEffectiveAll / days;
   const playsPerHourAll = totalPlaysEffectiveAll / days / hpd;
 
-  const summaryText =
-`Бриф:
-— Бюджет: ${totalBudgetFinal.toLocaleString("ru-RU")} ₽ ${brief.budget.mode === "fixed" ? "(распределён по регионам)" : "(сумма рекомендаций)"}
-— Даты: ${brief.dates.start} → ${brief.dates.end} (дней: ${days})
-— Расписание: ${brief.schedule.type} (часов/день: ${hpd})
-— Регион(ы): ${regions.join(", ")}
-— Форматы: ${selectedFormatsText}
-— Подбор: ${brief.selection.mode}
-— GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${brief.grp.max.toFixed(2)}` : "не учитываем"}
+  const summaryEl = el("summary");
+if (summaryEl) {
+  const money = (n) => Number(n || 0).toLocaleString("ru-RU") + " ₽";
+  const intf = (n) => Math.floor(Number(n || 0)).toLocaleString("ru-RU");
 
-Итог (по всем регионам):
-— Выходов всего: ${nf(totalPlaysEffectiveAll)}
-— Выходов/день: ${nf(playsPerDayAll)}
-— Выходов/час (в сумме): ${nf(playsPerHourAll)}
-— Экранов выбрано: ${chosenAll.length}
-— OTS всего: ${hasOts ? of(otsTotalAll) : "—"}`
-    + (warnings.length ? `\n\n${warnings.slice(0, 6).join("\n")}${warnings.length > 6 ? "\n…" : ""}` : "");
+  const briefLines = [
+    ["Бюджет", `${money(totalBudgetFinal)} ${brief.budget.mode === "fixed" ? "(распределён по регионам)" : "(сумма рекомендаций)"}`],
+    ["Даты", `${brief.dates.start} → ${brief.dates.end} (дней: ${days})`],
+    ["Расписание", `${brief.schedule.type} (часов/день: ${hpd})`],
+    ["Регион(ы)", regions.join(", ")],
+    ["Форматы", selectedFormatsText],
+    ["Подбор", brief.selection.mode],
+    ["GRP", brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${brief.grp.max.toFixed(2)}` : "не учитываем"],
+    ["Страта (tier)", regions.map(r => `${r}: ${getTierForGeo(r)}`).join(", ")]
+  ];
 
-  if (el("summary")) el("summary").textContent = summaryText;
+  const totalLines = [
+    ["Выходов всего", intf(totalPlaysEffectiveAll)],
+    ["Выходов/день", intf(playsPerDayAll)],
+    ["Выходов/час (в сумме)", intf(playsPerHourAll)],
+    ["Экранов выбрано", intf(chosenAll.length)],
+    ["OTS всего", hasOts ? Math.round(otsTotalAll).toLocaleString("ru-RU") : "—"]
+  ];
+
+  const perRegionHtml = (perRegionRows || []).length ? `
+    <div style="margin-top:14px; border:1px solid #eee; border-radius:14px; overflow:hidden;">
+      <div style="padding:10px 12px; background:#fafafa; font-weight:800;">Разбивка по регионам</div>
+      <table style="width:100%; border-collapse:collapse; font-size:13px;">
+        <thead>
+          <tr style="background:#fff;">
+            <th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">Регион</th>
+            <th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">Tier</th>
+            <th style="text-align:right; padding:10px; border-bottom:1px solid #eee;">Бюджет</th>
+            <th style="text-align:right; padding:10px; border-bottom:1px solid #eee;">Экраны</th>
+            <th style="text-align:right; padding:10px; border-bottom:1px solid #eee;">Выходы</th>
+            <th style="text-align:right; padding:10px; border-bottom:1px solid #eee;">OTS</th>
+            <th style="text-align:left; padding:10px; border-bottom:1px solid #eee;">Примечание</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(perRegionRows || []).map(r => `
+            <tr>
+              <td style="padding:10px; border-bottom:1px solid #f3f3f3;">${escapeHtml(r.region || "")}</td>
+              <td style="padding:10px; border-bottom:1px solid #f3f3f3;">${escapeHtml(r.tier || "")}</td>
+              <td style="padding:10px; border-bottom:1px solid #f3f3f3; text-align:right;">${money(r.budget || 0)}</td>
+              <td style="padding:10px; border-bottom:1px solid #f3f3f3; text-align:right;">${intf(r.screens || 0)}</td>
+              <td style="padding:10px; border-bottom:1px solid #f3f3f3; text-align:right;">${intf(r.plays || 0)}</td>
+              <td style="padding:10px; border-bottom:1px solid #f3f3f3; text-align:right;">${(r.ots == null) ? "—" : Math.round(r.ots).toLocaleString("ru-RU")}</td>
+              <td style="padding:10px; border-bottom:1px solid #f3f3f3;">${escapeHtml(r.note || "")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  ` : "";
+
+  const warnHtml = warnings.length ? `
+    <div style="margin-top:12px; padding:10px 12px; border:1px solid #ffe3b3; background:#fff7e6; border-radius:14px;">
+      <div style="font-weight:800; margin-bottom:6px;">Предупреждения</div>
+      <div style="font-size:13px; color:#6b4e00; white-space:pre-wrap;">${escapeHtml(warnings.slice(0, 12).join("\n"))}${warnings.length > 12 ? "\n…" : ""}</div>
+    </div>
+  ` : "";
+
+  const renderBlock = (title, lines) => `
+    <div style="border:1px solid #eee; border-radius:14px; padding:12px; background:#fff;">
+      <div style="font-weight:900; margin-bottom:8px;">${title}</div>
+      <div style="display:grid; grid-template-columns: 1fr auto; gap:6px 12px; font-size:14px;">
+        ${lines.map(([k,v]) => `
+          <div style="color:#555;">${escapeHtml(k)}</div>
+          <div style="font-weight:800;">${escapeHtml(v)}</div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+
+  summaryEl.innerHTML = `
+    <div style="display:grid; gap:12px;">
+      ${renderBlock("Бриф", briefLines)}
+      ${renderBlock("Итог (по всем регионам)", totalLines)}
+      ${perRegionHtml}
+      ${warnHtml}
+    </div>
+  `;
+}
   if (el("download-csv")) el("download-csv").disabled = chosenAll.length === 0;
 
   if (el("results")) {
