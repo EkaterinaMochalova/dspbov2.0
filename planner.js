@@ -1693,8 +1693,51 @@ function bindPlannerUI() {
   const selectionMode = el("selection-mode");
   if (selectionMode) selectionMode.addEventListener("change", renderSelectionExtra);
 
-  const regionSearch = el("city-search");
-  if (regionSearch) regionSearch.addEventListener("input", (e) => renderRegionSuggestions(e.target.value));
+ const regionSearch = el("city-search");
+if (regionSearch) {
+  // рисуем подсказки
+  regionSearch.addEventListener("input", (e) => renderRegionSuggestions(e.target.value));
+
+  // добавляем регион по Enter (если пользователь просто ввёл и нажал Enter)
+  regionSearch.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+
+    const val = String(regionSearch.value || "").trim();
+    if (!val) return;
+
+    // нормализуем на точное имя из regionsAll (если совпадает без учёта регистра)
+    const found = state.regionsAll.find(r => r.toLowerCase() === val.toLowerCase()) || val;
+
+    if (state.selectedRegions.has(found)) state.selectedRegions.delete(found);
+    else state.selectedRegions.add(found);
+
+    regionSearch.value = "";
+    const sug = el("city-suggestions");
+    if (sug) sug.innerHTML = "";
+
+    renderSelectedRegions();
+    window.dispatchEvent(new CustomEvent("planner:filters-changed"));
+  });
+
+  // добавляем регион по change (выбор из автокомплита/datalist)
+  regionSearch.addEventListener("change", () => {
+    const val = String(regionSearch.value || "").trim();
+    if (!val) return;
+
+    const found = state.regionsAll.find(r => r.toLowerCase() === val.toLowerCase()) || val;
+
+    if (state.selectedRegions.has(found)) state.selectedRegions.delete(found);
+    else state.selectedRegions.add(found);
+
+    regionSearch.value = "";
+    const sug = el("city-suggestions");
+    if (sug) sug.innerHTML = "";
+
+    renderSelectedRegions();
+    window.dispatchEvent(new CustomEvent("planner:filters-changed"));
+  });
+}
 
   const downloadBtn = el("download-csv");
   if (downloadBtn) downloadBtn.addEventListener("click", () => downloadXLSX(state.lastChosen));
