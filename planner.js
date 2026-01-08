@@ -131,8 +131,8 @@ const state = {
   formatsAll: [],
 
   // ===== Regions =====
-  regionsAll: [],
-  regionsByCity: {},
+  regionsAll: [],          // массив уникальных регионов (для подсказок)
+  regionsByCity: {},       // city -> region
 
   // ===== Diagnostics =====
   unknownCities: [],
@@ -141,18 +141,28 @@ const state = {
   // ===== UI =====
   selectedFormats: new Set(),
 
-  // ✅ мультивыбор регионов — ТОЛЬКО Set
+  // ✅ единственный источник истины по регионам
   selectedRegions: new Set(),
 
-  // (legacy) если где-то ещё ожидается single-region
+  // legacy (временно): только для совместимости, НЕ источник истины
   selectedRegion: null,
 
   lastChosen: []
 };
 
+// единственный экспорт state
+window.PLANNER = window.PLANNER || {};
 window.PLANNER.state = state;
 
-window.PLANNER.state = state;
+// страховка: если где-то случайно перезаписали selectedRegions
+function ensureSelectedRegionsSet() {
+  if (state.selectedRegions instanceof Set) return;
+  try {
+    state.selectedRegions = new Set(Array.isArray(state.selectedRegions) ? state.selectedRegions : []);
+  } catch {
+    state.selectedRegions = new Set();
+  }
+}
 
 // ===== Utils =====
 function el(id) { return document.getElementById(id); }
@@ -387,20 +397,56 @@ function renderSelectedCity() {
 }
 
 // ===== Regions UI (мультивыбор) =====
+
+// legacy sync — оставляем, но строго read-only
 function syncLegacySelectedRegion() {
-  // legacy single region: берём первый выбранный или null
+  ensureSelectedRegionsSet();
   state.selectedRegion = (state.selectedRegions.size ? [...state.selectedRegions][0] : null);
 }
 
+// нормализуем ввод к существующему названию (чтобы не плодить дублей "москва"/"Москва")
+function normalizeRegionName(input) {
+  const v = String(input || "").trim();
+  if (!v) return "";
+  const found = state.regionsAll.find(r => r.toLowerCase() === v.toLowerCase());
+  return found || v;
+}
+
+function addRegion(region) {
+  ensureSelectedRegionsSet();
+  const r = normalizeRegionName(region);
+  if (!r) return;
+  state.selectedRegions.add(r);
+  syncLegacySelectedRegion();
+}
+
+function removeRegion(region) {
+  ensureSelectedRegionsSet();
+  state.selectedRegions.delete(region);
+  syncLegacySelectedRegion();
+}
+
+function toggleRegion(region) {
+  ensureSelectedRegionsSet();
+  const r = normalizeRegionName(region);
+  if (!r) return;
+
+  if (state.selectedRegions.has(r)) state.selectedRegions.delete(r);
+  else state.selectedRegions.add(r);
+
+  syncLegacySelectedRegion();
+}
+
 function renderSelectedRegions() {
+  ensureSelectedRegionsSet();
+
   const wrap = el("region-selected");
   if (!wrap) return;
 
   wrap.innerHTML = "";
+  const arr = [...state.selectedRegions].sort((a, b) => a.localeCompare(b, "ru"));
 
-  const arr = [...state.selectedRegions];
-
-  if (arr.length === 0) {
+  if (!arr.length) {
     wrap.innerHTML = `<div style="font-size:12px; color:#666;">Регион не выбран</div>`;
     syncLegacySelectedRegion();
     return;
@@ -415,8 +461,7 @@ function renderSelectedRegions() {
     chip.textContent = "✕ " + region;
 
     chip.addEventListener("click", () => {
-      state.selectedRegions.delete(region);
-      syncLegacySelectedRegion();
+      removeRegion(region);
       renderSelectedRegions();
       window.dispatchEvent(new CustomEvent("planner:filters-changed"));
     });
@@ -432,9 +477,12 @@ function renderRegionSuggestions(q) {
   if (!sug) return;
 
   sug.innerHTML = "";
-  if (!q) return;
+  const query = String(q || "").trim();
+  if (!query) return;
 
-  const qq = q.toLowerCase();
+  ensureSelectedRegionsSet();
+
+  const qq = query.toLowerCase();
   const matches = state.regionsAll
     .filter(r => r.toLowerCase().includes(qq))
     .slice(0, 12);
@@ -445,14 +493,13 @@ function renderRegionSuggestions(q) {
     b.textContent = (state.selectedRegions.has(r) ? "✓ " : "+ ") + r;
 
     b.addEventListener("click", () => {
-      // toggle по клику (удобнее)
-      if (state.selectedRegions.has(r)) state.selectedRegions.delete(r);
-      else state.selectedRegions.add(r);
+      toggleRegion(r);
 
-      if (el("city-search")) el("city-search").value = "";
+      // чистим поиск и подсказки
+      const input = el("city-search");
+      if (input) input.value = "";
       sug.innerHTML = "";
 
-      syncLegacySelectedRegion();
       renderSelectedRegions();
       window.dispatchEvent(new CustomEvent("planner:filters-changed"));
     });
@@ -503,16 +550,17 @@ async function loadScreens() {
   state.formatsAll = [...new Set(state.screens.map(s => s.format).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b));
 
-  // regionsByCity + regionsAll (один проход)
-  state.regionsByCity = {};
-  state.regionsAll = [];
+// regionsByCity + regionsAll (один проход) — без дублей
+state.regionsByCity = {};
+const regionsSet = new Set();
 
-  for (const c of state.citiesAll) {
-    const reg = getRegionForCity(c);
-    state.regionsByCity[c] = reg;
-    if (!state.regionsAll.includes(reg)) state.regionsAll.push(reg);
-  }
-  state.regionsAll.sort((a, b) => a.localeCompare(b, "ru"));
+for (const c of state.citiesAll) {
+  const reg = getRegionForCity(c);
+  state.regionsByCity[c] = reg;
+  regionsSet.add(reg);
+}
+
+state.regionsAll = [...regionsSet].sort((a, b) => a.localeCompare(b, "ru"));
 
   // проставляем region каждому экрану
   for (const s of state.screens) {
@@ -584,8 +632,9 @@ function buildBrief() {
   const selectionMode = el("selection-mode")?.value || "city_even";
 
   // ✅ регионы: поддержим и старое (selectedRegion), и новое (selectedRegions[])
+  ensureSelectedRegionsSet();
   const regions = [...state.selectedRegions].map(r => String(r || "").trim()).filter(Boolean);
- 
+  
   const brief = {
     budget: {
       mode: budgetMode,
@@ -810,7 +859,7 @@ function downloadPOIsCSV(pois) {
 function downloadPOIsXLSX(pois) {
   if (!pois || !pois.length) return;
 
-  const regions = Array.isArray(state.selectedRegions) ? state.selectedRegions : [];
+  const regions = (state.selectedRegions instanceof Set) ? [...state.selectedRegions] : [];
   const rows = pois.map(p => ({
     id: p.id || "",
     name: p.name || "",
@@ -1263,9 +1312,9 @@ async function onCalcClick() {
     return;
   }
 
-  const regions = Array.isArray(brief?.geo?.regions) && brief.geo.regions.length
+  const regions = Array.isArray(brief?.geo?.regions)
     ? brief.geo.regions.map(x => String(x || "").trim()).filter(Boolean)
-    : (brief?.geo?.region ? [String(brief.geo.region).trim()] : []);
+    : [];
 
   if (!regions.length) {
     alert("Выберите регион(ы).");
