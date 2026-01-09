@@ -176,6 +176,42 @@ console.log("planner.js loaded");
   // convenient console alias
   window.state = window.PLANNER.state;
 
+// ===== HARDEN legacy selectedRegion so it DOES NOT override selectedRegions =====
+(function hardenSelectedRegionLegacy() {
+  const st = window.PLANNER?.state || state;
+
+  // Храним legacy значение отдельно, но не используем его как источник истины
+  let _legacySelectedRegion = null;
+
+  Object.defineProperty(st, "selectedRegion", {
+    configurable: false,
+    enumerable: true,
+    get() {
+      // для совместимости: показываем "первый выбранный", если есть
+      const set = st.selectedRegions instanceof Set ? st.selectedRegions : new Set();
+      if (set.size) return [...set][0];
+      return _legacySelectedRegion;
+    },
+    set(v) {
+      const val = String(v || "").trim();
+      _legacySelectedRegion = val || null;
+
+      // ✅ КЛЮЧЕВОЕ: любая запись в selectedRegion теперь = add в selectedRegions
+      ensureSelectedRegionsSet();
+      if (val) st.selectedRegions.add(val);
+
+      // ничего не очищаем!
+    }
+  });
+
+  // На всякий случай: если где-то уже было значение
+  if (_legacySelectedRegion) {
+    ensureSelectedRegionsSet();
+    st.selectedRegions.add(_legacySelectedRegion);
+  }
+})();
+
+  
   // ===== Hard guarantee: selectedRegions is ALWAYS a Set =====
   function ensureSelectedRegionsSet() {
     const st = window.PLANNER.state;
@@ -215,6 +251,23 @@ console.log("planner.js loaded");
     window.PLANNER.state.selectedRegions instanceof Set
   );
 
+(function hardenSelectedRegionsNoReassign() {
+  const st = window.PLANNER?.state || state;
+  const restored = ensureSelectedRegionsSet();
+
+  // если уже было defineProperty ранее — пропусти
+  try {
+    Object.defineProperty(st, "selectedRegions", {
+      value: restored,
+      writable: false,      // ✅ нельзя переassign
+      configurable: false,
+      enumerable: true
+    });
+  } catch (e) {
+    // если уже зафиксировано — ок
+  }
+})();
+  
   // ===== Utils =====
   function el(id) { return document.getElementById(id); }
 
