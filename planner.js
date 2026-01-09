@@ -150,6 +150,25 @@ const state = {
   lastChosen: []
 };
 
+// ===== selectedRegions hardening (anti-legacy overwrite) =====
+(function hardenSelectedRegions() {
+  // если по какой-то причине сюда попало не Set — восстанавливаем
+  const initial = (state.selectedRegions instanceof Set) ? state.selectedRegions : new Set();
+
+  // запрещаем переassign state.selectedRegions = ... (но Set мутировать можно: add/delete/clear)
+  Object.defineProperty(state, "selectedRegions", {
+    value: initial,
+    writable: false,
+    configurable: false,
+    enumerable: true
+  });
+
+  // на всякий случай: legacy single-region (если кто-то читает)
+  if (state.selectedRegion && !state.selectedRegions.has(state.selectedRegion)) {
+    state.selectedRegions.add(state.selectedRegion);
+  }
+})();
+
 // единственный экспорт state
 window.PLANNER = window.PLANNER || {};
 window.PLANNER.state = state;
@@ -398,10 +417,10 @@ function renderSelectedCity() {
 
 // ===== Regions UI (мультивыбор) =====
 
-// legacy sync — оставляем, но строго read-only
 function syncLegacySelectedRegion() {
-  ensureSelectedRegionsSet();
-  state.selectedRegion = (state.selectedRegions.size ? [...state.selectedRegions][0] : null);
+  // legacy single region — только "вьюха" от Set (никогда не влияет обратно)
+  const first = state.selectedRegions instanceof Set ? state.selectedRegions.values().next().value : null;
+  state.selectedRegion = first || null;
 }
 
 // нормализуем ввод к существующему названию (чтобы не плодить дублей "москва"/"Москва")
@@ -444,7 +463,7 @@ function renderSelectedRegions() {
   if (!wrap) return;
 
   wrap.innerHTML = "";
-  const arr = [...state.selectedRegions].sort((a, b) => a.localeCompare(b, "ru"));
+  const arr = Array.from(state.selectedRegions || []);
 
   if (!arr.length) {
     wrap.innerHTML = `<div style="font-size:12px; color:#666;">Регион не выбран</div>`;
@@ -1526,6 +1545,18 @@ async function onCalcClick() {
     });
   }
 
+  // ===== dedupe chosenAll by screen_id =====
+{
+  const seen = new Set();
+  chosenAll = chosenAll.filter(s => {
+    const id = String(s?.screen_id || "").trim();
+    if (!id) return true; // если нет id — оставим как есть
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
   if (!chosenAll.length) {
     alert("Не удалось подобрать экраны: по выбранным условиям не осталось доступных экранов.");
     setStatus("");
@@ -1744,47 +1775,37 @@ function bindPlannerUI() {
 
  const regionSearch = el("city-search");
 if (regionSearch) {
-  // рисуем подсказки
+  const applyRegion = (raw) => {
+    const val = String(raw || "").trim();
+    if (!val) return;
+
+    // нормализуем к названию из списка
+    const found = state.regionsAll.find(r => r.toLowerCase() === val.toLowerCase()) || val;
+
+    // ✅ ВАЖНО: не toggle, а add (чтобы добавление второго НЕ снимало первый)
+    state.selectedRegions.add(found);
+
+    regionSearch.value = "";
+    const sug = el("city-suggestions");
+    if (sug) sug.innerHTML = "";
+
+    renderSelectedRegions();
+    window.dispatchEvent(new CustomEvent("planner:filters-changed"));
+  };
+
+  // подсказки
   regionSearch.addEventListener("input", (e) => renderRegionSuggestions(e.target.value));
 
-  // добавляем регион по Enter (если пользователь просто ввёл и нажал Enter)
+  // Enter = добавить
   regionSearch.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     e.preventDefault();
-
-    const val = String(regionSearch.value || "").trim();
-    if (!val) return;
-
-    // нормализуем на точное имя из regionsAll (если совпадает без учёта регистра)
-    const found = state.regionsAll.find(r => r.toLowerCase() === val.toLowerCase()) || val;
-
-    if (state.selectedRegions.has(found)) state.selectedRegions.delete(found);
-    else state.selectedRegions.add(found);
-
-    regionSearch.value = "";
-    const sug = el("city-suggestions");
-    if (sug) sug.innerHTML = "";
-
-    renderSelectedRegions();
-    window.dispatchEvent(new CustomEvent("planner:filters-changed"));
+    applyRegion(regionSearch.value);
   });
 
-  // добавляем регион по change (выбор из автокомплита/datalist)
+  // change = добавить (когда выбрали из автокомплита)
   regionSearch.addEventListener("change", () => {
-    const val = String(regionSearch.value || "").trim();
-    if (!val) return;
-
-    const found = state.regionsAll.find(r => r.toLowerCase() === val.toLowerCase()) || val;
-
-    if (state.selectedRegions.has(found)) state.selectedRegions.delete(found);
-    else state.selectedRegions.add(found);
-
-    regionSearch.value = "";
-    const sug = el("city-suggestions");
-    if (sug) sug.innerHTML = "";
-
-    renderSelectedRegions();
-    window.dispatchEvent(new CustomEvent("planner:filters-changed"));
+    applyRegion(regionSearch.value);
   });
 }
 
