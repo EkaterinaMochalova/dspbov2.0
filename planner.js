@@ -7,22 +7,22 @@ console.log("planner.js loaded");
   window.PLANNER = window.PLANNER || {};
 
   // ====== CONSTS / URLS ======
-  const REF = "planner";
+  var REF = "planner";
 
-  const SCREENS_CSV_URL =
+  var SCREENS_CSV_URL =
     "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@24ada9ff4b42b7426b4c954e8b7bebc97efed72c/inventories_sync.csv?v=" +
     Date.now();
 
-  const TIERS_JSON_URL =
+  var TIERS_JSON_URL =
     "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@8684fb51e3081987ae494eaaf5bacbd7b5e47160/tiers_v1.json?v=" +
     Date.now();
 
-  const CITY_REGIONS_URL =
+  var CITY_REGIONS_URL =
     "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@f6f96a16980cda4d7165e692526ef08f2cd0c22e/city_regions.json?v=" +
     Date.now();
 
   // ===== Labels =====
-  const FORMAT_LABELS = {
+  var FORMAT_LABELS = {
     BILLBOARD: { label: "Билборды", desc: "экраны 3×6 м вдоль трасс" },
     CITY_BOARD: { label: "City Board", desc: "небольшие экраны в центре города, видимые и авто-, и пешеходному траффику" },
     CITY_FORMAT: { label: "Ситиформаты", desc: "вертикальные экраны, остановки/пешеходные зоны" },
@@ -39,73 +39,62 @@ console.log("planner.js loaded");
     SUPERSITE: { label: "Суперсайты", desc: "крупные конструкции с высокой дальностью видимости" }
   };
 
-  // Export labels for Tilda UI
   window.PLANNER.FORMAT_LABELS = FORMAT_LABELS;
   window.PLANNER.ui = window.PLANNER.ui || {};
   window.PLANNER.ui.photosAllowed = false;
-
-  // optional global alias
   window.FORMAT_LABELS = window.FORMAT_LABELS || FORMAT_LABELS;
 
-  // ===== POI =====
-  const POI_QUERIES = {
-    fitness: `
-      nwr(area.a)["leisure"="fitness_centre"];
-      nwr(area.a)["amenity"="gym"];
-      nwr(area.a)["sport"="fitness"];
-      nwr(area.a)["leisure"="sports_centre"]["sport"="fitness"];
-    `,
-    pet_store: `
-      nwr(area.a)["shop"="pet"];
-      nwr(area.a)["shop"="pet_grooming"];
-      nwr(area.a)["amenity"="veterinary"];
-    `,
-    supermarket: `
-      nwr(area.a)["shop"="supermarket"];
-      nwr(area.a)["shop"="convenience"];
-      nwr(area.a)["shop"="hypermarket"];
-    `,
-    mall: `
-      nwr(area.a)["shop"="mall"];
-    `,
-    cafe: `
-      nwr(area.a)["amenity"="cafe"];
-      nwr(area.a)["shop"="coffee"];
-    `,
-    restaurant: `
-      nwr(area.a)["amenity"="restaurant"];
-      nwr(area.a)["amenity"="fast_food"];
-      nwr(area.a)["amenity"="food_court"];
-    `,
-    pharmacy: `
-      nwr(area.a)["amenity"="pharmacy"];
-    `,
-    school: `
-      nwr(area.a)["amenity"="school"];
-    `,
-    university: `
-      nwr(area.a)["amenity"="university"];
-      nwr(area.a)["amenity"="college"];
-    `,
-    hospital: `
-      nwr(area.a)["amenity"="hospital"];
-      nwr(area.a)["amenity"="clinic"];
-    `,
-    gas_station: `
-      nwr(area.a)["amenity"="fuel"];
-    `,
-    bank: `
-      nwr(area.a)["amenity"="bank"];
-      nwr(area.a)["amenity"="atm"];
-    `,
-    transport: `
-      nwr(area.a)["public_transport"];
-      nwr(area.a)["railway"="station"];
-      nwr(area.a)["railway"="subway_entrance"];
-    `
+  // ===== POI (оставила как есть, но ES5) =====
+  var POI_QUERIES = {
+    fitness: [
+      'nwr(area.a)["leisure"="fitness_centre"];',
+      'nwr(area.a)["amenity"="gym"];',
+      'nwr(area.a)["sport"="fitness"];',
+      'nwr(area.a)["leisure"="sports_centre"]["sport"="fitness"];'
+    ].join("\n"),
+    pet_store: [
+      'nwr(area.a)["shop"="pet"];',
+      'nwr(area.a)["shop"="pet_grooming"];',
+      'nwr(area.a)["amenity"="veterinary"];'
+    ].join("\n"),
+    supermarket: [
+      'nwr(area.a)["shop"="supermarket"];',
+      'nwr(area.a)["shop"="convenience"];',
+      'nwr(area.a)["shop"="hypermarket"];'
+    ].join("\n"),
+    mall: ['nwr(area.a)["shop"="mall"];'].join("\n"),
+    cafe: [
+      'nwr(area.a)["amenity"="cafe"];',
+      'nwr(area.a)["shop"="coffee"];'
+    ].join("\n"),
+    restaurant: [
+      'nwr(area.a)["amenity"="restaurant"];',
+      'nwr(area.a)["amenity"="fast_food"];',
+      'nwr(area.a)["amenity"="food_court"];'
+    ].join("\n"),
+    pharmacy: ['nwr(area.a)["amenity"="pharmacy"];'].join("\n"),
+    school: ['nwr(area.a)["amenity"="school"];'].join("\n"),
+    university: [
+      'nwr(area.a)["amenity"="university"];',
+      'nwr(area.a)["amenity"="college"];'
+    ].join("\n"),
+    hospital: [
+      'nwr(area.a)["amenity"="hospital"];',
+      'nwr(area.a)["amenity"="clinic"];'
+    ].join("\n"),
+    gas_station: ['nwr(area.a)["amenity"="fuel"];'].join("\n"),
+    bank: [
+      'nwr(area.a)["amenity"="bank"];',
+      'nwr(area.a)["amenity"="atm"];'
+    ].join("\n"),
+    transport: [
+      'nwr(area.a)["public_transport"];',
+      'nwr(area.a)["railway"="station"];',
+      'nwr(area.a)["railway"="subway_entrance"];'
+    ].join("\n")
   };
 
-  const POI_LABELS = {
+  var POI_LABELS = {
     fitness: "Фитнес-клубы",
     pet_store: "Зоомагазины",
     supermarket: "Супермаркеты",
@@ -122,174 +111,112 @@ console.log("planner.js loaded");
   };
 
   // ===== Model =====
-  const BID_MULTIPLIER = 1.2;
-  const SC_OPT = 30;
-  const SC_MAX = 60;
-  const RECO_HOURS_PER_DAY = 12;
+  var BID_MULTIPLIER = 1.2;
+  var SC_OPT = 30;
+  var SC_MAX = 60;
+  var RECO_HOURS_PER_DAY = 12;
 
-  // ===== State (single truth) =====
-  const state = {
+  // ===== State =====
+  var state = {
     screens: [],
     citiesAll: [],
     formatsAll: [],
-
     regionsAll: [],
     regionsByCity: {},
-
-    unknownCities: [],
-    unknownCitiesTop: [],
-
     selectedFormats: new Set(),
-
-    // ✅ multi-region source of truth
-    selectedRegions: new Set(),
-
-    // legacy single-region (read-only semantics)
+    selectedRegions: new Set(), // multi
     selectedRegion: null,
-
     lastChosen: []
   };
 
-  // Freeze the state reference on window.PLANNER (prevents overwrite)
   if (!window.PLANNER.state) {
-    Object.defineProperty(window.PLANNER, "state", {
-      value: state,
-      writable: false,
-      configurable: false,
-      enumerable: true
-    });
+    try {
+      Object.defineProperty(window.PLANNER, "state", {
+        value: state,
+        writable: false,
+        configurable: false,
+        enumerable: true
+      });
+    } catch (e) {
+      window.PLANNER.state = state;
+    }
   } else {
-    // If someone already created PLANNER.state, reuse it but ensure fields exist
-    // (important if you reload script in Tilda preview)
-    const st = window.PLANNER.state;
-    st.screens = st.screens || [];
-    st.citiesAll = st.citiesAll || [];
-    st.formatsAll = st.formatsAll || [];
-    st.regionsAll = st.regionsAll || [];
-    st.regionsByCity = st.regionsByCity || {};
-    st.selectedFormats = st.selectedFormats instanceof Set ? st.selectedFormats : new Set(st.selectedFormats || []);
-    st.selectedRegions = (st.selectedRegions == null) ? new Set() : st.selectedRegions;
-    st.selectedRegion = st.selectedRegion || null;
-    st.lastChosen = st.lastChosen || [];
+    var st0 = window.PLANNER.state;
+    st0.screens = st0.screens || [];
+    st0.citiesAll = st0.citiesAll || [];
+    st0.formatsAll = st0.formatsAll || [];
+    st0.regionsAll = st0.regionsAll || [];
+    st0.regionsByCity = st0.regionsByCity || {};
+    st0.selectedFormats = (st0.selectedFormats instanceof Set) ? st0.selectedFormats : new Set(st0.selectedFormats || []);
+    st0.selectedRegions = (st0.selectedRegions instanceof Set) ? st0.selectedRegions : new Set(st0.selectedRegions || []);
+    st0.selectedRegion = st0.selectedRegion || null;
+    st0.lastChosen = st0.lastChosen || [];
   }
 
-  // convenient console alias
   window.state = window.PLANNER.state;
 
-
-// ===== Single source of truth for regions (NEVER overwrite, only mutate) =====
-(function initSelectedRegionsStore() {
-  const st = window.PLANNER.state;
-
-  // 1) создаём единый Set один раз
-  if (!window.PLANNER.__selectedRegionsSet) {
-    const cur = st.selectedRegions;
-    const seed = [];
-
-    if (cur instanceof Set) seed.push(...cur);
-    else if (Array.isArray(cur)) seed.push(...cur);
-    else if (typeof cur === "string" && cur.trim()) seed.push(cur.trim());
-
-    window.PLANNER.__selectedRegionsSet = new Set(
-      seed.map(x => String(x || "").trim()).filter(Boolean)
-    );
-  }
-
-  // 2) делаем state.selectedRegions аксессором, который всегда возвращает этот Set
-  // configurable:true чтобы Tilda preview не падала при повторной загрузке
-  try {
-    Object.defineProperty(st, "selectedRegions", {
-      enumerable: true,
-      configurable: true,
-      get() {
-        return window.PLANNER.__selectedRegionsSet;
-      },
-      set(v) {
-        // НИКОГДА не перезатираем Set — только добавляем
-        const set = window.PLANNER.__selectedRegionsSet;
-        if (v == null) return;
-
-        if (v instanceof Set || Array.isArray(v)) {
-          for (const x of v) {
-            const s = String(x || "").trim();
-            if (s) set.add(s);
-          }
-          return;
-        }
-
-        if (typeof v === "string") {
-          const s = v.trim();
-          if (s) set.add(s);
-        }
-      }
-    });
-  } catch (e) {
-    // если уже определено при превью/реинжекте — ок
-  }
-})();
-
-// ===== Single source of truth for regions (robust, no accessors) =====
-function ensureSelectedRegionsSet() {
-  const st = window.PLANNER.state;
-
-  // 1) создаём "вечный" Set один раз
+  // ===== Regions store (ONE AND ONLY ONE) =====
+  // Важно: НЕ делаем аксессоры. Не делаем 2 разных __set.
   if (!window.PLANNER.__regionsSet) {
-    const seed = [];
-    const cur = st.selectedRegions;
-
-    if (cur instanceof Set) seed.push(...cur);
-    else if (Array.isArray(cur)) seed.push(...cur);
-    else if (typeof cur === "string" && cur.trim()) seed.push(cur.trim());
-
-    window.PLANNER.__regionsSet = new Set(
-      seed.map(x => String(x || "").trim()).filter(Boolean)
-    );
+    window.PLANNER.__regionsSet = (window.PLANNER.state.selectedRegions instanceof Set)
+      ? window.PLANNER.state.selectedRegions
+      : new Set();
+    window.PLANNER.state.selectedRegions = window.PLANNER.__regionsSet;
   }
 
-  const set = window.PLANNER.__regionsSet;
+  function ensureSelectedRegionsSet() {
+    // если вдруг кто-то перезаписал — восстановим ссылку на "вечный" set
+    if (!(window.PLANNER.__regionsSet instanceof Set)) window.PLANNER.__regionsSet = new Set();
+    if (window.PLANNER.state.selectedRegions !== window.PLANNER.__regionsSet) {
+      var cur = window.PLANNER.state.selectedRegions;
+      var set = window.PLANNER.__regionsSet;
 
-  // 2) если кто-то перезаписал st.selectedRegions (массив/строка/Set) — СЛИВАЕМ в наш set
-  if (st.selectedRegions !== set) {
-    const cur = st.selectedRegions;
+      // слить текущее в set
+      if (cur instanceof Set) {
+        cur.forEach(function (x) {
+          var s = String(x || "").trim();
+          if (s) set.add(s);
+        });
+      } else if (Array.isArray(cur)) {
+        for (var i = 0; i < cur.length; i++) {
+          var s2 = String(cur[i] || "").trim();
+          if (s2) set.add(s2);
+        }
+      } else if (typeof cur === "string") {
+        var s3 = cur.trim();
+        if (s3) set.add(s3);
+      }
 
-    if (cur instanceof Set) {
-      for (const x of cur) {
-        const s = String(x || "").trim();
-        if (s) set.add(s);
-      }
-    } else if (Array.isArray(cur)) {
-      for (const x of cur) {
-        const s = String(x || "").trim();
-        if (s) set.add(s);
-      }
-    } else if (typeof cur === "string") {
-      const s = cur.trim();
-      if (s) set.add(s);
+      // восстановить ссылку (ВАЖНО: именно на тот же Set)
+      window.PLANNER.state.selectedRegions = set;
     }
-
-    // 3) ВОССТАНАВЛИВАЕМ ссылку (не новый Set!)
-    st.selectedRegions = set;
+    return window.PLANNER.__regionsSet;
   }
 
-  return set;
-}
- 
   // ===== Utils =====
   function el(id) { return document.getElementById(id); }
 
   function setStatus(msg) {
-    const s = el("status");
+    var s = el("status");
     if (s) s.textContent = msg || "";
   }
 
   function escapeHtml(s) {
-    return String(s ?? "").replace(/[&<>"']/g, m => ({
-      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
-    }[m]));
+    s = String((s === undefined || s === null) ? "" : s);
+    return s.replace(/[&<>"']/g, function (m) {
+      return ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+      })[m];
+    });
   }
 
   function normalizeKey(s) {
-    return String(s ?? "")
+    s = String((s === undefined || s === null) ? "" : s);
+    return s
       .trim()
       .toLowerCase()
       .replace(/ё/g, "е")
@@ -308,875 +235,797 @@ function ensureSelectedRegionsSet() {
   }
 
   function getBudgetMode() {
-    return document.querySelector('input[name="budget_mode"]:checked')?.value || "fixed";
+    var x = document.querySelector('input[name="budget_mode"]:checked');
+    return x ? x.value : "fixed";
   }
 
   function getScheduleType() {
-    // expected: all_day | peak | custom
-    return document.querySelector('input[name="schedule"]:checked')?.value || "all_day";
+    var x = document.querySelector('input[name="schedule"]:checked');
+    return x ? x.value : "all_day";
   }
 
   function parseCSV(text) {
-    const res = Papa.parse(text, { header: true, skipEmptyLines: true, dynamicTyping: false });
+    if (!window.Papa) {
+      console.error("PapaParse not found");
+      return [];
+    }
+    var res = Papa.parse(text, { header: true, skipEmptyLines: true, dynamicTyping: false });
     if (res.errors && res.errors.length) console.warn("CSV parse errors:", res.errors.slice(0, 8));
     return res.data || [];
   }
 
   function toNumber(x) {
-    if (x == null) return NaN;
-    const s = String(x).trim().replace(/\s+/g, "").replace(",", ".");
-    const n = Number(s);
-    return Number.isFinite(n) ? n : NaN;
+    if (x === undefined || x === null) return NaN;
+    var s = String(x).trim().replace(/\s+/g, "").replace(",", ".");
+    var n = Number(s);
+    return isFinite(n) ? n : NaN;
   }
 
   function avgNumber(arr) {
-    let sum = 0, cnt = 0;
-    for (const v of arr) {
-      if (Number.isFinite(v)) { sum += v; cnt++; }
+    var sum = 0, cnt = 0;
+    for (var i = 0; i < arr.length; i++) {
+      var v = arr[i];
+      if (isFinite(v)) { sum += v; cnt++; }
     }
     return cnt ? (sum / cnt) : null;
   }
 
   function daysInclusive(startStr, endStr) {
-    const s = new Date(startStr + "T00:00:00");
-    const e = new Date(endStr + "T00:00:00");
+    var s = new Date(startStr + "T00:00:00");
+    var e = new Date(endStr + "T00:00:00");
     return Math.floor((e - s) / (24 * 3600 * 1000)) + 1;
   }
 
   function hoursPerDay(schedule) {
+    if (!schedule || !schedule.type) return 15;
     if (schedule.type === "all_day") return 15;
     if (schedule.type === "peak") return 7;
     if (schedule.type === "custom") {
-      const [fh, fm] = (schedule.from || "07:00").split(":").map(Number);
-      const [th, tm] = (schedule.to || "22:00").split(":").map(Number);
+      var from = (schedule.from || "07:00").split(":");
+      var to = (schedule.to || "22:00").split(":");
+      var fh = Number(from[0] || 7), fm = Number(from[1] || 0);
+      var th = Number(to[0] || 22), tm = Number(to[1] || 0);
       return Math.max(0, (th + tm / 60) - (fh + fm / 60));
     }
     return 15;
   }
 
   function formatMeta(fmt) {
-    return FORMAT_LABELS[fmt] || {
-      label: fmt,
-      desc: "Описание формата пока не задано (можно добавить в словарь FORMAT_LABELS)."
-    };
+    return FORMAT_LABELS[fmt] || { label: fmt, desc: "Описание формата пока не задано." };
   }
 
   // ===== UI: selection extra =====
   function renderSelectionExtra() {
-    const mode = el("selection-mode")?.value || "city_even";
-    const extra = el("selection-extra");
+    var modeEl = el("selection-mode");
+    var mode = modeEl ? modeEl.value : "city_even";
+    var extra = el("selection-extra");
     if (!extra) return;
     extra.innerHTML = "";
 
     if (mode === "near_address") {
-      extra.innerHTML = `
-        <input id="planner-addr" type="text" placeholder="Адрес"
-               style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-        <input id="planner-radius" type="number" min="50" value="500" placeholder="Радиус, м"
-               style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
-        <div style="font-size:12px; color:#666; margin-top:6px;">
-          Геокодим адрес и выбираем экраны в радиусе.
-        </div>
-      `;
+      extra.innerHTML =
+        '<input id="planner-addr" type="text" placeholder="Адрес" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">' +
+        '<input id="planner-radius" type="number" min="50" value="500" placeholder="Радиус, м" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">' +
+        '<div style="font-size:12px; color:#666; margin-top:6px;">Геокодим адрес и выбираем экраны в радиусе.</div>';
       return;
     }
 
     if (mode === "poi") {
-      const keys = Object.keys(POI_QUERIES || {});
-      const options = keys.map(k => `<option value="${k}">${POI_LABELS[k] || k}</option>`).join("");
-
-      extra.innerHTML = `
-        <select id="poi-type"
-                style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-          ${options}
-        </select>
-
-        <input id="planner-radius" type="number" min="50" value="500" placeholder="Радиус вокруг POI, м"
-               style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
-
-        <div style="font-size:12px; color:#666; margin-top:6px;">
-          POI-тип берём из OpenStreetMap (Overpass), затем выбираем экраны вокруг POI.
-        </div>
-      `;
+      var keys = Object.keys(POI_QUERIES || {});
+      var options = "";
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        options += '<option value="' + escapeHtml(k) + '">' + escapeHtml(POI_LABELS[k] || k) + "</option>";
+      }
+      extra.innerHTML =
+        '<select id="poi-type" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">' +
+        options +
+        "</select>" +
+        '<input id="planner-radius" type="number" min="50" value="500" placeholder="Радиус вокруг POI, м" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">' +
+        '<div style="font-size:12px; color:#666; margin-top:6px;">POI-тип берём из OpenStreetMap (Overpass), затем выбираем экраны вокруг POI.</div>';
       return;
     }
 
     if (mode === "route") {
-      extra.innerHTML = `
-        <input id="route-from" type="text" placeholder="Точка А"
-               style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-        <input id="route-to" type="text" placeholder="Точка Б"
-               style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-        <input id="planner-radius" type="number" min="50" value="300" placeholder="Радиус от маршрута, м"
-               style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
-        <div style="font-size:12px; color:#666; margin-top:6px;">
-          MVP: маршрут сохраняем в бриф (без построения).
-        </div>
-      `;
+      extra.innerHTML =
+        '<input id="route-from" type="text" placeholder="Точка А" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">' +
+        '<input id="route-to" type="text" placeholder="Точка Б" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">' +
+        '<input id="planner-radius" type="number" min="50" value="300" placeholder="Радиус от маршрута, м" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">' +
+        '<div style="font-size:12px; color:#666; margin-top:6px;">MVP: маршрут сохраняем в бриф (без построения).</div>';
       return;
     }
   }
 
-  // ===== City -> Region loader =====
-  async function loadCityRegions() {
-    try {
-      const res = await fetch(CITY_REGIONS_URL, { cache: "no-store" });
-      if (!res.ok) throw new Error("city_regions http " + res.status);
+  // ===== City -> Region loader (NO async) =====
+  function loadCityRegions() {
+    return fetch(CITY_REGIONS_URL, { cache: "no-store" })
+      .then(function (res) {
+        if (!res.ok) throw new Error("city_regions http " + res.status);
+        return res.json();
+      })
+      .then(function (json) {
+        var regionsRaw = (json && json.regions && typeof json.regions === "object") ? json.regions : null;
+        if (!regionsRaw) throw new Error("city_regions has no 'regions' object");
 
-      const json = await res.json();
-      const regionsRaw = (json?.regions && typeof json.regions === "object") ? json.regions : null;
-      if (!regionsRaw) throw new Error("city_regions has no 'regions' object");
+        var cityToRegion = {};
+        var citiesCount = 0;
+        var regionsCount = 0;
 
-      const cityToRegion = {};
-      let citiesCount = 0;
-      let regionsCount = 0;
+        Object.keys(regionsRaw).forEach(function (k) {
+          var v = regionsRaw[k];
 
-      for (const [k, v] of Object.entries(regionsRaw)) {
-        // A) "Москва": "Москва"
-        if (typeof v === "string") {
-          const key = normalizeKey(k);
-          if (key) {
-            cityToRegion[key] = String(v).trim();
-            citiesCount++;
+          // A) "Москва": "Москва"
+          if (typeof v === "string") {
+            var key = normalizeKey(k);
+            if (key) {
+              cityToRegion[key] = String(v).trim();
+              citiesCount++;
+            }
+            return;
           }
-          continue;
-        }
 
-        // B) "Московская область": ["Химки", ...]
-        if (Array.isArray(v)) {
-          const region = String(k).trim();
-          regionsCount++;
-          for (const city of v) {
-            const key = normalizeKey(city);
-            if (!key) continue;
-            cityToRegion[key] = region;
-            citiesCount++;
+          // B) "Московская область": ["Химки", ...]
+          if (Array.isArray(v)) {
+            var region = String(k).trim();
+            regionsCount++;
+            for (var i = 0; i < v.length; i++) {
+              var city = v[i];
+              var key2 = normalizeKey(city);
+              if (!key2) continue;
+              cityToRegion[key2] = region;
+              citiesCount++;
+            }
           }
-          continue;
-        }
-      }
+        });
 
-      window.PLANNER.cityRegions = cityToRegion;
-      window.PLANNER.cityRegionsMeta = json?.meta || null;
+        window.PLANNER.cityRegions = cityToRegion;
+        window.PLANNER.cityRegionsMeta = json.meta || null;
 
-      console.log("[city_regions] loaded:", { cities: citiesCount, regions: regionsCount || "n/a" });
-      return true;
-    } catch (e) {
-      console.warn("[city_regions] load failed:", e);
-      window.PLANNER.cityRegions = {};
-      window.PLANNER.cityRegionsMeta = null;
-      return false;
-    }
+        console.log("[city_regions] loaded:", { cities: citiesCount, regions: regionsCount || "n/a" });
+        return true;
+      })
+      .catch(function (e) {
+        console.warn("[city_regions] load failed:", e);
+        window.PLANNER.cityRegions = {};
+        window.PLANNER.cityRegionsMeta = null;
+        return false;
+      });
   }
 
   function getRegionForCity(city) {
-    const key = normalizeKey(city);
-    const r = window.PLANNER?.cityRegions?.[key];
+    var key = normalizeKey(city);
+    var r = window.PLANNER && window.PLANNER.cityRegions ? window.PLANNER.cityRegions[key] : null;
     return (typeof r === "string" && r.trim()) ? r.trim() : "Не назначено";
   }
 
   // ===== Regions UI (multi-select) =====
- 
   function normalizeRegionName(input) {
-    const v = String(input || "").trim();
+    var v = String(input || "").trim();
     if (!v) return "";
-    const found = (window.PLANNER.state.regionsAll || []).find(r => r.toLowerCase() === v.toLowerCase());
-    return found || v;
+    var all = window.PLANNER.state.regionsAll || [];
+    for (var i = 0; i < all.length; i++) {
+      if (String(all[i]).toLowerCase() === v.toLowerCase()) return all[i];
+    }
+    return v;
   }
-function addRegion(regionRaw) {
-  const st = window.PLANNER.state;
-  const set = ensureSelectedRegionsSet();
 
-  const region = normalizeRegionName(regionRaw);
-  if (!region) return;
-
-  set.add(region);
-}
-
-function removeRegion(regionRaw) {
-  const set = ensureSelectedRegionsSet();
-  const region = normalizeRegionName(regionRaw);
-  if (!region) return;
-
-  set.delete(region);
-}
-  
   function renderSelectedRegions() {
-  const wrap = el("region-selected");
-  if (!wrap) return;
+    var wrap = el("region-selected");
+    if (!wrap) return;
 
-  const set = ensureSelectedRegionsSet();
-  const arr = [...set]; // ✅ вот где объявляется arr
+    var set = ensureSelectedRegionsSet();
+    var arr = Array.from(set);
 
-  wrap.innerHTML = "";
+    wrap.innerHTML = "";
 
-  if (arr.length === 0) {
-    wrap.innerHTML = `<div style="font-size:12px; color:#666;">Регион не выбран</div>`;
-    return;
-  }
+    if (!arr.length) {
+      wrap.innerHTML = '<div style="font-size:12px; color:#666;">Регион не выбран</div>';
+      return;
+    }
 
-  arr.forEach((region) => {
-    const chip = document.createElement("button");
-    cssButtonBase(chip);
-    chip.type = "button";
-    chip.style.display = "inline-flex";
-    chip.style.alignItems = "center";
-    chip.style.gap = "6px";
-    chip.textContent = "✕ " + region;
+    arr.sort(function (a, b) { return String(a).localeCompare(String(b), "ru"); });
 
-    chip.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      set.delete(region);
-      renderSelectedRegions();
-      window.dispatchEvent(new CustomEvent("planner:filters-changed"));
-    });
+    for (var i = 0; i < arr.length; i++) {
+      (function (region) {
+        var chip = document.createElement("button");
+        cssButtonBase(chip);
+        chip.type = "button";
+        chip.style.display = "inline-flex";
+        chip.style.alignItems = "center";
+        chip.style.gap = "6px";
+        chip.textContent = "✕ " + region;
 
-    wrap.appendChild(chip);
-  });
-}
+        chip.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          set.delete(region);
+          renderSelectedRegions();
+          window.dispatchEvent(new CustomEvent("planner:filters-changed"));
+        });
 
-function renderRegionSuggestions(q) {
-  var sug = el("city-suggestions");
-  if (!sug) return;
-
-  sug.innerHTML = "";
-
-  var qq = String(q || "").trim().toLowerCase();
-  if (!qq) return;
-
-  var set = ensureSelectedRegionsSet();
-
-  var all = window.PLANNER.state.regionsAll || [];
-  var matches = [];
-  for (var i = 0; i < all.length; i++) {
-    var r = String(all[i] || "");
-    if (r.toLowerCase().indexOf(qq) !== -1) {
-      matches.push(r);
-      if (matches.length >= 12) break;
+        wrap.appendChild(chip);
+      })(arr[i]);
     }
   }
 
-  for (var j = 0; j < matches.length; j++) {
-    (function (r) {
-      var b = document.createElement("button");
-      cssButtonBase(b);
-      b.type = "button";
-      b.textContent = (set.has(r) ? "✓ " : "+ ") + r;
+  function renderRegionSuggestions(q) {
+    var sug = el("city-suggestions");
+    if (!sug) return;
 
-      b.addEventListener("click", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
+    sug.innerHTML = "";
 
-        // ✅ ВАЖНО: только add (ничего не clear / не replace)
-        set.add(r);
+    var qq = String(q || "").trim().toLowerCase();
+    if (!qq) return;
 
-        var inp = el("city-search");
-        if (inp) inp.value = "";
-        sug.innerHTML = "";
+    var set = ensureSelectedRegionsSet();
+    var all = window.PLANNER.state.regionsAll || [];
+    if (!all.length) return;
 
-        renderSelectedRegions();
-        window.dispatchEvent(new CustomEvent("planner:filters-changed"));
-      });
+    var matches = [];
+    for (var i = 0; i < all.length; i++) {
+      var r = String(all[i] || "");
+      if (r.toLowerCase().indexOf(qq) !== -1) {
+        matches.push(r);
+        if (matches.length >= 12) break;
+      }
+    }
 
-      sug.appendChild(b);
-    })(matches[j]);
+    for (var j = 0; j < matches.length; j++) {
+      (function (r) {
+        var b = document.createElement("button");
+        cssButtonBase(b);
+        b.type = "button";
+        b.textContent = (set.has(r) ? "✓ " : "+ ") + r;
+
+        b.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+
+          // ✅ только ADD, никогда не replace/clear
+          set.add(r);
+
+          var inp = el("city-search");
+          if (inp) inp.value = "";
+          sug.innerHTML = "";
+
+          renderSelectedRegions();
+          window.dispatchEvent(new CustomEvent("planner:filters-changed"));
+        });
+
+        sug.appendChild(b);
+      })(matches[j]);
+    }
   }
-}
 
+  // ===== Data load (NO async) =====
+  function loadScreens() {
+    setStatus("Загружаю список экранов…");
+    console.log("[screens] url:", SCREENS_CSV_URL);
 
-// ===== Data load =====
-function loadScreens() {
-  setStatus("Загружаю список экранов…");
-  console.log("[screens] url:", SCREENS_CSV_URL);
+    return fetch(SCREENS_CSV_URL, { cache: "no-store" })
+      .then(function (res) {
+        console.log("[screens] status:", res.status, res.statusText);
+        if (!res.ok) throw new Error("Не удалось загрузить CSV: " + res.status);
+        return res.text();
+      })
+      .then(function (text) {
+        var rows = parseCSV(text);
+        var st = window.PLANNER.state;
 
-  return fetch(SCREENS_CSV_URL, { cache: "no-store" })
-    .then(function (res) {
-      console.log("[screens] status:", res.status, res.statusText);
-      if (!res.ok) throw new Error("Не удалось загрузить CSV: " + res.status);
-      return res.text();
-    })
-    .then(function (text) {
-      var rows = parseCSV(text);
-      var st = window.PLANNER.state;
+        st.screens = rows.map(function (r) {
+          var city = String(r.city || r.City || r.CITY || "").trim();
+          var format = String(r.format || r.Format || r.FORMAT || "").trim();
+          var address = String(r.address || r.Address || r.ADDRESS || "").trim();
+          var screenId = r.screen_id || r.screenId || r.inventory_id || r.inventoryId || r.id || "";
 
-      st.screens = rows.map(function (r) {
-        var city = String((r.city || r.City || r.CITY || "")).trim();
-        var format = String((r.format || r.Format || r.FORMAT || "")).trim();
-        var address = String((r.address || r.Address || r.ADDRESS || "")).trim();
+          var out = Object.assign({}, r);
+          out.screen_id = String(screenId).trim();
+          out.city = city;
+          out.format = format;
+          out.address = address;
 
-        var screenId = r.screen_id || r.screenId || r.inventory_id || r.inventoryId || r.id || "";
+          out.minBid = toNumber(r.minBid || r.min_bid || r.MINBID || r.minbid);
+          out.ots = toNumber(r.ots || r.OTS);
+          out.grp = toNumber(r.grp || r.GRP);
 
-        // Object.assign вместо ...spread
-        var out = Object.assign({}, r);
-        out.screen_id = String(screenId).trim();
-        out.city = city;
-        out.format = format;
-        out.address = address;
+          out.lat = toNumber(r.lat || r.Lat || r.LAT);
+          out.lon = toNumber(r.lon || r.Lon || r.LON || r.lng || r.Lng || r.LNG);
 
-        out.minBid = toNumber(r.minBid || r.min_bid || r.MINBID || r.minbid);
-        out.ots = toNumber(r.ots || r.OTS);
-        out.grp = toNumber(r.grp || r.GRP);
+          return out;
+        });
 
-        out.lat = toNumber(r.lat || r.Lat || r.LAT);
-        out.lon = toNumber(r.lon || r.Lon || r.LON || r.lng || r.Lng || r.LNG);
+        // cities / formats
+        var citiesSet = new Set();
+        var formatsSet = new Set();
+        for (var i = 0; i < st.screens.length; i++) {
+          if (st.screens[i].city) citiesSet.add(st.screens[i].city);
+          if (st.screens[i].format) formatsSet.add(st.screens[i].format);
+        }
+        st.citiesAll = Array.from(citiesSet).sort(function (a, b) { return String(a).localeCompare(String(b), "ru"); });
+        st.formatsAll = Array.from(formatsSet).sort(function (a, b) { return String(a).localeCompare(String(b)); });
 
-        return out;
+        // regionsByCity + regionsAll
+        st.regionsByCity = {};
+        var regionsSet = new Set();
+        for (var j = 0; j < st.citiesAll.length; j++) {
+          var c = st.citiesAll[j];
+          var reg = getRegionForCity(c);
+          st.regionsByCity[c] = reg;
+          regionsSet.add(reg);
+        }
+        st.regionsAll = Array.from(regionsSet).sort(function (a, b) { return String(a).localeCompare(String(b), "ru"); });
+
+        // assign region to screens
+        for (var k = 0; k < st.screens.length; k++) {
+          var s = st.screens[k];
+          s.region = st.regionsByCity[s.city] || "Не назначено";
+        }
+
+        renderFormats();
+        renderSelectedRegions();
+
+        setStatus(
+          "Всего доступно: Экранов: " + st.screens.length +
+          ". Городов: " + st.citiesAll.length +
+          ". Форматов: " + st.formatsAll.length +
+          ". Регионов: " + st.regionsAll.length + "."
+        );
+
+        window.PLANNER.ready = true;
+        window.dispatchEvent(new CustomEvent("planner:screens-ready", { detail: { count: st.screens.length } }));
+      })
+      .catch(function (err) {
+        console.error("[screens] load failed:", err);
+        setStatus("Ошибка загрузки экранов");
       });
-
-      st.citiesAll = Array.from(new Set(
-        st.screens.map(function (s) { return s.city; }).filter(Boolean)
-      )).sort(function (a, b) { return a.localeCompare(b, "ru"); });
-
-      st.formatsAll = Array.from(new Set(
-        st.screens.map(function (s) { return s.format; }).filter(Boolean)
-      )).sort(function (a, b) { return a.localeCompare(b); });
-
-      st.regionsByCity = {};
-      var regionsSet = new Set();
-
-      for (var i = 0; i < st.citiesAll.length; i++) {
-        var c = st.citiesAll[i];
-        var reg = getRegionForCity(c);
-        st.regionsByCity[c] = reg;
-        regionsSet.add(reg);
-      }
-
-      st.regionsAll = Array.from(regionsSet)
-        .sort(function (a, b) { return a.localeCompare(b, "ru"); });
-
-      for (var k = 0; k < st.screens.length; k++) {
-        var s = st.screens[k];
-        s.region = st.regionsByCity[s.city] || "Не назначено";
-      }
-
-      renderFormats();
-      renderSelectedRegions();
-
-      setStatus(
-        "Всего доступно: Экранов: " + st.screens.length +
-        ". Городов: " + st.citiesAll.length +
-        ". Форматов: " + st.formatsAll.length +
-        ". Регионов: " + st.regionsAll.length + "."
-      );
-
-      window.PLANNER.ready = true;
-      window.dispatchEvent(new CustomEvent("planner:screens-ready", {
-        detail: { count: st.screens.length }
-      }));
-    })
-    .catch(function (err) {
-      console.error("[screens] load failed:", err);
-      setStatus("Ошибка загрузки экранов");
-    });
-}
+  }
 
   // ===== UI: formats =====
   function renderFormats() {
-    const wrap = el("formats-wrap");
+    var wrap = el("formats-wrap");
     if (!wrap) return;
     wrap.innerHTML = "";
 
-    const st = window.PLANNER.state;
+    var st = window.PLANNER.state;
 
-    st.formatsAll.forEach(fmt => {
-      const meta = formatMeta(fmt);
-      const b = document.createElement("button");
-      cssButtonBase(b);
-      b.style.borderRadius = "14px";
-      b.style.padding = "10px 12px";
-      b.style.textAlign = "left";
-      b.style.maxWidth = "240px";
+    for (var i = 0; i < st.formatsAll.length; i++) {
+      (function (fmt) {
+        var meta = formatMeta(fmt);
+        var b = document.createElement("button");
+        cssButtonBase(b);
+        b.style.borderRadius = "14px";
+        b.style.padding = "10px 12px";
+        b.style.textAlign = "left";
+        b.style.maxWidth = "240px";
 
-      b.innerHTML = `
-        <div style="font-weight:700;">${escapeHtml(meta.label)}</div>
-        <div style="font-size:12px; color:#666;">${escapeHtml(meta.desc)}</div>
-        <div style="font-size:11px; color:#999; margin-top:4px;">Код: ${escapeHtml(fmt)}</div>
-      `;
+        b.innerHTML =
+          '<div style="font-weight:700;">' + escapeHtml(meta.label) + "</div>" +
+          '<div style="font-size:12px; color:#666;">' + escapeHtml(meta.desc) + "</div>" +
+          '<div style="font-size:11px; color:#999; margin-top:4px;">Код: ' + escapeHtml(fmt) + "</div>";
 
-      const sync = () => { b.style.borderColor = st.selectedFormats.has(fmt) ? "#111" : "#ddd"; };
-      sync();
-
-      b.addEventListener("click", () => {
-        if (el("formats-auto")?.checked) return;
-        if (st.selectedFormats.has(fmt)) st.selectedFormats.delete(fmt);
-        else st.selectedFormats.add(fmt);
+        function sync() {
+          b.style.borderColor = st.selectedFormats.has(fmt) ? "#111" : "#ddd";
+        }
         sync();
-      });
 
-      wrap.appendChild(b);
-    });
+        b.addEventListener("click", function () {
+          var auto = el("formats-auto");
+          if (auto && auto.checked) return;
+
+          if (st.selectedFormats.has(fmt)) st.selectedFormats.delete(fmt);
+          else st.selectedFormats.add(fmt);
+
+          sync();
+        });
+
+        wrap.appendChild(b);
+      })(st.formatsAll[i]);
+    }
   }
 
   // ===== Brief =====
   function buildBrief() {
-    const root = document.getElementById("planner-widget") || document;
+    var root = document.getElementById("planner-widget") || document;
 
-    const budgetMode = getBudgetMode();
-    const budgetVal = el("budget-input")?.value;
+    var budgetMode = getBudgetMode();
+    var budgetEl = el("budget-input");
+    var budgetVal = budgetEl ? budgetEl.value : "";
 
-    const scheduleType = getScheduleType();
-    const timeFrom = el("time-from")?.value;
-    const timeTo = el("time-to")?.value;
+    var scheduleType = getScheduleType();
+    var timeFromEl = el("time-from");
+    var timeToEl = el("time-to");
 
-    const selectionMode = el("selection-mode")?.value || "city_even";
+    var selectionModeEl = el("selection-mode");
+    var selectionMode = selectionModeEl ? selectionModeEl.value : "city_even";
 
-    // ✅ regions (multi)
-    const regions = [...ensureSelectedRegionsSet()]
-      .map(r => String(r || "").trim())
-      .filter(Boolean);
+    var set = ensureSelectedRegionsSet();
+    var regions = Array.from(set).map(function (r) { return String(r || "").trim(); }).filter(Boolean);
 
-    const st = window.PLANNER.state;
+    var st = window.PLANNER.state;
 
-    const brief = {
+    var formatsAutoEl = el("formats-auto");
+    var formatsAuto = formatsAutoEl ? !!formatsAutoEl.checked : false;
+
+    var brief = {
       budget: {
         mode: budgetMode,
-        amount: budgetMode === "fixed" ? Number(budgetVal || 0) : null,
+        amount: (budgetMode === "fixed") ? Number(budgetVal || 0) : null,
         currency: "RUB"
       },
       dates: {
-        start: el("date-start")?.value || null,
-        end: el("date-end")?.value || null
+        start: (el("date-start") && el("date-start").value) ? el("date-start").value : null,
+        end: (el("date-end") && el("date-end").value) ? el("date-end").value : null
       },
       schedule: {
         type: scheduleType,
-        from: scheduleType === "custom" ? timeFrom : null,
-        to: scheduleType === "custom" ? timeTo : null
+        from: (scheduleType === "custom") ? ((timeFromEl && timeFromEl.value) ? timeFromEl.value : null) : null,
+        to: (scheduleType === "custom") ? ((timeToEl && timeToEl.value) ? timeToEl.value : null) : null
       },
-      geo: { regions },
+      geo: { regions: regions },
       formats: {
-        mode: el("formats-auto")?.checked ? "auto" : "manual",
-        selected: el("formats-auto")?.checked ? [] : [...st.selectedFormats]
+        mode: formatsAuto ? "auto" : "manual",
+        selected: formatsAuto ? [] : Array.from(st.selectedFormats)
       },
       selection: { mode: selectionMode },
       grp: {
-        enabled: !!el("grp-enabled")?.checked,
-        min: toNumber(el("grp-min")?.value ?? 0),
-        max: toNumber(el("grp-max")?.value ?? 9.98)
+        enabled: !!(el("grp-enabled") && el("grp-enabled").checked),
+        min: toNumber(el("grp-min") ? el("grp-min").value : 0),
+        max: toNumber(el("grp-max") ? el("grp-max").value : 9.98)
       }
     };
 
-    const qsVal = (sel) => (root.querySelector(sel)?.value ?? "");
-    const pickAnyNum = (fallback, ...sels) => {
-      for (const s of sels) {
-        const v = qsVal(s);
-        if (v !== "" && v != null) {
-          const n = Number(v);
-          if (Number.isFinite(n)) return n;
-        }
-      }
-      return fallback;
-    };
-    const pickAnyVal = (...sels) => {
-      for (const s of sels) {
-        const v = qsVal(s);
-        if (String(v).trim()) return String(v).trim();
-      }
-      return "";
-    };
-
-    if (selectionMode === "near_address") {
-      brief.selection.address = pickAnyVal("#planner-addr", "#addr");
-      brief.selection.radius_m = pickAnyNum(500, "#planner-radius", "#radius");
-    }
-    if (selectionMode === "poi") {
-      brief.selection.poi_type = String(qsVal("#poi-type") || "pet_store").trim();
-      brief.selection.radius_m = pickAnyNum(500, "#planner-radius", "#radius");
-    }
-    if (selectionMode === "route") {
-      brief.selection.from = pickAnyVal("#route-from");
-      brief.selection.to = pickAnyVal("#route-to");
-      brief.selection.radius_m = pickAnyNum(300, "#planner-radius", "#radius");
-    }
-
-    if (!Number.isFinite(brief.grp.min)) brief.grp.min = 0;
-    if (!Number.isFinite(brief.grp.max)) brief.grp.max = 9.98;
+    // clamp grp
+    if (!isFinite(brief.grp.min)) brief.grp.min = 0;
+    if (!isFinite(brief.grp.max)) brief.grp.max = 9.98;
     brief.grp.min = Math.max(0, Math.min(9.98, brief.grp.min));
     brief.grp.max = Math.max(0, Math.min(9.98, brief.grp.max));
-    if (brief.grp.max < brief.grp.min) [brief.grp.min, brief.grp.max] = [brief.grp.max, brief.grp.min];
+    if (brief.grp.max < brief.grp.min) {
+      var tmp = brief.grp.min;
+      brief.grp.min = brief.grp.max;
+      brief.grp.max = tmp;
+    }
 
     return brief;
   }
 
-  // ===== Tiers =====
-  async function loadTiers() {
-    try {
-      const res = await fetch(TIERS_JSON_URL, { cache: "no-store" });
-      if (!res.ok) throw new Error("tiers json http " + res.status);
-      const json = await res.json();
+  // ===== Tiers (NO async) =====
+  function loadTiers() {
+    return fetch(TIERS_JSON_URL, { cache: "no-store" })
+      .then(function (res) {
+        if (!res.ok) throw new Error("tiers json http " + res.status);
+        return res.json();
+      })
+      .then(function (json) {
+        var tiers = (json && json.tiers && typeof json.tiers === "object") ? json.tiers : null;
+        if (!tiers) throw new Error("tiers json has no 'tiers' object");
 
-      const tiers = json?.tiers && typeof json.tiers === "object" ? json.tiers : null;
-      if (!tiers) throw new Error("tiers json has no 'tiers' object");
+        window.PLANNER.tiers = tiers;
+        window.PLANNER.tiersMeta = {
+          version: json.version || "unknown",
+          generated_at: json.generated_at || null
+        };
 
-      window.PLANNER.tiers = tiers;
-      window.PLANNER.tiersMeta = {
-        version: json?.version || "unknown",
-        generated_at: json?.generated_at || null
-      };
-
-      console.log("[tiers] loaded:", Object.keys(tiers).length, "regions", window.PLANNER.tiersMeta);
-      return true;
-    } catch (e) {
-      console.warn("[tiers] load failed:", e);
-      window.PLANNER.tiers = {};
-      window.PLANNER.tiersMeta = { version: "missing", generated_at: null };
-      return false;
-    }
+        console.log("[tiers] loaded:", Object.keys(tiers).length, "regions", window.PLANNER.tiersMeta);
+        return true;
+      })
+      .catch(function (e) {
+        console.warn("[tiers] load failed:", e);
+        window.PLANNER.tiers = {};
+        window.PLANNER.tiersMeta = { version: "missing", generated_at: null };
+        return false;
+      });
   }
 
   function getTierForGeo(name) {
-    const key = String(name || "").trim();
-    const t = window.PLANNER?.tiers?.[key];
+    var key = String(name || "").trim();
+    var t = (window.PLANNER && window.PLANNER.tiers) ? window.PLANNER.tiers[key] : null;
     return (t === "M" || t === "SP" || t === "A" || t === "B" || t === "C" || t === "D") ? t : "C";
   }
 
   // ===== Helpers =====
   function pickScreensByMinBid(screens, n) {
-    const sorted = [...screens].sort((a, b) => {
-      const aa = Number.isFinite(a.minBid) ? a.minBid : 1e18;
-      const bb = Number.isFinite(b.minBid) ? b.minBid : 1e18;
+    var sorted = screens.slice().sort(function (a, b) {
+      var aa = isFinite(a.minBid) ? a.minBid : 1e18;
+      var bb = isFinite(b.minBid) ? b.minBid : 1e18;
       if (aa !== bb) return aa - bb;
       return String(a.screen_id || "").localeCompare(String(b.screen_id || ""));
     });
     return sorted.slice(0, n);
   }
 
-  function gridKey(lat, lon, stepKm = 2) {
-    const kmLat = 111;
-    const kmLon = 111 * Math.cos(lat * Math.PI / 180);
-    const gx = Math.floor(lat * kmLat / stepKm);
-    const gy = Math.floor(lon * kmLon / stepKm);
-    return `${gx}:${gy}`;
+  function gridKey(lat, lon, stepKm) {
+    stepKm = stepKm || 2;
+    var kmLat = 111;
+    var kmLon = 111 * Math.cos(lat * Math.PI / 180);
+    var gx = Math.floor(lat * kmLat / stepKm);
+    var gy = Math.floor(lon * kmLon / stepKm);
+    return gx + ":" + gy;
   }
 
-  function groupByGrid(screens, stepKm = 2) {
-    const map = new Map();
-    for (const s of screens) {
-      const lat = Number(s.lat ?? s.latitude);
-      const lon = Number(s.lon ?? s.lng ?? s.longitude);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-      const key = gridKey(lat, lon, stepKm);
+  function groupByGrid(screens, stepKm) {
+    stepKm = stepKm || 2;
+    var map = new Map();
+    for (var i = 0; i < screens.length; i++) {
+      var s = screens[i];
+      var lat = Number(s.lat !== undefined ? s.lat : s.latitude);
+      var lon = Number(s.lon !== undefined ? s.lon : (s.lng !== undefined ? s.lng : s.longitude));
+      if (!isFinite(lat) || !isFinite(lon)) continue;
+      var key = gridKey(lat, lon, stepKm);
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(s);
     }
-    return [...map.values()];
+    return Array.from(map.values());
   }
 
-  function pickScreensUniformByGrid(pool, count, stepKm = 2) {
-    const cells = groupByGrid(pool, stepKm);
+  function pickScreensUniformByGrid(pool, count, stepKm) {
+    stepKm = stepKm || 2;
+    var cells = groupByGrid(pool, stepKm);
 
-    for (const cell of cells) {
-      cell.sort((a, b) => (a.minBid ?? 1e18) - (b.minBid ?? 1e18));
-    }
+    cells.forEach(function (cell) {
+      cell.sort(function (a, b) { return (a.minBid || 1e18) - (b.minBid || 1e18); });
+    });
 
-    cells.sort(() => Math.random() - 0.5);
+    cells.sort(function () { return Math.random() - 0.5; });
 
-    const result = [];
-    let i = 0;
+    var result = [];
+    var i = 0;
     while (result.length < count && cells.length) {
-      const cell = cells[i % cells.length];
+      var cell = cells[i % cells.length];
       if (cell.length) result.push(cell.shift());
       i++;
     }
 
     if (result.length < count) {
-      const picked = new Set(result);
-      const rest = pool.filter(s => !picked.has(s));
-      result.push(...pickScreensByMinBid(rest, count - result.length));
+      var picked = new Set(result);
+      var rest = pool.filter(function (s) { return !picked.has(s); });
+      result = result.concat(pickScreensByMinBid(rest, count - result.length));
     }
 
     return result.slice(0, count);
   }
 
- // ================== MULTI-REGION BUDGET ==================
-function tierWeight(t) {
-  switch (String(t || "").toUpperCase()) {
-    case "M": return 6;
-    case "SP": return 5;
-    case "A": return 4;
-    case "B": return 3;
-    case "C": return 2;
-    case "D": return 1;
-    default: return 2;
-  }
-}
-
-function allocateBudgetAcrossRegions(total, regions, opts = {}) {
-  if (!regions.length) return [];
-
-  const minShare = opts.minShare ?? 0.1;
-  const maxShare = opts.maxShare ?? 0.7;
-
-  const items = regions.map(r => ({
-    region: r.key,
-    tier: r.tier,
-    w: tierWeight(r.tier),
-    share: 0
-  }));
-
-  const sumW = items.reduce((a, b) => a + b.w, 0) || 1;
-  items.forEach(i => i.share = i.w / sumW);
-
-  // caps
-  items.forEach(i => {
-    if (i.share < minShare) i.share = minShare;
-    if (i.share > maxShare) i.share = maxShare;
-  });
-
-  const sumShares = items.reduce((a, b) => a + b.share, 0) || 1;
-  items.forEach(i => i.share /= sumShares);
-
-  let out = items.map(i => ({
-    region: i.region,
-    budget: Math.floor(total * i.share)
-  }));
-
-  // fix rounding
-  let diff = total - out.reduce((a, b) => a + b.budget, 0);
-  let k = 0;
-  while (diff !== 0 && k < 10000) {
-    const i = k % out.length;
-    out[i].budget += diff > 0 ? 1 : -1;
-    diff += diff > 0 ? -1 : 1;
-    k++;
+  // ===== Budget allocation =====
+  function tierWeight(t) {
+    t = String(t || "").toUpperCase();
+    if (t === "M") return 6;
+    if (t === "SP") return 5;
+    if (t === "A") return 4;
+    if (t === "B") return 3;
+    if (t === "C") return 2;
+    if (t === "D") return 1;
+    return 2;
   }
 
-  return out;
-}
+  function allocateBudgetAcrossRegions(total, regions, opts) {
+    opts = opts || {};
+    if (!regions || !regions.length) return [];
 
-// ================== MAIN CALC ==================
-async function onCalcClick() {
-  const brief = buildBrief();
+    var minShare = (opts.minShare !== undefined) ? opts.minShare : 0.1;
+    var maxShare = (opts.maxShare !== undefined) ? opts.maxShare : 0.7;
 
-  if (!brief.dates.start || !brief.dates.end) {
-    alert("Выберите даты");
-    return;
+    var items = regions.map(function (r) {
+      return { region: r.key, tier: r.tier, w: tierWeight(r.tier), share: 0 };
+    });
+
+    var sumW = items.reduce(function (a, b) { return a + b.w; }, 0) || 1;
+    items.forEach(function (i) { i.share = i.w / sumW; });
+
+    items.forEach(function (i) {
+      if (i.share < minShare) i.share = minShare;
+      if (i.share > maxShare) i.share = maxShare;
+    });
+
+    var sumShares = items.reduce(function (a, b) { return a + b.share; }, 0) || 1;
+    items.forEach(function (i) { i.share = i.share / sumShares; });
+
+    var out = items.map(function (i) {
+      return { region: i.region, budget: Math.floor(total * i.share) };
+    });
+
+    var allocated = out.reduce(function (a, b) { return a + b.budget; }, 0);
+    var diff = total - allocated;
+    var k = 0;
+    while (diff !== 0 && k < 10000) {
+      var idx = k % out.length;
+      out[idx].budget += (diff > 0 ? 1 : -1);
+      diff += (diff > 0 ? -1 : 1);
+      k++;
+    }
+    return out;
   }
 
-  const regions = brief.geo.regions;
-  if (!regions.length) {
-    alert("Выберите регион(ы)");
-    return;
-  }
+  // ===== MAIN CALC (NO async) =====
+  function onCalcClick() {
+    var brief = buildBrief();
 
-  const days = daysInclusive(brief.dates.start, brief.dates.end);
-  const hpd = brief.budget.mode === "fixed"
-    ? hoursPerDay(brief.schedule)
-    : RECO_HOURS_PER_DAY;
-
-  let fixedAlloc = null;
-  if (brief.budget.mode === "fixed") {
-    fixedAlloc = allocateBudgetAcrossRegions(
-      brief.budget.amount,
-      regions.map(r => ({ key: r, tier: getTierForGeo(r) }))
-    );
-  }
-
-  let chosenAll = [];
-  let perRegion = [];
-  let totalBudget = 0;
-  let totalPlays = 0;
-  let totalOts = 0;
-  let hasOts = true;
-
-  for (const region of regions) {
-    const tier = getTierForGeo(region);
-
-    let pool = state.screens.filter(s => s.region === region);
-    if (!pool.length) continue;
-
-    if (brief.formats.mode === "manual") {
-      pool = pool.filter(s => brief.formats.selected.includes(s.format));
+    if (!brief.dates.start || !brief.dates.end) {
+      alert("Выберите даты");
+      return;
     }
 
-    const avgBid = avgNumber(pool.map(s => s.minBid));
-    if (!avgBid) continue;
+    var regions = brief.geo.regions;
+    if (!regions || !regions.length) {
+      alert("Выберите регион(ы)");
+      return;
+    }
 
-    const bid = avgBid * BID_MULTIPLIER;
-    let budget = 0;
+    var days = daysInclusive(brief.dates.start, brief.dates.end);
+    var hpd = (brief.budget.mode === "fixed") ? hoursPerDay(brief.schedule) : RECO_HOURS_PER_DAY;
 
+    var fixedAlloc = null;
     if (brief.budget.mode === "fixed") {
-      budget = fixedAlloc.find(x => x.region === region)?.budget || 0;
-    } else {
-      const base = {
-        M: 2000000, SP: 1500000, A: 1000000,
-        B: 500000, C: 300000, D: 100000
-      }[tier] || 300000;
-      budget = Math.floor(base * (days / 30));
+      fixedAlloc = allocateBudgetAcrossRegions(
+        brief.budget.amount,
+        regions.map(function (r) { return { key: r, tier: getTierForGeo(r) }; })
+      );
     }
 
-    if (budget <= 0) continue;
-    totalBudget += budget;
+    var chosenAll = [];
+    var perRegion = [];
+    var totalBudget = 0;
+    var totalPlays = 0;
+    var totalOts = 0;
+    var hasOts = true;
 
-    const totalPlaysTheory = Math.floor(budget / bid);
-    const playsPerHour = totalPlaysTheory / days / hpd;
-    const screensNeeded = Math.max(1, Math.ceil(playsPerHour / SC_OPT));
-    const chosen = pickScreensUniformByGrid(pool, screensNeeded, 2);
+    for (var i = 0; i < regions.length; i++) {
+      var region = regions[i];
+      var tier = getTierForGeo(region);
 
-    const plays = Math.min(
-      totalPlaysTheory,
-      SC_MAX * chosen.length * days * hpd
-    );
+      var pool = window.PLANNER.state.screens.filter(function (s) { return s.region === region; });
+      if (!pool.length) continue;
 
-    const avgOts = avgNumber(pool.map(s => s.ots));
-    const ots = avgOts ? plays * avgOts : null;
-    if (!avgOts) hasOts = false;
+      if (brief.formats.mode === "manual") {
+        pool = pool.filter(function (s) { return brief.formats.selected.indexOf(s.format) !== -1; });
+      }
 
-    chosenAll.push(...chosen);
-    totalPlays += plays;
-    if (ots) totalOts += ots;
+      var avgBid = avgNumber(pool.map(function (s) { return s.minBid; }));
+      if (!avgBid) continue;
 
-    perRegion.push({
-      region,
-      tier,
-      budget,
-      screens: chosen.length,
-      plays,
-      ots
+      var bid = avgBid * BID_MULTIPLIER;
+      var budget = 0;
+
+      if (brief.budget.mode === "fixed") {
+        var found = fixedAlloc.filter(function (x) { return x.region === region; })[0];
+        budget = found ? (found.budget || 0) : 0;
+      } else {
+        var baseMap = { M: 2000000, SP: 1500000, A: 1000000, B: 500000, C: 300000, D: 100000 };
+        var base = baseMap[tier] || 300000;
+        budget = Math.floor(base * (days / 30));
+      }
+
+      if (budget <= 0) continue;
+      totalBudget += budget;
+
+      var totalPlaysTheory = Math.floor(budget / bid);
+      var playsPerHour = totalPlaysTheory / days / hpd;
+      var screensNeeded = Math.max(1, Math.ceil(playsPerHour / SC_OPT));
+      var chosen = pickScreensUniformByGrid(pool, screensNeeded, 2);
+
+      var plays = Math.min(totalPlaysTheory, SC_MAX * chosen.length * days * hpd);
+
+      var avgOts = avgNumber(pool.map(function (s) { return s.ots; }));
+      var ots = avgOts ? plays * avgOts : null;
+      if (!avgOts) hasOts = false;
+
+      chosenAll = chosenAll.concat(chosen);
+      totalPlays += plays;
+      if (ots) totalOts += ots;
+
+      perRegion.push({
+        region: region,
+        tier: tier,
+        budget: budget,
+        screens: chosen.length,
+        plays: plays,
+        ots: ots
+      });
+    }
+
+    // dedupe screens
+    var seen = new Set();
+    chosenAll = chosenAll.filter(function (s) {
+      if (seen.has(s.screen_id)) return false;
+      seen.add(s.screen_id);
+      return true;
+    });
+
+    window.PLANNER.state.lastChosen = chosenAll;
+
+    window.dispatchEvent(new CustomEvent("planner:calc-done", { detail: { chosen: chosenAll, perRegion: perRegion } }));
+
+    // soft-calls
+    if (typeof window.renderPhotosCarousel === "function") {
+      window.renderPhotosCarousel(chosenAll);
+    }
+    if (typeof window.renderSummaryPretty === "function") {
+      window.renderSummaryPretty({
+        brief: brief,
+        perRegion: perRegion,
+        totals: {
+          budget: totalBudget,
+          plays: totalPlays,
+          ots: hasOts ? totalOts : null,
+          screens: chosenAll.length,
+          days: days,
+          hpd: hpd
+        }
+      });
+    }
+  }
+
+  // ===== UI BINDINGS =====
+  function bindPlannerUI() {
+    var calcBtn = el("calc-btn");
+    if (calcBtn) calcBtn.addEventListener("click", onCalcClick);
+
+    var input = el("city-search");
+    if (!input) return;
+
+    input.addEventListener("input", function (e) {
+      renderRegionSuggestions(e.target.value);
+    });
+
+    input.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+
+      var raw = String(input.value || "").trim();
+      if (!raw) return;
+
+      var st = window.PLANNER.state;
+      var regionsAll = st.regionsAll || [];
+      if (!regionsAll.length) return;
+
+      var found = null;
+      var q = raw.toLowerCase();
+
+      // exact
+      for (var i = 0; i < regionsAll.length; i++) {
+        if (String(regionsAll[i]).toLowerCase() === q) { found = regionsAll[i]; break; }
+      }
+      // includes
+      if (!found) {
+        for (var j = 0; j < regionsAll.length; j++) {
+          if (String(regionsAll[j]).toLowerCase().indexOf(q) !== -1) { found = regionsAll[j]; break; }
+        }
+      }
+
+      if (!found) return;
+
+      ensureSelectedRegionsSet().add(found);
+
+      input.value = "";
+      var sug = el("city-suggestions");
+      if (sug) sug.innerHTML = "";
+
+      renderSelectedRegions();
+      window.dispatchEvent(new CustomEvent("planner:filters-changed"));
     });
   }
 
-  // dedupe screens
-  const seen = new Set();
-  chosenAll = chosenAll.filter(s => {
-    if (seen.has(s.screen_id)) return false;
-    seen.add(s.screen_id);
-    return true;
-  });
+  // ===== START =====
+  function startPlanner() {
+    if (window.PLANNER.__started) return;
+    window.PLANNER.__started = true;
 
-  state.lastChosen = chosenAll;
+    bindPlannerUI();
+    renderSelectionExtra();
 
-  window.dispatchEvent(new CustomEvent("planner:calc-done", {
-    detail: { chosen: chosenAll, perRegion }
-  }));
-
-  renderPhotosCarousel(chosenAll);
-
-  renderSummaryPretty({
-    brief,
-    perRegion,
-    totals: {
-      budget: totalBudget,
-      plays: totalPlays,
-      ots: hasOts ? totalOts : null,
-      screens: chosenAll.length,
-      days,
-      hpd
-    }
-  });
-}
-
-// ================== PRETTY SUMMARY ==================
-function renderSummaryPretty(data) {
-  const elSum = el("summary");
-  if (!elSum) return;
-
-  const money = n => Number(n || 0).toLocaleString("ru-RU") + " ₽";
-  const intf = n => Math.floor(n || 0).toLocaleString("ru-RU");
-
-  const byRegions = data.perRegion.map(r => `
-    <div style="border:1px solid #eee;border-radius:14px;padding:12px;">
-      <div style="font-weight:900;font-size:16px;">${escapeHtml(r.region)}</div>
-      <div style="color:#666;font-size:13px;margin-bottom:6px;">Tier ${r.tier}</div>
-
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
-        <div><b>${intf(r.screens)}</b><br><span style="font-size:12px;color:#666;">экранов</span></div>
-        <div><b>${money(r.budget)}</b><br><span style="font-size:12px;color:#666;">бюджет</span></div>
-        <div><b>${intf(r.plays)}</b><br><span style="font-size:12px;color:#666;">выходов</span></div>
-        <div><b>${r.ots ? intf(r.ots) : "—"}</b><br><span style="font-size:12px;color:#666;">OTS</span></div>
-      </div>
-    </div>
-  `).join("");
-
-  elSum.innerHTML = `
-    <div style="display:grid;gap:14px;">
-      <div style="border:1px solid #eee;border-radius:16px;padding:14px;">
-        <div style="font-weight:900;font-size:18px;">Сводка кампании</div>
-        <div style="color:#666;font-size:13px;margin-bottom:10px;">
-          ${data.brief.dates.start} → ${data.brief.dates.end}
-        </div>
-
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
-          <div><b>${money(data.totals.budget)}</b><br><span style="font-size:12px;color:#666;">бюджет</span></div>
-          <div><b>${intf(data.totals.screens)}</b><br><span style="font-size:12px;color:#666;">экранов</span></div>
-          <div><b>${intf(data.totals.plays)}</b><br><span style="font-size:12px;color:#666;">выходов</span></div>
-          <div><b>${data.totals.ots ? intf(data.totals.ots) : "—"}</b><br><span style="font-size:12px;color:#666;">OTS</span></div>
-        </div>
-      </div>
-
-      <div style="display:grid;gap:12px;">
-        ${byRegions}
-      </div>
-    </div>
-  `;
-}
-
-// ================== UI BINDINGS ==================
-function bindPlannerUI() {
-  el("calc-btn")?.addEventListener("click", onCalcClick);
-
-  const input = el("city-search");
-  if (!input) return;
-
-  input.addEventListener("input", (e) => {
-    renderRegionSuggestions(e.target.value);
-  });
-
-  input.addEventListener("keydown", (e) => {
-  if (e.key !== "Enter") return;
-  e.preventDefault();
-
-  const raw = String(input.value || "").trim();
-  if (!raw) return;
-
-  const st = window.PLANNER.state;
-  const regionsAll = st.regionsAll || [];
-  if (!regionsAll.length) return;
-
-  // 1) exact match
-  let found = regionsAll.find(r => r.toLowerCase() === raw.toLowerCase());
-
-  // 2) if not exact — take first "includes" match (это решает кейс "В" -> "Владимирская ...")
-  if (!found) {
-    const q = raw.toLowerCase();
-    found = regionsAll.find(r => r.toLowerCase().includes(q));
+    loadTiers()
+      .then(function () { return loadCityRegions(); })
+      .then(function () { return loadScreens(); })
+      .catch(function (err) {
+        console.error("[planner] init failed:", err);
+      });
   }
 
-  if (!found) return;
+  window.PLANNER.startPlanner = startPlanner;
+  window.PLANNER.bootPlanner = startPlanner;
 
-  ensureSelectedRegionsSet().add(found);
-
-  input.value = "";
-  const sug = el("city-suggestions");
-  if (sug) sug.innerHTML = "";
-
-  renderSelectedRegions();
-  window.dispatchEvent(new CustomEvent("planner:filters-changed"));
-});
-}
-
-// ================== START ==================
-function startPlanner() {
-  if (window.PLANNER.__started) return;
-  window.PLANNER.__started = true;
-
-  bindPlannerUI();
-  renderSelectionExtra();
-
-  loadTiers()
-    .then(loadCityRegions)
-    .then(loadScreens)
-    .catch(function (err) {
-      console.error("[planner] init failed:", err);
-    });
-}
-
-// ===== export public API (for Tilda kick) =====
-window.PLANNER.startPlanner = startPlanner;
-window.PLANNER.bootPlanner = startPlanner; // алиас, чтобы kick нашёл
-
-// ===== START (inside IIFE) =====
-document.readyState === "loading"
-  ? document.addEventListener("DOMContentLoaded", startPlanner)
-  : startPlanner();
-})(); // <-- вот здесь IIFE закрывается
+  // ===== START (inside IIFE) =====
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", startPlanner);
+  } else {
+    startPlanner();
+  }
+})();
