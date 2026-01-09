@@ -168,7 +168,7 @@ console.log("planner.js loaded");
     st.regionsAll = st.regionsAll || [];
     st.regionsByCity = st.regionsByCity || {};
     st.selectedFormats = st.selectedFormats instanceof Set ? st.selectedFormats : new Set(st.selectedFormats || []);
-    st.selectedRegions = st.selectedRegions instanceof Set ? st.selectedRegions : new Set(st.selectedRegions || []);
+    st.selectedRegions = (st.selectedRegions == null) ? new Set() : st.selectedRegions;
     st.selectedRegion = st.selectedRegion || null;
     st.lastChosen = st.lastChosen || [];
   }
@@ -177,23 +177,59 @@ console.log("planner.js loaded");
   window.state = window.PLANNER.state;
 
 
-  // ===== Single source of truth for regions =====
-function ensureSelectedRegionsSet() {
+// ===== Single source of truth for regions (NEVER overwrite, only mutate) =====
+(function initSelectedRegionsStore() {
   const st = window.PLANNER.state;
 
-  if (st.selectedRegions instanceof Set) return st.selectedRegions;
+  // 1) создаём единый Set один раз
+  if (!window.PLANNER.__selectedRegionsSet) {
+    const cur = st.selectedRegions;
+    const seed = [];
 
-  // восстановление если вдруг стало массивом/строкой
-  if (Array.isArray(st.selectedRegions)) {
-    st.selectedRegions = new Set(st.selectedRegions.filter(Boolean).map(x => String(x).trim()).filter(Boolean));
-  } else if (typeof st.selectedRegions === "string") {
-    const v = st.selectedRegions.trim();
-    st.selectedRegions = new Set(v ? [v] : []);
-  } else {
-    st.selectedRegions = new Set();
+    if (cur instanceof Set) seed.push(...cur);
+    else if (Array.isArray(cur)) seed.push(...cur);
+    else if (typeof cur === "string" && cur.trim()) seed.push(cur.trim());
+
+    window.PLANNER.__selectedRegionsSet = new Set(
+      seed.map(x => String(x || "").trim()).filter(Boolean)
+    );
   }
 
-  return st.selectedRegions;
+  // 2) делаем state.selectedRegions аксессором, который всегда возвращает этот Set
+  // configurable:true чтобы Tilda preview не падала при повторной загрузке
+  try {
+    Object.defineProperty(st, "selectedRegions", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        return window.PLANNER.__selectedRegionsSet;
+      },
+      set(v) {
+        // НИКОГДА не перезатираем Set — только добавляем
+        const set = window.PLANNER.__selectedRegionsSet;
+        if (v == null) return;
+
+        if (v instanceof Set || Array.isArray(v)) {
+          for (const x of v) {
+            const s = String(x || "").trim();
+            if (s) set.add(s);
+          }
+          return;
+        }
+
+        if (typeof v === "string") {
+          const s = v.trim();
+          if (s) set.add(s);
+        }
+      }
+    });
+  } catch (e) {
+    // если уже определено при превью/реинжекте — ок
+  }
+})();
+
+function ensureSelectedRegionsSet() {
+  return window.PLANNER.__selectedRegionsSet;
 }
  
   // ===== Utils =====
@@ -478,11 +514,13 @@ function removeRegion(regionRaw) {
       b.type = "button";
       b.textContent = (set.has(r) ? "✓ " : "+ ") + r;
 
-      b.addEventListener("click", (e) => {
+  b.addEventListener("click", (e) => {
   e.preventDefault();
   e.stopPropagation();
 
-  set.add(r); // ✅ только add
+  const set = ensureSelectedRegionsSet();
+  if (set.has(r)) set.delete(r);
+  else set.add(r);
 
   const inp = el("city-search");
   if (inp) inp.value = "";
