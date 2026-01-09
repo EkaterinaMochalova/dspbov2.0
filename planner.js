@@ -177,26 +177,61 @@ console.log("planner.js loaded");
   window.state = window.PLANNER.state;
 
 
-  // ===== Hard guarantee: selectedRegions is ALWAYS a Set =====
- function ensureSelectedRegionsSet() {
+ // ===== Hard guarantee + protection: selectedRegions cannot be overwritten =====
+(function protectSelectedRegions() {
   const st = window.PLANNER?.state || state;
 
-  // если selectedRegions отсутствует или не Set — восстановим
-  if (!(st.selectedRegions instanceof Set)) {
-    const cur = st.selectedRegions;
+  // внутренняя ссылка на Set (истина)
+  let _set = (st.selectedRegions instanceof Set)
+    ? st.selectedRegions
+    : new Set(
+        Array.isArray(st.selectedRegions) ? st.selectedRegions :
+        (typeof st.selectedRegions === "string" && st.selectedRegions.trim()) ? [st.selectedRegions.trim()] :
+        []
+      );
 
-    // восстановление из массива/строки/пустого
-    const restored = new Set(
-      Array.isArray(cur) ? cur :
-      (typeof cur === "string" && cur.trim()) ? [cur.trim()] :
-      []
-    );
+  // selectedRegions как аксессор: любые "st.selectedRegions = ..." НЕ сбрасывают выбор
+  Object.defineProperty(st, "selectedRegions", {
+    enumerable: true,
+    configurable: true, // чтобы не падало в Tilda preview при повторной загрузке
+    get() { return _set; },
+    set(v) {
+      if (v == null) return;
 
-    st.selectedRegions = restored; // ✅ обычное присваивание, без defineProperty
-  }
+      if (v instanceof Set) {
+        for (const x of v) {
+          const s = String(x || "").trim();
+          if (s) _set.add(s);
+        }
+        return;
+      }
 
-  // ✅ ВАЖНО: НЕ трогаем st.selectedRegion здесь вообще (иначе recursion через setter)
-  return st.selectedRegions;
+      if (Array.isArray(v)) {
+        for (const x of v) {
+          const s = String(x || "").trim();
+          if (s) _set.add(s);
+        }
+        return;
+      }
+
+      if (typeof v === "string") {
+        const s = v.trim();
+        if (s) _set.add(s);
+        return;
+      }
+      // остальное игнорируем
+    }
+  });
+
+  // наружная функция-гарантия
+  window.PLANNER.ensureSelectedRegionsSet = function ensureSelectedRegionsSet() {
+    return st.selectedRegions; // всегда Set через getter
+  };
+})();
+
+// чтобы старый код (который вызывает ensureSelectedRegionsSet()) продолжил работать:
+function ensureSelectedRegionsSet() {
+  return window.PLANNER.ensureSelectedRegionsSet();
 }
 
 
@@ -218,13 +253,13 @@ function patchLegacySelectedRegionSafely() {
   
 function syncLegacySelectedRegion() {
   const st = window.PLANNER?.state || state;
-  const set = ensureSelectedRegionsSet();
+  const set = window.PLANNER.ensureSelectedRegionsSet();
   const first = set.size ? [...set][0] : null;
 
-  // если selectedRegion — accessor с setter’ом (хуки), лучше НЕ писать туда вообще
   const desc = Object.getOwnPropertyDescriptor(st, "selectedRegion");
   const hasSetter = !!desc?.set;
 
+  // если selectedRegion — accessor (есть setter) → НЕ пишем туда вообще
   if (!hasSetter) {
     st.selectedRegion = first;
   }
@@ -1064,26 +1099,36 @@ function renderSummaryPretty(data) {
 function bindPlannerUI() {
   el("calc-btn")?.addEventListener("click", onCalcClick);
 
-  el("city-search")?.addEventListener("input", e =>
-    renderRegionSuggestions(e.target.value)
-  );
+  const input = el("city-search");
+  if (!input) return;
 
-  el("city-search")?.addEventListener("keydown", (e) => {
-  if (e.key !== "Enter") return;
-  e.preventDefault();
+  // подсказки
+  input.addEventListener("input", (e) => {
+    renderRegionSuggestions(e.target.value);
+  });
 
-  const val = String(e.target.value || "").trim();
-  if (!val) return;
+  // Enter = добавить регион (ТОЛЬКО если это точное совпадение региона)
+  input.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
 
-  addRegion(val);                 // ✅ add (не toggle, не clear)
-  e.target.value = "";
+    const raw = String(input.value || "").trim();
+    if (!raw) return;
 
-  const sug = el("city-suggestions");
-  if (sug) sug.innerHTML = "";
+    const st = window.PLANNER.state;
 
-  renderSelectedRegions();
-  syncLegacySelectedRegion();     // ✅ безопасно (не пишет в accessor)
-  window.dispatchEvent(new CustomEvent("planner:filters-changed"));
+    // чтобы Enter по "В" не добавлял "В"
+    const found = (st.regionsAll || []).find(r => r.toLowerCase() === raw.toLowerCase());
+    if (!found) return;
+
+    window.PLANNER.ensureSelectedRegionsSet().add(found);
+
+    input.value = "";
+    const sug = el("city-suggestions");
+    if (sug) sug.innerHTML = "";
+
+    renderSelectedRegions();
+    window.dispatchEvent(new CustomEvent("planner:filters-changed"));
   });
 }
 
