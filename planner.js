@@ -568,58 +568,90 @@ b.addEventListener("click", (e) => {
   }
 
    // ===== Data load =====
-  async function loadScreens() {
-    setStatus("Загружаю список экранов…");
-    console.log("[screens] url:", SCREENS_CSV_URL);
+ function loadScreens() {
+  setStatus("Загружаю список экранов…");
+  console.log("[screens] url:", SCREENS_CSV_URL);
 
-    const res = await fetch(SCREENS_CSV_URL, { cache: "no-store" });
-    console.log("[screens] status:", res.status, res.statusText);
-    if (!res.ok) throw new Error("Не удалось загрузить CSV: " + res.status);
+  return fetch(SCREENS_CSV_URL, { cache: "no-store" })
+    .then(function (res) {
+      console.log("[screens] status:", res.status, res.statusText);
+      if (!res.ok) throw new Error("Не удалось загрузить CSV: " + res.status);
+      return res.text();
+    })
+    .then(function (text) {
+      const rows = parseCSV(text);
+      const st = window.PLANNER.state;
 
-    const text = await res.text();
-    const rows = parseCSV(text);
+      st.screens = rows.map(function (r) {
+        const city = String(r.city ?? r.City ?? r.CITY ?? "").trim();
+        const format = String(r.format ?? r.Format ?? r.FORMAT ?? "").trim();
+        const address = String(r.address ?? r.Address ?? r.ADDRESS ?? "").trim();
 
-    const st = window.PLANNER.state;
+        const screenId =
+          r.screen_id ?? r.screenId ??
+          r.inventory_id ?? r.inventoryId ??
+          r.id ?? "";
 
-    st.screens = rows.map(r => {
-      const city = String(r.city ?? r.City ?? r.CITY ?? "").trim();
-      const format = String(r.format ?? r.Format ?? r.FORMAT ?? "").trim();
-      const address = String(r.address ?? r.Address ?? r.ADDRESS ?? "").trim();
+        return {
+          ...r,
+          screen_id: String(screenId).trim(),
+          city,
+          format,
+          address,
+          minBid: toNumber(r.minBid ?? r.min_bid ?? r.MINBID ?? r.minbid),
+          ots: toNumber(r.ots ?? r.OTS),
+          grp: toNumber(r.grp ?? r.GRP),
+          lat: toNumber(r.lat ?? r.Lat ?? r.LAT),
+          lon: toNumber(r.lon ?? r.Lon ?? r.LON ?? r.lng ?? r.Lng ?? r.LNG)
+        };
+      });
 
-      const screenId =
-        r.screen_id ?? r.screenId ??
-        r.inventory_id ?? r.inventoryId ??
-        r.id ?? "";
+      st.citiesAll = Array.from(new Set(
+        st.screens.map(function (s) { return s.city; }).filter(Boolean)
+      )).sort(function (a, b) { return a.localeCompare(b, "ru"); });
 
-      return {
-        ...r,
-        screen_id: String(screenId).trim(),
-        city,
-        format,
-        address,
-        minBid: toNumber(r.minBid ?? r.min_bid ?? r.MINBID ?? r.minbid),
-        ots: toNumber(r.ots ?? r.OTS),
-        grp: toNumber(r.grp ?? r.GRP),
-        lat: toNumber(r.lat ?? r.Lat ?? r.LAT),
-        lon: toNumber(r.lon ?? r.Lon ?? r.LON ?? r.lng ?? r.Lng ?? r.LNG)
-      };
+      st.formatsAll = Array.from(new Set(
+        st.screens.map(function (s) { return s.format; }).filter(Boolean)
+      )).sort(function (a, b) { return a.localeCompare(b); });
+
+      st.regionsByCity = {};
+      const regionsSet = new Set();
+
+      st.citiesAll.forEach(function (c) {
+        const reg = getRegionForCity(c);
+        st.regionsByCity[c] = reg;
+        regionsSet.add(reg);
+      });
+
+      st.regionsAll = Array.from(regionsSet)
+        .sort(function (a, b) { return a.localeCompare(b, "ru"); });
+
+      st.screens.forEach(function (s) {
+        s.region = st.regionsByCity[s.city] || "Не назначено";
+      });
+
+      renderFormats();
+      renderSelectedRegions();
+
+      setStatus(
+        "Всего доступно: Экранов: " + st.screens.length +
+        ". Городов: " + st.citiesAll.length +
+        ". Форматов: " + st.formatsAll.length +
+        ". Регионов: " + st.regionsAll.length + "."
+      );
+
+      window.PLANNER.ready = true;
+      window.dispatchEvent(
+        new CustomEvent("planner:screens-ready", {
+          detail: { count: st.screens.length }
+        })
+      );
+    })
+    .catch(function (err) {
+      console.error("[screens] load failed:", err);
+      setStatus("Ошибка загрузки экранов");
     });
-
-    st.citiesAll = [...new Set(st.screens.map(s => s.city).filter(Boolean))]
-      .sort((a, b) => a.localeCompare(b, "ru"));
-
-    st.formatsAll = [...new Set(st.screens.map(s => s.format).filter(Boolean))]
-      .sort((a, b) => a.localeCompare(b));
-
-    // regionsByCity + regionsAll
-    st.regionsByCity = {};
-    const regionsSet = new Set();
-
-    for (const c of st.citiesAll) {
-      const reg = getRegionForCity(c);
-      st.regionsByCity[c] = reg;
-      regionsSet.add(reg);
-    }
+}
 
     st.regionsAll = [...regionsSet].sort((a, b) => a.localeCompare(b, "ru"));
 
@@ -1127,16 +1159,19 @@ function bindPlannerUI() {
 }
 
 // ================== START ==================
-async function startPlanner() {
-  // guard: не запускать второй раз
+function startPlanner() {
   if (window.PLANNER.__started) return;
   window.PLANNER.__started = true;
 
   bindPlannerUI();
   renderSelectionExtra();
-  await loadTiers();
-  await loadCityRegions();
-  await loadScreens();
+
+  loadTiers()
+    .then(loadCityRegions)
+    .then(loadScreens)
+    .catch(function (err) {
+      console.error("[planner] init failed:", err);
+    });
 }
 
 // ===== export public API (for Tilda kick) =====
