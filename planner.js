@@ -564,7 +564,7 @@ b.addEventListener("click", (e) => {
 });
 
       sug.appendChild(b);
-    });
+    };
   }
 
    // ===== Data load =====
