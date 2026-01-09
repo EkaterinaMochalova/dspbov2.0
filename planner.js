@@ -224,16 +224,30 @@ console.log("planner.js loaded");
   });
 
   // наружная функция-гарантия
-  window.PLANNER.ensureSelectedRegionsSet = function ensureSelectedRegionsSet() {
+  window.PLANNER._ensureSelectedRegionsSet = function _ensureSelectedRegionsSet() {
     return st.selectedRegions; // всегда Set через getter
   };
 })();
 
-// чтобы старый код (который вызывает ensureSelectedRegionsSet()) продолжил работать:
-function ensureSelectedRegionsSet() {
-  return window.PLANNER.ensureSelectedRegionsSet();
-}
+// ===== Hard guarantee: selectedRegions is ALWAYS a Set =====
+function _ensureSelectedRegionsSet() {
+  const st = window.PLANNER?.state || state;
 
+  if (!(st.selectedRegions instanceof Set)) {
+    const cur = st.selectedRegions;
+
+    const restored = new Set(
+      Array.isArray(cur) ? cur :
+      (typeof cur === "string" && cur.trim()) ? [cur.trim()] :
+      []
+    );
+
+    // важно: обычное присваивание
+    st.selectedRegions = restored;
+  }
+
+  return st.selectedRegions;
+}
 
 function patchLegacySelectedRegionSafely() {
   const st = window.PLANNER?.state || state;
@@ -253,7 +267,7 @@ function patchLegacySelectedRegionSafely() {
   
 function syncLegacySelectedRegion() {
   const st = window.PLANNER?.state || state;
-  const set = window.PLANNER.ensureSelectedRegionsSet();
+  const set = window.PLANNER._ensureSelectedRegionsSet();
   const first = set.size ? [...set][0] : null;
 
   const desc = Object.getOwnPropertyDescriptor(st, "selectedRegion");
@@ -476,7 +490,7 @@ function syncLegacySelectedRegion() {
   }
 function addRegion(regionRaw) {
   const st = window.PLANNER.state;
-  const set = ensureSelectedRegionsSet();
+  const set = _ensureSelectedRegionsSet();
 
   const region = normalizeRegionName(regionRaw);
   if (!region) return;
@@ -489,7 +503,7 @@ function addRegion(regionRaw) {
 
 function removeRegion(regionRaw) {
   const st = window.PLANNER.state;
-  const set = ensureSelectedRegionsSet();
+  const set = _ensureSelectedRegionsSet();
 
   const region = normalizeRegionName(regionRaw);
   if (!region) return;
@@ -505,7 +519,7 @@ function removeRegion(regionRaw) {
     const wrap = el("region-selected");
     if (!wrap) return;
 
-    const set = ensureSelectedRegionsSet();
+    const set = _ensureSelectedRegionsSet();
     const arr = [...set];
 
     wrap.innerHTML = "";
@@ -548,7 +562,7 @@ function removeRegion(regionRaw) {
     const qq = String(q || "").trim().toLowerCase();
     if (!qq) return;
 
-    const set = ensureSelectedRegionsSet();
+    const set = _ensureSelectedRegionsSet();
 
     const matches = (window.PLANNER.state.regionsAll || [])
       .filter(r => String(r).toLowerCase().includes(qq))
@@ -706,7 +720,7 @@ function removeRegion(regionRaw) {
     const selectionMode = el("selection-mode")?.value || "city_even";
 
     // ✅ regions (multi)
-    const regions = [...ensureSelectedRegionsSet()]
+    const regions = [..._ensureSelectedRegionsSet()]
       .map(r => String(r || "").trim())
       .filter(Boolean);
 
@@ -1117,7 +1131,7 @@ function bindPlannerUI() {
     const found = (st.regionsAll || []).find(r => r.toLowerCase() === raw.toLowerCase());
     if (!found) return;
 
-    ensureSelectedRegionsSet().add(found);
+    _ensureSelectedRegionsSet().add(found);
 
     input.value = "";
     const sug = el("city-suggestions");
@@ -1145,7 +1159,7 @@ async function startPlanner() {
 window.PLANNER = window.PLANNER || {};
 window.PLANNER.startPlanner = startPlanner;
 window.PLANNER.bootPlanner = startPlanner; // алиас, чтобы kick нашёл
-window.PLANNER.ensureSelectedRegionsSet = ensureSelectedRegionsSet;
+window.PLANNER._ensureSelectedRegionsSet = _ensureSelectedRegionsSet;
 
 // ===== START (inside IIFE) =====
 document.readyState === "loading"
