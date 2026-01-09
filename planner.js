@@ -424,17 +424,39 @@ function removeRegion(regionRaw) {
 }
   
   function renderSelectedRegions() {
-    const wrap = el("region-selected");
-    if (!wrap) return;
+  const wrap = el("region-selected");
+  if (!wrap) return;
 
-    const set = ensureSelectedRegionsSet();
-    const arr = [...set];
+  const set = ensureSelectedRegionsSet();
+  const arr = [...set]; // ✅ вот где объявляется arr
 
-    wrap.innerHTML = "";
-    }if (arr.length === 0) {
+  wrap.innerHTML = "";
+
+  if (arr.length === 0) {
     wrap.innerHTML = `<div style="font-size:12px; color:#666;">Регион не выбран</div>`;
     return;
   }
+
+  arr.forEach((region) => {
+    const chip = document.createElement("button");
+    cssButtonBase(chip);
+    chip.type = "button";
+    chip.style.display = "inline-flex";
+    chip.style.alignItems = "center";
+    chip.style.gap = "6px";
+    chip.textContent = "✕ " + region;
+
+    chip.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      set.delete(region);
+      renderSelectedRegions();
+      window.dispatchEvent(new CustomEvent("planner:filters-changed"));
+    });
+
+    wrap.appendChild(chip);
+  });
+}
 
   function renderRegionSuggestions(q) {
     const sug = el("city-suggestions");
