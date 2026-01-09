@@ -176,73 +176,7 @@ console.log("planner.js loaded");
   // convenient console alias
   window.state = window.PLANNER.state;
 
-// ===== HARDEN legacy selectedRegion so it DOES NOT override selectedRegions =====
-(function hardenSelectedRegionLegacy() {
-  const st = window.PLANNER?.state || state;
 
-  // Храним legacy значение отдельно, но не используем его как источник истины
-  let _legacySelectedRegion = null;
-
-  Object.defineProperty(st, "selectedRegion", {
-    configurable: false,
-    enumerable: true,
-    get() {
-      // для совместимости: показываем "первый выбранный", если есть
-      const set = st.selectedRegions instanceof Set ? st.selectedRegions : new Set();
-      if (set.size) return [...set][0];
-      return _legacySelectedRegion;
-    },
-    set(v) {
-      const val = String(v || "").trim();
-      _legacySelectedRegion = val || null;
-
-      // ✅ КЛЮЧЕВОЕ: любая запись в selectedRegion теперь = add в selectedRegions
-      ensureSelectedRegionsSet();
-      if (val) st.selectedRegions.add(val);
-
-      // ничего не очищаем!
-    }
-  });
-
-  // На всякий случай: если где-то уже было значение
-  if (_legacySelectedRegion) {
-    ensureSelectedRegionsSet();
-    st.selectedRegions.add(_legacySelectedRegion);
-  }
-})();
-
-const regionSearch = el("city-search");
-if (regionSearch) {
-  const applyRegion = (raw) => {
-    const val = String(raw || "").trim();
-    if (!val) return;
-
-    const found = state.regionsAll.find(r => r.toLowerCase() === val.toLowerCase()) || val;
-
-    const set = ensureSelectedRegionsSet();
-    set.add(found);            // ✅ add, не toggle
-
-    regionSearch.value = "";
-    const sug = el("city-suggestions");
-    if (sug) sug.innerHTML = "";
-
-    renderSelectedRegions();
-    // syncLegacySelectedRegion(); // можно, но безопасно (см. функцию выше)
-    window.dispatchEvent(new CustomEvent("planner:filters-changed"));
-  };
-
-  regionSearch.addEventListener("input", (e) => renderRegionSuggestions(e.target.value));
-
-  regionSearch.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-    applyRegion(regionSearch.value);
-  });
-
-  regionSearch.addEventListener("change", () => applyRegion(regionSearch.value));
-}
-  
-  
   // ===== Hard guarantee: selectedRegions is ALWAYS a Set =====
  function ensureSelectedRegionsSet() {
   const st = window.PLANNER?.state || state;
@@ -264,6 +198,24 @@ if (regionSearch) {
   // ✅ ВАЖНО: НЕ трогаем st.selectedRegion здесь вообще (иначе recursion через setter)
   return st.selectedRegions;
 }
+
+
+function patchLegacySelectedRegionSafely() {
+  const st = window.PLANNER?.state || state;
+
+  // если Tilda повесила свой setter/getter — НЕ трогаем defineProperty.
+  // просто при вычислении брифа и в UI берём selectedRegions как истину.
+  // legacy поле поддерживаем "мягко" — только если это обычное поле.
+  const desc = Object.getOwnPropertyDescriptor(st, "selectedRegion");
+  const hasAccessor = !!(desc && (desc.get || desc.set));
+
+  if (!hasAccessor) {
+    // обычное поле — можем синкать
+    st.selectedRegion = st.selectedRegions.size ? [...st.selectedRegions][0] : null;
+  }
+}
+
+  
 function syncLegacySelectedRegion() {
   const st = window.PLANNER?.state || state;
   const set = ensureSelectedRegionsSet();
@@ -277,23 +229,7 @@ function syncLegacySelectedRegion() {
     st.selectedRegion = first;
   }
 }
-(function hardenSelectedRegionsNoReassign() {
-  const st = window.PLANNER?.state || state;
-  const restored = ensureSelectedRegionsSet();
 
-  // если уже было defineProperty ранее — пропусти
-  try {
-    Object.defineProperty(st, "selectedRegions", {
-      value: restored,
-      writable: false,      // ✅ нельзя переassign
-      configurable: false,
-      enumerable: true
-    });
-  } catch (e) {
-    // если уже зафиксировано — ок
-  }
-})();
-  
   // ===== Utils =====
   function el(id) { return document.getElementById(id); }
 
@@ -496,18 +432,40 @@ function syncLegacySelectedRegion() {
   }
 
   // ===== Regions UI (multi-select) =====
-  function syncLegacySelectedRegion() {
-    const set = ensureSelectedRegionsSet();
-    window.PLANNER.state.selectedRegion = set.size ? [...set][0] : null;
-  }
-
+ 
   function normalizeRegionName(input) {
     const v = String(input || "").trim();
     if (!v) return "";
     const found = (window.PLANNER.state.regionsAll || []).find(r => r.toLowerCase() === v.toLowerCase());
     return found || v;
   }
+function addRegion(regionRaw) {
+  const st = window.PLANNER.state;
+  const set = ensureSelectedRegionsSet();
 
+  const region = normalizeRegionName(regionRaw);
+  if (!region) return;
+
+  set.add(region);
+
+  // legacy: синк только если selectedRegion НЕ accessor
+  patchLegacySelectedRegionSafely();
+}
+
+function removeRegion(regionRaw) {
+  const st = window.PLANNER.state;
+  const set = ensureSelectedRegionsSet();
+
+  const region = normalizeRegionName(regionRaw);
+  if (!region) return;
+
+  set.delete(region);
+
+  patchLegacySelectedRegionSafely();
+}
+
+
+  
   function renderSelectedRegions() {
     const wrap = el("region-selected");
     if (!wrap) return;
@@ -1110,12 +1068,22 @@ function bindPlannerUI() {
     renderRegionSuggestions(e.target.value)
   );
 
-  el("city-search")?.addEventListener("keydown", e => {
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-    addRegion(e.target.value);
-    e.target.value = "";
-    renderSelectedRegions();
+  el("city-search")?.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+
+  const val = String(e.target.value || "").trim();
+  if (!val) return;
+
+  addRegion(val);                 // ✅ add (не toggle, не clear)
+  e.target.value = "";
+
+  const sug = el("city-suggestions");
+  if (sug) sug.innerHTML = "";
+
+  renderSelectedRegions();
+  syncLegacySelectedRegion();     // ✅ безопасно (не пишет в accessor)
+  window.dispatchEvent(new CustomEvent("planner:filters-changed"));
   });
 }
 
@@ -1129,6 +1097,7 @@ async function startPlanner() {
 }
 
 document.readyState === "loading"
+  window.PLANNER.startPlanner = startPlanner;
   ? document.addEventListener("DOMContentLoaded", startPlanner)
   : startPlanner();
 })();
