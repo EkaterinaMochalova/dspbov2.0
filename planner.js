@@ -1102,12 +1102,10 @@ function bindPlannerUI() {
   const input = el("city-search");
   if (!input) return;
 
-  // подсказки
   input.addEventListener("input", (e) => {
     renderRegionSuggestions(e.target.value);
   });
 
-  // Enter = добавить регион (ТОЛЬКО если это точное совпадение региона)
   input.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     e.preventDefault();
@@ -1116,12 +1114,10 @@ function bindPlannerUI() {
     if (!raw) return;
 
     const st = window.PLANNER.state;
-
-    // чтобы Enter по "В" не добавлял "В"
     const found = (st.regionsAll || []).find(r => r.toLowerCase() === raw.toLowerCase());
     if (!found) return;
 
-    window.PLANNER.ensureSelectedRegionsSet().add(found);
+    ensureSelectedRegionsSet().add(found);
 
     input.value = "";
     const sug = el("city-suggestions");
@@ -1134,6 +1130,10 @@ function bindPlannerUI() {
 
 // ================== START ==================
 async function startPlanner() {
+  // guard: не запускать второй раз
+  if (window.PLANNER.__started) return;
+  window.PLANNER.__started = true;
+
   bindPlannerUI();
   renderSelectionExtra();
   await loadTiers();
@@ -1141,14 +1141,14 @@ async function startPlanner() {
   await loadScreens();
 }
 
-// ===== EXPORT API (MUST be inside IIFE) =====
+// ===== export public API (for Tilda kick) =====
 window.PLANNER = window.PLANNER || {};
 window.PLANNER.startPlanner = startPlanner;
+window.PLANNER.bootPlanner = startPlanner; // алиас, чтобы kick нашёл
+window.PLANNER.ensureSelectedRegionsSet = ensureSelectedRegionsSet;
 
 // ===== START (inside IIFE) =====
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", startPlanner);
-} else {
-  startPlanner();
-}
+document.readyState === "loading"
+  ? document.addEventListener("DOMContentLoaded", startPlanner)
+  : startPlanner();
 })(); // <-- вот здесь IIFE закрывается
