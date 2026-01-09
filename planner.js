@@ -228,8 +228,50 @@ console.log("planner.js loaded");
   }
 })();
 
+// ===== Single source of truth for regions (robust, no accessors) =====
 function ensureSelectedRegionsSet() {
-  return window.PLANNER.__selectedRegionsSet;
+  const st = window.PLANNER.state;
+
+  // 1) создаём "вечный" Set один раз
+  if (!window.PLANNER.__regionsSet) {
+    const seed = [];
+    const cur = st.selectedRegions;
+
+    if (cur instanceof Set) seed.push(...cur);
+    else if (Array.isArray(cur)) seed.push(...cur);
+    else if (typeof cur === "string" && cur.trim()) seed.push(cur.trim());
+
+    window.PLANNER.__regionsSet = new Set(
+      seed.map(x => String(x || "").trim()).filter(Boolean)
+    );
+  }
+
+  const set = window.PLANNER.__regionsSet;
+
+  // 2) если кто-то перезаписал st.selectedRegions (массив/строка/Set) — СЛИВАЕМ в наш set
+  if (st.selectedRegions !== set) {
+    const cur = st.selectedRegions;
+
+    if (cur instanceof Set) {
+      for (const x of cur) {
+        const s = String(x || "").trim();
+        if (s) set.add(s);
+      }
+    } else if (Array.isArray(cur)) {
+      for (const x of cur) {
+        const s = String(x || "").trim();
+        if (s) set.add(s);
+      }
+    } else if (typeof cur === "string") {
+      const s = cur.trim();
+      if (s) set.add(s);
+    }
+
+    // 3) ВОССТАНАВЛИВАЕМ ссылку (не новый Set!)
+    st.selectedRegions = set;
+  }
+
+  return set;
 }
  
   // ===== Utils =====
@@ -502,23 +544,14 @@ function removeRegion(regionRaw) {
     const qq = String(q || "").trim().toLowerCase();
     if (!qq) return;
 
-    const set = ensureSelectedRegionsSet();
+    const setNow = ensureSelectedRegionsSet();
+b.textContent = (setNow.has(r) ? "✓ " : "+ ") + r;
 
-    const matches = (window.PLANNER.state.regionsAll || [])
-      .filter(r => String(r).toLowerCase().includes(qq))
-      .slice(0, 12);
-
-    matches.forEach(r => {
-      const b = document.createElement("button");
-      cssButtonBase(b);
-      b.type = "button";
-      b.textContent = (set.has(r) ? "✓ " : "+ ") + r;
-
-  b.addEventListener("click", (e) => {
+b.addEventListener("click", (e) => {
   e.preventDefault();
   e.stopPropagation();
 
-  const set = ensureSelectedRegionsSet();
+  const set = ensureSelectedRegionsSet(); // 👈 всегда актуальная ссылка
   if (set.has(r)) set.delete(r);
   else set.add(r);
 
