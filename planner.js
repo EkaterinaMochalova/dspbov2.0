@@ -211,46 +211,72 @@ console.log("planner.js loaded");
   }
 })();
 
+const regionSearch = el("city-search");
+if (regionSearch) {
+  const applyRegion = (raw) => {
+    const val = String(raw || "").trim();
+    if (!val) return;
+
+    const found = state.regionsAll.find(r => r.toLowerCase() === val.toLowerCase()) || val;
+
+    const set = ensureSelectedRegionsSet();
+    set.add(found);            // ✅ add, не toggle
+
+    regionSearch.value = "";
+    const sug = el("city-suggestions");
+    if (sug) sug.innerHTML = "";
+
+    renderSelectedRegions();
+    // syncLegacySelectedRegion(); // можно, но безопасно (см. функцию выше)
+    window.dispatchEvent(new CustomEvent("planner:filters-changed"));
+  };
+
+  regionSearch.addEventListener("input", (e) => renderRegionSuggestions(e.target.value));
+
+  regionSearch.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    applyRegion(regionSearch.value);
+  });
+
+  regionSearch.addEventListener("change", () => applyRegion(regionSearch.value));
+}
+  
   
   // ===== Hard guarantee: selectedRegions is ALWAYS a Set =====
-  function ensureSelectedRegionsSet() {
-    const st = window.PLANNER.state;
+ function ensureSelectedRegionsSet() {
+  const st = window.PLANNER?.state || state;
 
-    // if missing or wrong type -> restore
-    let restored;
-    if (st.selectedRegions instanceof Set) restored = st.selectedRegions;
-    else if (Array.isArray(st.selectedRegions)) restored = new Set(st.selectedRegions);
-    else if (typeof st.selectedRegions === "string" && st.selectedRegions.trim()) restored = new Set([st.selectedRegions.trim()]);
-    else restored = new Set();
+  // если selectedRegions отсутствует или не Set — восстановим
+  if (!(st.selectedRegions instanceof Set)) {
+    const cur = st.selectedRegions;
 
-    // Lock the property against reassignment (but Set can be mutated)
-    try {
-      Object.defineProperty(st, "selectedRegions", {
-        value: restored,
-        writable: false,
-        configurable: false,
-        enumerable: true
-      });
-    } catch (e) {
-      // If already non-configurable, ignore
-    }
+    // восстановление из массива/строки/пустого
+    const restored = new Set(
+      Array.isArray(cur) ? cur :
+      (typeof cur === "string" && cur.trim()) ? [cur.trim()] :
+      []
+    );
 
-    // legacy mirror
-    st.selectedRegion = restored.size ? [...restored][0] : null;
-
-    return restored;
+    st.selectedRegions = restored; // ✅ обычное присваивание, без defineProperty
   }
 
-  window.PLANNER.ensureSelectedRegionsSet = ensureSelectedRegionsSet;
-  ensureSelectedRegionsSet();
+  // ✅ ВАЖНО: НЕ трогаем st.selectedRegion здесь вообще (иначе recursion через setter)
+  return st.selectedRegions;
+}
+function syncLegacySelectedRegion() {
+  const st = window.PLANNER?.state || state;
+  const set = ensureSelectedRegionsSet();
+  const first = set.size ? [...set][0] : null;
 
-  console.log(
-    "[planner] selectedRegions init:",
-    window.PLANNER.state.selectedRegions,
-    "isSet=",
-    window.PLANNER.state.selectedRegions instanceof Set
-  );
+  // если selectedRegion — accessor с setter’ом (хуки), лучше НЕ писать туда вообще
+  const desc = Object.getOwnPropertyDescriptor(st, "selectedRegion");
+  const hasSetter = !!desc?.set;
 
+  if (!hasSetter) {
+    st.selectedRegion = first;
+  }
+}
 (function hardenSelectedRegionsNoReassign() {
   const st = window.PLANNER?.state || state;
   const restored = ensureSelectedRegionsSet();
