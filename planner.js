@@ -536,39 +536,57 @@ function removeRegion(regionRaw) {
   });
 }
 
-  function renderRegionSuggestions(q) {
-    const sug = el("city-suggestions");
-    if (!sug) return;
+function renderRegionSuggestions(q) {
+  var sug = el("city-suggestions");
+  if (!sug) return;
 
-    sug.innerHTML = "";
-    const qq = String(q || "").trim().toLowerCase();
-    if (!qq) return;
-
-    const setNow = ensureSelectedRegionsSet();
-b.textContent = (setNow.has(r) ? "✓ " : "+ ") + r;
-
-b.addEventListener("click", (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-
-  const set = ensureSelectedRegionsSet(); // 👈 всегда актуальная ссылка
-  if (set.has(r)) set.delete(r);
-  else set.add(r);
-
-  const inp = el("city-search");
-  if (inp) inp.value = "";
   sug.innerHTML = "";
 
-  renderSelectedRegions();
-  window.dispatchEvent(new CustomEvent("planner:filters-changed"));
-});
+  var qq = String(q || "").trim().toLowerCase();
+  if (!qq) return;
 
-      sug.appendChild(b);
-    };
+  var set = ensureSelectedRegionsSet();
+
+  var all = window.PLANNER.state.regionsAll || [];
+  var matches = [];
+  for (var i = 0; i < all.length; i++) {
+    var r = String(all[i] || "");
+    if (r.toLowerCase().indexOf(qq) !== -1) {
+      matches.push(r);
+      if (matches.length >= 12) break;
+    }
   }
 
-   // ===== Data load =====
- function loadScreens() {
+  for (var j = 0; j < matches.length; j++) {
+    (function (r) {
+      var b = document.createElement("button");
+      cssButtonBase(b);
+      b.type = "button";
+      b.textContent = (set.has(r) ? "✓ " : "+ ") + r;
+
+      b.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // ✅ ВАЖНО: только add (ничего не clear / не replace)
+        set.add(r);
+
+        var inp = el("city-search");
+        if (inp) inp.value = "";
+        sug.innerHTML = "";
+
+        renderSelectedRegions();
+        window.dispatchEvent(new CustomEvent("planner:filters-changed"));
+      });
+
+      sug.appendChild(b);
+    })(matches[j]);
+  }
+}
+
+
+// ===== Data load =====
+function loadScreens() {
   setStatus("Загружаю список экранов…");
   console.log("[screens] url:", SCREENS_CSV_URL);
 
@@ -579,31 +597,31 @@ b.addEventListener("click", (e) => {
       return res.text();
     })
     .then(function (text) {
-      const rows = parseCSV(text);
-      const st = window.PLANNER.state;
+      var rows = parseCSV(text);
+      var st = window.PLANNER.state;
 
       st.screens = rows.map(function (r) {
-        const city = String(r.city ?? r.City ?? r.CITY ?? "").trim();
-        const format = String(r.format ?? r.Format ?? r.FORMAT ?? "").trim();
-        const address = String(r.address ?? r.Address ?? r.ADDRESS ?? "").trim();
+        var city = String((r.city || r.City || r.CITY || "")).trim();
+        var format = String((r.format || r.Format || r.FORMAT || "")).trim();
+        var address = String((r.address || r.Address || r.ADDRESS || "")).trim();
 
-        const screenId =
-          r.screen_id ?? r.screenId ??
-          r.inventory_id ?? r.inventoryId ??
-          r.id ?? "";
+        var screenId = r.screen_id || r.screenId || r.inventory_id || r.inventoryId || r.id || "";
 
-        return {
-          ...r,
-          screen_id: String(screenId).trim(),
-          city,
-          format,
-          address,
-          minBid: toNumber(r.minBid ?? r.min_bid ?? r.MINBID ?? r.minbid),
-          ots: toNumber(r.ots ?? r.OTS),
-          grp: toNumber(r.grp ?? r.GRP),
-          lat: toNumber(r.lat ?? r.Lat ?? r.LAT),
-          lon: toNumber(r.lon ?? r.Lon ?? r.LON ?? r.lng ?? r.Lng ?? r.LNG)
-        };
+        // Object.assign вместо ...spread
+        var out = Object.assign({}, r);
+        out.screen_id = String(screenId).trim();
+        out.city = city;
+        out.format = format;
+        out.address = address;
+
+        out.minBid = toNumber(r.minBid || r.min_bid || r.MINBID || r.minbid);
+        out.ots = toNumber(r.ots || r.OTS);
+        out.grp = toNumber(r.grp || r.GRP);
+
+        out.lat = toNumber(r.lat || r.Lat || r.LAT);
+        out.lon = toNumber(r.lon || r.Lon || r.LON || r.lng || r.Lng || r.LNG);
+
+        return out;
       });
 
       st.citiesAll = Array.from(new Set(
@@ -615,20 +633,22 @@ b.addEventListener("click", (e) => {
       )).sort(function (a, b) { return a.localeCompare(b); });
 
       st.regionsByCity = {};
-      const regionsSet = new Set();
+      var regionsSet = new Set();
 
-      st.citiesAll.forEach(function (c) {
-        const reg = getRegionForCity(c);
+      for (var i = 0; i < st.citiesAll.length; i++) {
+        var c = st.citiesAll[i];
+        var reg = getRegionForCity(c);
         st.regionsByCity[c] = reg;
         regionsSet.add(reg);
-      });
+      }
 
       st.regionsAll = Array.from(regionsSet)
         .sort(function (a, b) { return a.localeCompare(b, "ru"); });
 
-      st.screens.forEach(function (s) {
+      for (var k = 0; k < st.screens.length; k++) {
+        var s = st.screens[k];
         s.region = st.regionsByCity[s.city] || "Не назначено";
-      });
+      }
 
       renderFormats();
       renderSelectedRegions();
@@ -641,38 +661,15 @@ b.addEventListener("click", (e) => {
       );
 
       window.PLANNER.ready = true;
-      window.dispatchEvent(
-        new CustomEvent("planner:screens-ready", {
-          detail: { count: st.screens.length }
-        })
-      );
+      window.dispatchEvent(new CustomEvent("planner:screens-ready", {
+        detail: { count: st.screens.length }
+      }));
     })
     .catch(function (err) {
       console.error("[screens] load failed:", err);
       setStatus("Ошибка загрузки экранов");
     });
 }
-
-    st.regionsAll = [...regionsSet].sort((a, b) => a.localeCompare(b, "ru"));
-
-    // set region for each screen
-    for (const s of st.screens) {
-      s.region = st.regionsByCity[s.city] || "Не назначено";
-    }
-
-    renderFormats();
-    renderSelectedRegions();
-
-    setStatus(
-      `Всего доступно: Экранов: ${st.screens.length}. ` +
-      `Городов: ${st.citiesAll.length}. ` +
-      `Форматов: ${st.formatsAll.length}. ` +
-      `Регионов: ${st.regionsAll.length}.`
-    );
-
-    window.PLANNER.ready = true;
-    window.dispatchEvent(new CustomEvent("planner:screens-ready", { detail: { count: st.screens.length } }));
-  }
 
   // ===== UI: formats =====
   function renderFormats() {
