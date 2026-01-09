@@ -1087,17 +1087,14 @@ function bindPlannerUI() {
   });
 }
 
-// ================== START ==================
-async function startPlanner() {
-  bindPlannerUI();
-  renderSelectionExtra();
-  await loadTiers();
-  await loadCityRegions();
-  await loadScreens();
-}
+// ===== EXPORT API =====
+window.PLANNER = window.PLANNER || {};
+window.PLANNER.startPlanner = startPlanner;
 
-document.readyState === "loading"
-  window.PLANNER.startPlanner = startPlanner;
-  ? document.addEventListener("DOMContentLoaded", startPlanner)
-  : startPlanner();
+// ===== START =====
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", startPlanner);
+} else {
+  startPlanner();
+}
 })();
