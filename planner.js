@@ -1087,14 +1087,23 @@ function bindPlannerUI() {
   });
 }
 
-// ===== EXPORT API =====
+// ================== START ==================
+async function startPlanner() {
+  bindPlannerUI();
+  renderSelectionExtra();
+  await loadTiers();
+  await loadCityRegions();
+  await loadScreens();
+}
+
+// ===== EXPORT API (MUST be inside IIFE) =====
 window.PLANNER = window.PLANNER || {};
 window.PLANNER.startPlanner = startPlanner;
 
-// ===== START =====
+// ===== START (inside IIFE) =====
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", startPlanner);
 } else {
   startPlanner();
 }
-})();
+})(); // <-- вот здесь IIFE закрывается
