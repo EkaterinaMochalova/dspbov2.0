@@ -1105,3 +1105,4 @@ async function startPlanner() {
 document.readyState === "loading"
   ? document.addEventListener("DOMContentLoaded", startPlanner)
   : startPlanner();
+})();
