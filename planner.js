@@ -1498,6 +1498,19 @@ async function onCalcClick() {
   const playsPerDayAll = totalPlaysEffectiveAll / days;
   const playsPerHourAll = totalPlaysEffectiveAll / days / hpd;
 
+  // ===== Per-region breakdown (same numbers as in calc) =====
+  const perRegionText = (perRegionRows || [])
+    .slice()
+    .sort((a, b) => (Number(b.budget || 0) - Number(a.budget || 0)))
+    .map(r => {
+      const b = Number.isFinite(r.budget) ? Math.floor(r.budget).toLocaleString("ru-RU") + " ₽" : "—";
+      const p = Number.isFinite(r.plays) ? Math.floor(r.plays).toLocaleString("ru-RU") : "—";
+      const o = (r.ots == null || !Number.isFinite(r.ots)) ? "—" : Math.round(r.ots).toLocaleString("ru-RU");
+      const sc = Number.isFinite(r.screens) ? Math.floor(r.screens).toLocaleString("ru-RU") : "—";
+      return `— ${r.region}: бюджет ${b}, выходов ${p}, OTS ${o}, экранов ${sc}`;
+    })
+    .join("\n");
+
   const summaryText =
 `Бриф:
 — Бюджет: ${totalBudgetFinal.toLocaleString("ru-RU")} ₽ ${brief.budget.mode === "fixed" ? "(распределён по регионам)" : "(сумма рекомендаций)"}
@@ -1513,7 +1526,10 @@ async function onCalcClick() {
 — Выходов/день: ${nf(playsPerDayAll)}
 — Выходов/час (в сумме): ${nf(playsPerHourAll)}
 — Экранов выбрано: ${chosenAll.length}
-— OTS всего: ${hasOts ? of(otsTotalAll) : "—"}`
+— OTS всего: ${hasOts ? of(otsTotalAll) : "—"}
+
+По регионам:
+${perRegionText}`
     + (warnings.length ? `\n\n${warnings.slice(0, 6).join("\n")}${warnings.length > 6 ? "\n…" : ""}` : "");
 
   if (el("summary")) el("summary").textContent = summaryText;
