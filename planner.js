@@ -1293,17 +1293,6 @@ async function onCalcClick() {
   }
   const hpd = (brief.budget.mode !== "fixed") ? RECO_HOURS_PER_DAY : hpdFixed;
 
-  // fixed allocation
-  let fixedAllocation = null;
-  if (brief.budget.mode === "fixed") {
-    const totalBudget = Number(brief.budget.amount);
-    fixedAllocation = allocateBudgetAcrossRegions(
-      totalBudget,
-      regions.map(r => ({ key: r, tier: getTierForGeo(r) })),
-      { minShare: 0.10, maxShare: 0.70 }
-    );
-  }
-
   // aggregates
   let chosenAll = [];
   let totalBudgetFinal = 0;
@@ -1322,6 +1311,11 @@ async function onCalcClick() {
     alert("GeoUtils не найден. Проверь подключение geo.js");
     return;
   }
+
+  // =========================
+  // 1) PREPARE POOLS PER REGION (POI/GRP/owner/formats applied)
+  // =========================
+  const prepared = []; // only regions that have pool and avgBid, used for allocation
 
   for (const region of regions) {
     const tier = getTierForGeo(region);
@@ -1402,29 +1396,149 @@ async function onCalcClick() {
     }
     const bidPlus20 = avgBid * BID_MULTIPLIER;
 
-    let budget = 0;
-    if (brief.budget.mode === "fixed") {
-      const found = fixedAllocation?.find(x => x.region === region);
-      budget = found ? Number(found.budget) : 0;
-      if (!Number.isFinite(budget) || budget <= 0) {
-        perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "budget=0" });
-        continue;
-      }
-    } else {
-      const screensCount = pool.length;
-      const maxPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * screensCount * days);
-      const maxBudget = maxPlays * bidPlus20;
+    // абсолютная ёмкость региона, если использовать ВСЕ доступные экраны (после фильтров)
+    const capPlaysAbs = Math.floor(SC_MAX * pool.length * days * hpd);
+    const capBudgetAbs = Math.floor(capPlaysAbs * bidPlus20);
 
+    prepared.push({
+      region,
+      tier,
+      pool,
+      avgBid,
+      bidPlus20,
+      capPlaysAbs,
+      capBudgetAbs
+    });
+  }
+
+  if (!prepared.length) {
+    alert("Не удалось подобрать экраны: по выбранным условиям не осталось доступных экранов.");
+    setStatus("");
+    return;
+  }
+
+  // =========================
+  // 2) INITIAL BUDGETS (fixed allocation or recommendation)
+  // =========================
+  const budgets = {}; // region -> planned budget
+  if (brief.budget.mode === "fixed") {
+    const totalBudget = Number(brief.budget.amount);
+    const fixedAllocation = allocateBudgetAcrossRegions(
+      totalBudget,
+      prepared.map(r => ({ key: r.region, tier: getTierForGeo(r.region) })),
+      { minShare: 0.10, maxShare: 0.70 }
+    );
+
+    for (const r of prepared) {
+      const found = fixedAllocation?.find(x => x.region === r.region);
+      budgets[r.region] = found ? Number(found.budget) : 0;
+    }
+  } else {
+    for (const r of prepared) {
+      // старая логика рекомендации сохраняется, но ограничение по maxBudget оставляем,
+      // и дополнительно потом включится перераспределение.
       const BASE_MONTHLY_BY_TIER = { M: 2000000, SP: 1500000, A: 1000000, B: 500000, C: 300000, D: 100000 };
-      const baseMonthly = BASE_MONTHLY_BY_TIER[tier] ?? BASE_MONTHLY_BY_TIER.C;
+      const baseMonthly = BASE_MONTHLY_BY_TIER[r.tier] ?? BASE_MONTHLY_BY_TIER.C;
       const baseBudgetForPeriod = Math.floor(baseMonthly * (days / 30));
 
-      budget = Math.floor(Math.min(baseBudgetForPeriod, maxBudget));
-      if (!Number.isFinite(budget) || budget <= 0) {
-        perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "reco=0" });
+      // прежний maxBudget для reco (как было)
+      const maxPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * r.pool.length * days);
+      const maxBudget = maxPlays * r.bidPlus20;
+
+      budgets[r.region] = Math.floor(Math.min(baseBudgetForPeriod, maxBudget));
+    }
+  }
+
+  // =========================
+  // 3) REDISTRIBUTION BY CAPACITY (важное новое поведение)
+  // =========================
+  // идея: любой бюджет, который не может быть "освоен" в регионе (capBudgetAbs),
+  // уходит в остаток и перераспределяется в другие регионы по их headroom.
+  function redistributeByCapacity(preparedRegions, budgetsMap) {
+    // clamp first + collect leftover
+    let leftover = 0;
+
+    for (const r of preparedRegions) {
+      const planned = Number(budgetsMap[r.region] || 0);
+      if (!Number.isFinite(planned) || planned <= 0) {
+        budgetsMap[r.region] = 0;
         continue;
       }
+      const spendable = Math.min(planned, r.capBudgetAbs);
+      budgetsMap[r.region] = spendable;
+      leftover += (planned - spendable);
     }
+
+    // distribute leftover while there is headroom
+    let guard = 0;
+    while (leftover > 0 && guard < 50) {
+      guard++;
+
+      const headrooms = preparedRegions.map(r => {
+        const cur = Number(budgetsMap[r.region] || 0);
+        const head = Math.max(0, r.capBudgetAbs - cur);
+        return { r, head };
+      }).filter(x => x.head > 0);
+
+      if (!headrooms.length) break;
+
+      const sumHead = headrooms.reduce((a, b) => a + b.head, 0) || 1;
+
+      let movedThisRound = 0;
+
+      for (const h of headrooms) {
+        if (leftover <= 0) break;
+
+        // пропорционально headroom
+        const add = Math.min(h.head, Math.floor(leftover * (h.head / sumHead)));
+        if (add > 0) {
+          budgetsMap[h.r.region] = Number(budgetsMap[h.r.region] || 0) + add;
+          leftover -= add;
+          movedThisRound += add;
+        }
+      }
+
+      // если из-за округления ничего не распределилось — докидываем по 1 рублю по кругу
+      if (leftover > 0 && movedThisRound === 0) {
+        for (const h of headrooms) {
+          if (leftover <= 0) break;
+          const cur = Number(budgetsMap[h.r.region] || 0);
+          const head = Math.max(0, h.r.capBudgetAbs - cur);
+          if (head > 0) {
+            budgetsMap[h.r.region] = cur + 1;
+            leftover -= 1;
+          }
+        }
+      }
+    }
+
+    return leftover; // неосваиваемый остаток (если ёмкости вообще не хватило)
+  }
+
+  const leftoverUnspent = redistributeByCapacity(prepared, budgets);
+
+  if (leftoverUnspent > 0) {
+    warnings.push(`⚠️ Общая ёмкость выбранных регионов ограничена: не удалось распределить ${Math.floor(leftoverUnspent).toLocaleString("ru-RU")} ₽ (нет инвентаря).`);
+  }
+
+  // =========================
+  // 4) MAIN CALC PER REGION (почти как было, но budget берём из budgets[region])
+  // =========================
+  for (const pr of prepared) {
+    const region = pr.region;
+    const tier = pr.tier;
+    const pool = pr.pool;
+    const bidPlus20 = pr.bidPlus20;
+
+    let budget = Number(budgets[region] || 0);
+
+    if (!Number.isFinite(budget) || budget <= 0) {
+      perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "budget=0" });
+      continue;
+    }
+
+    // бюджет уже "осваиваемый" по capBudgetAbs, но на всякий случай:
+    budget = Math.min(budget, pr.capBudgetAbs);
 
     totalBudgetFinal += budget;
 
@@ -1472,6 +1586,9 @@ async function onCalcClick() {
     });
   }
 
+  // плюс те регионы, которые попали в perRegionRows на ранних стадиях (нет экранов / GRP выкинул / etc)
+  // (они уже добавлены выше)
+
   if (!chosenAll.length) {
     alert("Не удалось подобрать экраны: по выбранным условиям не осталось доступных экранов.");
     setStatus("");
@@ -1507,7 +1624,8 @@ async function onCalcClick() {
       const p = Number.isFinite(r.plays) ? Math.floor(r.plays).toLocaleString("ru-RU") : "—";
       const o = (r.ots == null || !Number.isFinite(r.ots)) ? "—" : Math.round(r.ots).toLocaleString("ru-RU");
       const sc = Number.isFinite(r.screens) ? Math.floor(r.screens).toLocaleString("ru-RU") : "—";
-      return `— ${r.region}: бюджет ${b}, выходов ${p}, OTS ${o}, экранов ${sc}`;
+      const note = String(r.note || "").trim();
+      return `— ${r.region}: бюджет ${b}, выходов ${p}, OTS ${o}, экранов ${sc}${note ? ` (${note})` : ""}`;
     })
     .join("\n");
 
@@ -1590,7 +1708,6 @@ ${perRegionText}`
 
   setStatus("");
 }
-
 // ===== BIND UI =====
 function bindPlannerUI() {
   document.querySelectorAll(".preset").forEach(b => {
