@@ -2117,45 +2117,50 @@ ${perRegionText}`
   setStatus("");
 }
 
-// ===== Progress / Calc button state (supports fixed / recommendation / goal_ots) =====
+// ===== Progress / Calc button state (based on buildBrief, supports fixed/reco/goal_ots) =====
 function calcCompletion() {
-  const regions = Array.isArray(state.selectedRegions)
-    ? state.selectedRegions.map(r => String(r || "").trim()).filter(Boolean)
+  const brief = buildBrief();
+
+  // step 1: regions
+  const regions = Array.isArray(brief?.geo?.regions)
+    ? brief.geo.regions.map(x => String(x || "").trim()).filter(Boolean)
     : [];
-
-  const datesStart = el("date-start")?.value || "";
-  const datesEnd = el("date-end")?.value || "";
-
   const step1 = regions.length > 0;
-  const step2 = !!(datesStart && datesEnd);
 
-  const budgetMode = getBudgetMode(); // fixed | recommendation | goal_ots
-  const budgetVal = Number(el("budget-input")?.value || 0);
-  const goalOtsVal = toNumber(el("goal-ots")?.value);
+  // step 2: dates
+  const step2 = !!(brief?.dates?.start && brief?.dates?.end);
 
-  const budgetOk =
-    (budgetMode === "recommendation") ||
-    (budgetMode === "fixed" && Number.isFinite(budgetVal) && budgetVal > 0) ||
-    (budgetMode === "goal_ots" && Number.isFinite(goalOtsVal) && goalOtsVal > 0);
+  // step 3: budget OR goal
+  const mode = brief?.budget?.mode || "recommendation";
+  const budgetVal = Number(brief?.budget?.amount || 0);
+  const goalOtsVal = Number(brief?.goal?.ots || 0);
 
-  const formatsAuto = !!el("formats-auto")?.checked;
-  const formatsSet = state?.selectedFormats;
-  const formatsOk = formatsAuto || (formatsSet && formatsSet.size > 0);
+  const step3 =
+    (mode === "recommendation") ||
+    (mode === "fixed" && Number.isFinite(budgetVal) && budgetVal > 0) ||
+    (mode === "goal_ots" && Number.isFinite(goalOtsVal) && goalOtsVal > 0);
 
-  const step3 = !!budgetOk;
-  const step4 = !!formatsOk;
+  // step 4: formats
+  const formatsMode = brief?.formats?.mode || "auto";
+  const selected = Array.isArray(brief?.formats?.selected) ? brief.formats.selected : [];
+  const step4 = (formatsMode === "auto") || (selected.length > 0);
 
   const done = [step1, step2, step3, step4].filter(Boolean).length;
-  return { done, step1, step2, step3, step4 };
+  return { done, step1, step2, step3, step4, mode };
 }
 
 function renderProgress() {
   const p = calcCompletion();
+
   const calcBtn = el("calc-btn");
   if (calcBtn) {
-    calcBtn.disabled = (p.done !== 4);
-    calcBtn.style.opacity = (p.done !== 4) ? ".55" : "1";
+    const ok = (p.done === 4);
+    calcBtn.disabled = !ok;
+    calcBtn.style.opacity = ok ? "1" : ".55";
   }
+
+  // если хочешь — можно подсказку в статус:
+  // if (!ok) setStatus("Заполните: регион, даты, бюджет/OTS и форматы.");
 }
 
 
@@ -2222,8 +2227,26 @@ const spinner = el("region-spinner");
 const field = el("region-field");
 
 
-renderProgress();
+// обновляем кнопку при любом изменении формы
+[
+  "date-start","date-end","budget-input","goal-ots",
+  "formats-auto","selection-mode","grp-enabled","grp-min","grp-max",
+  "time-from","time-to"
+].forEach(id => {
+  const n = el(id);
+  if (n) {
+    n.addEventListener("input", renderProgress);
+    n.addEventListener("change", renderProgress);
+  }
+});
 
+// радиокнопки режима бюджета/расписания тоже должны обновлять кнопку
+document.querySelectorAll('input[name="budget_mode"]').forEach(x => x.addEventListener("change", renderProgress));
+document.querySelectorAll('input[name="schedule"]').forEach(x => x.addEventListener("change", renderProgress));
+
+// ВАЖНО: первый пересчёт
+renderProgress();
+  
 function regionsReadyNow() {
   if (typeof areRegionsReady === "function") return !!areRegionsReady();
   return Array.isArray(state?.regionsAll) && state.regionsAll.length > 0;
