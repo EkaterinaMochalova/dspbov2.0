@@ -610,7 +610,14 @@ function buildBrief() {
   const root = document.getElementById("planner-widget") || document;
 
   const budgetMode = getBudgetMode();
-  const budgetVal = el("budget-input")?.value;
+
+const budgetVal = Number(el("budget-input")?.value || 0);
+const goalOtsVal = toNumber(el("goal-ots")?.value); // важно: input id="goal-ots"
+
+const budgetOk =
+  (budgetMode === "recommendation") ||
+  (budgetMode === "fixed" && budgetVal > 0) ||
+  (budgetMode === "goal_ots" && Number.isFinite(goalOtsVal) && goalOtsVal > 0);
 
   const scheduleType = getScheduleType(); // all_day | peak | custom
   const timeFrom = el("time-from")?.value;
@@ -2156,6 +2163,9 @@ function bindPlannerUI() {
 
   const selectionMode = el("selection-mode");
   if (selectionMode) selectionMode.addEventListener("change", renderSelectionExtra);
+
+  const goalOtsInput = el("goal-ots");
+if (goalOtsInput) goalOtsInput.addEventListener("input", () => renderProgress());
 
   // ===== Regions input (READY-GUARD + LOADING UI) =====
 const regionSearch = el("city-search");
