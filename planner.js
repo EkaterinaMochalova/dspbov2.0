@@ -2269,6 +2269,23 @@ if (regionSearch) {
   if (calcBtn) calcBtn.addEventListener("click", () => onCalcClick());
 }
 
+// ===== Enable calc button when goal OTS changes (no renderProgress dependency) =====
+const goalOtsInput = el("goal-ots");
+
+function syncCalcBtnState() {
+  const p = calcCompletion(); // использует новую логику budgetOk, включая goal_ots
+  const calcBtn = el("calc-btn");
+  if (calcBtn) {
+    calcBtn.disabled = (p.done !== 4);
+    calcBtn.style.opacity = (p.done !== 4) ? ".55" : "1";
+  }
+}
+
+if (goalOtsInput) {
+  goalOtsInput.addEventListener("input", syncCalcBtnState);
+  goalOtsInput.addEventListener("change", syncCalcBtnState);
+}
+
 // ===== START =====
 async function startPlanner() {
   renderSelectionExtra();
