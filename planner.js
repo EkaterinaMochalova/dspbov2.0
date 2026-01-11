@@ -615,12 +615,12 @@ function buildBrief() {
   const budgetMode = getBudgetMode();
 
 const budgetVal = Number(el("budget-input")?.value || 0);
-const goalOtsVal = toNumber(el("goal-ots")?.value); // важно: input id="goal-ots"
+const goalOtsVal = Number(el("goal-ots")?.value || 0);
 
 const budgetOk =
   (budgetMode === "recommendation") ||
   (budgetMode === "fixed" && budgetVal > 0) ||
-  (budgetMode === "goal_ots" && Number.isFinite(goalOtsVal) && goalOtsVal > 0);
+  (budgetMode === "goal_ots" && goalOtsVal > 0);
 
   const scheduleType = getScheduleType(); // all_day | peak | custom
   const timeFrom = el("time-from")?.value;
