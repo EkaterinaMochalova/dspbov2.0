@@ -2116,6 +2116,49 @@ ${perRegionText}`
 
   setStatus("");
 }
+
+// ===== Progress / Calc button state (supports fixed / recommendation / goal_ots) =====
+function calcCompletion() {
+  const regions = Array.isArray(state.selectedRegions)
+    ? state.selectedRegions.map(r => String(r || "").trim()).filter(Boolean)
+    : [];
+
+  const datesStart = el("date-start")?.value || "";
+  const datesEnd = el("date-end")?.value || "";
+
+  const step1 = regions.length > 0;
+  const step2 = !!(datesStart && datesEnd);
+
+  const budgetMode = getBudgetMode(); // fixed | recommendation | goal_ots
+  const budgetVal = Number(el("budget-input")?.value || 0);
+  const goalOtsVal = toNumber(el("goal-ots")?.value);
+
+  const budgetOk =
+    (budgetMode === "recommendation") ||
+    (budgetMode === "fixed" && Number.isFinite(budgetVal) && budgetVal > 0) ||
+    (budgetMode === "goal_ots" && Number.isFinite(goalOtsVal) && goalOtsVal > 0);
+
+  const formatsAuto = !!el("formats-auto")?.checked;
+  const formatsSet = state?.selectedFormats;
+  const formatsOk = formatsAuto || (formatsSet && formatsSet.size > 0);
+
+  const step3 = !!budgetOk;
+  const step4 = !!formatsOk;
+
+  const done = [step1, step2, step3, step4].filter(Boolean).length;
+  return { done, step1, step2, step3, step4 };
+}
+
+function renderProgress() {
+  const p = calcCompletion();
+  const calcBtn = el("calc-btn");
+  if (calcBtn) {
+    calcBtn.disabled = (p.done !== 4);
+    calcBtn.style.opacity = (p.done !== 4) ? ".55" : "1";
+  }
+}
+
+
 // ===== BIND UI =====
 function bindPlannerUI() {
   document.querySelectorAll(".preset").forEach(b => {
@@ -2164,15 +2207,22 @@ function bindPlannerUI() {
   const selectionMode = el("selection-mode");
   if (selectionMode) selectionMode.addEventListener("change", renderSelectionExtra);
 
-  const goalOtsInput = el("goal-ots");
-if (goalOtsInput) goalOtsInput.addEventListener("input", () => renderProgress());
-
+// ===== goal_ots input should re-check calc button =====
+const goalOtsInput = el("goal-ots");
+if (goalOtsInput) {
+  goalOtsInput.addEventListener("input", renderProgress);
+  goalOtsInput.addEventListener("change", renderProgress);
+}
+  
   // ===== Regions input (READY-GUARD + LOADING UI) =====
 const regionSearch = el("city-search");
 const sug = el("city-suggestions");
 const overlay = el("region-overlay");
 const spinner = el("region-spinner");
 const field = el("region-field");
+
+
+renderProgress();
 
 function regionsReadyNow() {
   if (typeof areRegionsReady === "function") return !!areRegionsReady();
