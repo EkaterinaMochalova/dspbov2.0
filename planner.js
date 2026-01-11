@@ -1309,8 +1309,7 @@ function allocateBudgetAcrossRegions(totalBudget, regions, opts) {
 
 // ================== MULTI-REGION TARGET (OTS) ==================
 function allocateTargetOtsAcrossRegions(totalOts, regions, opts = {}) {
-  if (!regions.length) return [];
-
+  if (!regions || !regions.length) return [];
   const minShare = opts.minShare ?? 0.10;
   const maxShare = opts.maxShare ?? 0.70;
 
@@ -1330,17 +1329,18 @@ function allocateTargetOtsAcrossRegions(totalOts, regions, opts = {}) {
     if (i.share > maxShare) i.share = maxShare;
   });
 
+  // normalize
   const sumShares = items.reduce((a, b) => a + b.share, 0) || 1;
   items.forEach(i => i.share /= sumShares);
 
-  // integer ots
+  // target ots per region
   let out = items.map(i => ({
     region: i.region,
-    ots: Math.floor(totalOts * i.share)
+    ots: Math.floor(Number(totalOts) * i.share)
   }));
 
-  // fix rounding to exact total
-  let diff = Math.floor(totalOts) - out.reduce((a, b) => a + b.ots, 0);
+  // fix rounding
+  let diff = Math.floor(Number(totalOts)) - out.reduce((a, b) => a + b.ots, 0);
   let k = 0;
   while (diff !== 0 && k < 100000) {
     const idx = k % out.length;
@@ -1348,8 +1348,129 @@ function allocateTargetOtsAcrossRegions(totalOts, regions, opts = {}) {
     diff += diff > 0 ? -1 : 1;
     k++;
   }
-
   return out;
+}
+
+// Распределяем OTS-цель с учётом капов/отсутствия OTS и перераспределяем "хвост"
+function computeGoalOtsPlan(prepared, totalOtsGoal, opts = {}) {
+  const minShare = opts.minShare ?? 0.10;
+  const maxShare = opts.maxShare ?? 0.70;
+
+  const regions = prepared.map(r => ({ key: r.region, tier: r.tier }));
+  const baseAlloc = allocateTargetOtsAcrossRegions(totalOtsGoal, regions, { minShare, maxShare });
+
+  // init plan per region
+  const plan = {};
+  for (const r of prepared) {
+    const goal = baseAlloc.find(x => x.region === r.region)?.ots || 0;
+
+    plan[r.region] = {
+      goalOts: goal,
+      // если avgOts нет — в этом регионе ничего не соберём
+      avgOts: (r.avgOts == null || !Number.isFinite(r.avgOts) || r.avgOts <= 0) ? null : Number(r.avgOts),
+      capOtsAbs: (r.capOtsAbs == null || !Number.isFinite(r.capOtsAbs) || r.capOtsAbs <= 0) ? 0 : Number(r.capOtsAbs),
+      bidPlus20: Number(r.bidPlus20),
+      capPlaysAbs: Number(r.capPlaysAbs),
+      capBudgetAbs: Number(r.capBudgetAbs),
+
+      playsPlanned: 0,
+      budgetPlanned: 0,
+      otsPlanned: 0
+    };
+  }
+
+  // helper: apply goal to region (bounded by cap + avgOts)
+  function applyGoal(regionKey, addOts) {
+    const p = plan[regionKey];
+    if (!p) return 0;
+    if (!p.avgOts) return addOts; // всё неосуществимо
+
+    const newGoal = p.goalOts + addOts;
+
+    // сколько OTS вообще можем в регионе (cap)
+    const maxOtsHere = Math.max(0, p.capOtsAbs);
+    const targetOtsHere = Math.min(newGoal, maxOtsHere);
+
+    // перевод в plays (ceil чтобы не недобрать OTS)
+    const playsNeed = Math.min(
+      p.capPlaysAbs,
+      Math.ceil(targetOtsHere / p.avgOts)
+    );
+
+    // пересчёт "по факту" (plays -> ots, plays -> budget)
+    const otsHere = playsNeed * p.avgOts;
+    const budgetHere = Math.ceil(playsNeed * p.bidPlus20);
+
+    p.goalOts = targetOtsHere;
+    p.playsPlanned = playsNeed;
+    p.otsPlanned = otsHere;
+    p.budgetPlanned = Math.min(budgetHere, p.capBudgetAbs);
+
+    // сколько OTS осталось невыполнимым в этом регионе
+    const unmet = Math.max(0, newGoal - targetOtsHere);
+    return unmet;
+  }
+
+  // 1) первично применяем базовые цели
+  let unmetTotal = 0;
+  for (const r of prepared) {
+    const unmet = applyGoal(r.region, 0);
+    unmetTotal += unmet;
+  }
+
+  // 2) перераспределяем unmet по регионам с оставшейся ёмкостью OTS
+  let guard = 0;
+  while (unmetTotal > 0 && guard < 10000) {
+    guard++;
+
+    // найдём регионы, куда ещё можно долить OTS
+    const receivers = prepared
+      .map(r => r.region)
+      .filter(key => {
+        const p = plan[key];
+        if (!p || !p.avgOts) return false;
+        return p.goalOts < p.capOtsAbs; // есть запас
+      });
+
+    if (!receivers.length) break;
+
+    // общий запас OTS по всем принимающим
+    const headroomSum = receivers.reduce((a, key) => {
+      const p = plan[key];
+      return a + Math.max(0, p.capOtsAbs - p.goalOts);
+    }, 0);
+
+    if (headroomSum <= 0) break;
+
+    // раздаём unmet пропорционально headroom
+    let distributed = 0;
+    for (const key of receivers) {
+      const p = plan[key];
+      const hr = Math.max(0, p.capOtsAbs - p.goalOts);
+      if (hr <= 0) continue;
+
+      const add = Math.min(
+        unmetTotal,
+        Math.max(1, Math.floor(unmetTotal * (hr / headroomSum)))
+      );
+
+      const before = unmetTotal;
+      const unmetAfterApply = applyGoal(key, add);
+      const actuallyTaken = add - unmetAfterApply;
+
+      unmetTotal = before - actuallyTaken;
+      distributed += actuallyTaken;
+
+      if (unmetTotal <= 0) break;
+    }
+
+    // если на итерации ничего не смогли распределить — стоп
+    if (distributed <= 0) break;
+  }
+
+  // итог: budgets/plays/ots по регионам + сколько цель невыполнима вообще
+  const finalUnmet = Math.max(0, unmetTotal);
+  return { plan, finalUnmet };
 }
 
 
@@ -1539,86 +1660,70 @@ prepared.push({
     return;
   }
 
+    // =========================
   // 2) INITIAL BUDGETS (fixed / recommendation / goal_ots)
-// =========================
-const budgets = {}; // region -> planned budget
+  // =========================
+  const budgets = {}; // region -> planned budget (RUB)
+  let goalPlan = null;         // { [region]: {playsPlanned, budgetPlanned, otsPlanned, ...} }
+  let goalPlanUnmet = 0;
 
-if (brief.budget.mode === "fixed") {
-  const totalBudget = Number(brief.budget.amount);
-  const fixedAllocation = allocateBudgetAcrossRegions(
-    totalBudget,
-    prepared.map(r => ({ key: r.region, tier: getTierForGeo(r.region) })),
-    { minShare: 0.10, maxShare: 0.70 }
-  );
+  if (brief.budget.mode === "fixed") {
+    const totalBudget = Number(brief.budget.amount);
+    const fixedAllocation = allocateBudgetAcrossRegions(
+      totalBudget,
+      prepared.map(r => ({ key: r.region, tier: getTierForGeo(r.region) })),
+      { minShare: 0.10, maxShare: 0.70 }
+    );
 
-  for (const r of prepared) {
-    const found = fixedAllocation?.find(x => x.region === r.region);
-    budgets[r.region] = found ? Number(found.budget) : 0;
-  }
-
-} else if (brief.budget.mode === "goal_ots") {
-  const totalOtsGoal = Number(brief.goal?.ots || 0);
-
-  const goalAllocation = allocateTargetOtsAcrossRegions(
-    totalOtsGoal,
-    prepared.map(r => ({ key: r.region, tier: getTierForGeo(r.region) })),
-    { minShare: 0.10, maxShare: 0.70 }
-  );
-
-  // пересчитываем OTS-цель региона -> plays -> budget (с учётом ёмкости)
-  for (const r of prepared) {
-    const found = goalAllocation?.find(x => x.region === r.region);
-    const targetOtsRegion = found ? Number(found.ots) : 0;
-
-    // если нет данных OTS — бюджет посчитать нельзя
-    if (!Number.isFinite(targetOtsRegion) || targetOtsRegion <= 0) {
-      budgets[r.region] = 0;
-      continue;
-    }
-    if (!Number.isFinite(r.avgOts) || r.avgOts <= 0) {
-      budgets[r.region] = 0;
-      continue;
-    }
-    if (!Number.isFinite(r.bidPlus20) || r.bidPlus20 <= 0) {
-      budgets[r.region] = 0;
-      continue;
+    for (const r of prepared) {
+      const found = fixedAllocation?.find(x => x.region === r.region);
+      budgets[r.region] = found ? Number(found.budget) : 0;
     }
 
-    // plays needed for target ots
-    const requiredPlays = Math.ceil(targetOtsRegion / r.avgOts);
+  } else if (brief.budget.mode === "goal_ots") {
+    const totalOtsGoal = Number(brief.goal?.ots || 0);
+    if (!Number.isFinite(totalOtsGoal) || totalOtsGoal <= 0) {
+      alert("Введите корректную цель OTS.");
+      setStatus("");
+      return;
+    }
 
-    // ёмкость региона = максимум выходов при использовании ВСЕХ экранов пула
-    const maxPlaysByCapacity = Math.floor(SC_MAX * hpd * days * r.pool.length);
+    // планируем plays/budget из цели OTS + перераспределяем хвост
+    const res = computeGoalOtsPlan(prepared, totalOtsGoal, { minShare: 0.10, maxShare: 0.70 });
+    goalPlan = res.plan || null;
+    goalPlanUnmet = Number(res.finalUnmet || 0);
 
-    const feasiblePlays = Math.min(requiredPlays, maxPlaysByCapacity);
+    for (const r of prepared) {
+      const p = goalPlan?.[r.region];
+      budgets[r.region] = p ? Math.floor(p.budgetPlanned || 0) : 0;
+    }
 
-    budgets[r.region] = Math.floor(feasiblePlays * r.bidPlus20);
+    if (goalPlanUnmet > 0) {
+      warnings.push(
+        `⚠️ Цель OTS недостижима полностью при выбранных фильтрах/датах/времени. Недостаёт примерно: ` +
+        `${Math.round(goalPlanUnmet).toLocaleString("ru-RU")} OTS.`
+      );
+    }
+
+  } else {
+    // recommendation
+    for (const r of prepared) {
+      const BASE_MONTHLY_BY_TIER = { M: 2000000, SP: 1500000, A: 1000000, B: 500000, C: 300000, D: 100000 };
+      const baseMonthly = BASE_MONTHLY_BY_TIER[r.tier] ?? BASE_MONTHLY_BY_TIER.C;
+      const baseBudgetForPeriod = Math.floor(baseMonthly * (days / 30));
+
+      const maxPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * r.pool.length * days);
+      const maxBudget = maxPlays * r.bidPlus20;
+
+      budgets[r.region] = Math.floor(Math.min(baseBudgetForPeriod, maxBudget));
+    }
   }
-
-} else {
-  // recommendation
-  for (const r of prepared) {
-    // старая логика рекомендации сохраняется, но ограничение по maxBudget оставляем
-    const BASE_MONTHLY_BY_TIER = { M: 2000000, SP: 1500000, A: 1000000, B: 500000, C: 300000, D: 100000 };
-    const baseMonthly = BASE_MONTHLY_BY_TIER[r.tier] ?? BASE_MONTHLY_BY_TIER.C;
-    const baseBudgetForPeriod = Math.floor(baseMonthly * (days / 30));
-
-    // прежний maxBudget для reco (как было)
-    const maxPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * r.pool.length * days);
-    const maxBudget = maxPlays * r.bidPlus20;
-
-    budgets[r.region] = Math.floor(Math.min(baseBudgetForPeriod, maxBudget));
-  }
-}
-  
 
   // =========================
-  // 3) REDISTRIBUTION BY CAPACITY (важное новое поведение)
+  // 3) REDISTRIBUTION BY CAPACITY (только для fixed/reco)
+  // goal_ots уже распределён по ёмкости в computeGoalOtsPlan()
   // =========================
-  // идея: любой бюджет, который не может быть "освоен" в регионе (capBudgetAbs),
-  // уходит в остаток и перераспределяется в другие регионы по их headroom.
   function redistributeByCapacity(preparedRegions, budgetsMap) {
-    // clamp first + collect leftover
     let leftover = 0;
 
     for (const r of preparedRegions) {
@@ -1632,16 +1737,17 @@ if (brief.budget.mode === "fixed") {
       leftover += (planned - spendable);
     }
 
-    // distribute leftover while there is headroom
     let guard = 0;
     while (leftover > 0 && guard < 50) {
       guard++;
 
-      const headrooms = preparedRegions.map(r => {
-        const cur = Number(budgetsMap[r.region] || 0);
-        const head = Math.max(0, r.capBudgetAbs - cur);
-        return { r, head };
-      }).filter(x => x.head > 0);
+      const headrooms = preparedRegions
+        .map(r => {
+          const cur = Number(budgetsMap[r.region] || 0);
+          const head = Math.max(0, r.capBudgetAbs - cur);
+          return { r, head };
+        })
+        .filter(x => x.head > 0);
 
       if (!headrooms.length) break;
 
@@ -1652,7 +1758,6 @@ if (brief.budget.mode === "fixed") {
       for (const h of headrooms) {
         if (leftover <= 0) break;
 
-        // пропорционально headroom
         const add = Math.min(h.head, Math.floor(leftover * (h.head / sumHead)));
         if (add > 0) {
           budgetsMap[h.r.region] = Number(budgetsMap[h.r.region] || 0) + add;
@@ -1661,7 +1766,6 @@ if (brief.budget.mode === "fixed") {
         }
       }
 
-      // если из-за округления ничего не распределилось — докидываем по 1 рублю по кругу
       if (leftover > 0 && movedThisRound === 0) {
         for (const h of headrooms) {
           if (leftover <= 0) break;
@@ -1675,17 +1779,22 @@ if (brief.budget.mode === "fixed") {
       }
     }
 
-    return leftover; // неосваиваемый остаток (если ёмкости вообще не хватило)
+    return leftover;
   }
 
-  const leftoverUnspent = redistributeByCapacity(prepared, budgets);
-
-  if (leftoverUnspent > 0) {
-    warnings.push(`⚠️ Общая ёмкость выбранных регионов ограничена: не удалось распределить ${Math.floor(leftoverUnspent).toLocaleString("ru-RU")} ₽ (нет инвентаря).`);
+  let leftoverUnspent = 0;
+  if (brief.budget.mode !== "goal_ots") {
+    leftoverUnspent = redistributeByCapacity(prepared, budgets);
+    if (leftoverUnspent > 0) {
+      warnings.push(
+        `⚠️ Общая ёмкость выбранных регионов ограничена: не удалось распределить ` +
+        `${Math.floor(leftoverUnspent).toLocaleString("ru-RU")} ₽ (нет инвентаря).`
+      );
+    }
   }
 
   // =========================
-  // 4) MAIN CALC PER REGION (почти как было, но budget берём из budgets[region])
+  // 4) MAIN CALC PER REGION
   // =========================
   for (const pr of prepared) {
     const region = pr.region;
@@ -1700,36 +1809,166 @@ if (brief.budget.mode === "fixed") {
       continue;
     }
 
-    // бюджет уже "осваиваемый" по capBudgetAbs, но на всякий случай:
+    // на всякий случай
     budget = Math.min(budget, pr.capBudgetAbs);
 
     totalBudgetFinal += budget;
 
-    const totalPlaysTheory = Math.floor(budget / bidPlus20);
-    const playsPerHourTotalTheory = totalPlaysTheory / days / hpd;
+    // ===== plays theory =====
+    let totalPlaysTheory = 0;
 
-    const screensNeeded =
-      (brief.budget.mode !== "fixed")
-        ? Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_MAX))
-        : Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_OPT));
+    if (brief.budget.mode === "goal_ots" && goalPlan && goalPlan[region]) {
+      totalPlaysTheory = Math.ceil(Number(goalPlan[region].playsPlanned || 0));
+    } else {
+      totalPlaysTheory = Math.floor(budget / bidPlus20);
+    }
+
+    if (!Number.isFinite(totalPlaysTheory) || totalPlaysTheory <= 0) {
+      perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "цель=0" });
+      continue;
+    }
+
+    // ===== screen count (уважаем ёмкость, особенно важно для goal_ots) =====
+    const maxPlaysPerScreenForPeriod = Math.floor(SC_MAX * days * hpd);
+    const screensNeededByCapacity = Math.max(1, Math.ceil(totalPlaysTheory / Math.max(1, maxPlaysPerScreenForPeriod)));
+
+    let screensNeeded = screensNeededByCapacity;
+
+    if (brief.budget.mode !== "goal_ots") {
+      const playsPerHourTotalTheory = totalPlaysTheory / days / hpd;
+      const byOpt =
+        (brief.budget.mode !== "fixed")
+          ? Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_MAX))
+          : Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_OPT));
+      screensNeeded = Math.max(screensNeededByCapacity, byOpt);
+    }
 
     const screensChosenCount = Math.min(pool.length, screensNeeded);
 
-    // выбор (равномерный по сетке, внутри ячейки — дешевле)
     const chosen = pickScreensUniformByGrid(pool, screensChosenCount, 2);
 
-    const playsPerHourPerScreen = playsPerHourTotalTheory / screensChosenCount;
-    let totalPlaysEffective = totalPlaysTheory;
+    // ===== plays effective (respect capacity) =====
+    const capPlaysByChosen = Math.floor(SC_MAX * chosen.length * days * hpd);
+    let totalPlaysEffective = Math.min(totalPlaysTheory, capPlaysByChosen);
 
-    if (playsPerHourPerScreen > SC_OPT && playsPerHourPerScreen <= SC_MAX) {
-      warnings.push(`⚠️ Регион «${region}»: в среднем ${playsPerHourPerScreen.toFixed(1)} выходов/час на экран (выше оптимальных ${SC_OPT}).`);
-    } else if (playsPerHourPerScreen > SC_MAX) {
-      const maxPlaysByCapacity = Math.floor(SC_MAX * screensChosenCount * days * hpd);
-      totalPlaysEffective = Math.min(totalPlaysTheory, maxPlaysByCapacity);
-      warnings.push(`⚠️ Регион «${region}»: не хватает ёмкости (макс ${SC_MAX} выходов/час на экран).`);
+    if (brief.budget.mode === "goal_ots" && totalPlaysEffective < totalPlaysTheory) {
+      warnings.push(`⚠️ Регион «${region}»: не хватает ёмкости даже при ${chosen.length} экранах (SC_MAX).`);
+    } else if (brief.budget.mode !== "goal_ots") {
+      const playsPerHourPerScreen = (totalPlaysTheory / days / hpd) / Math.max(1, chosen.length);
+      if (playsPerHourPerScreen > SC_OPT && playsPerHourPerScreen <= SC_MAX) {
+        warnings.push(`⚠️ Регион «${region}»: в среднем ${playsPerHourPerScreen.toFixed(1)} выходов/час на экран (выше оптимальных ${SC_OPT}).`);
+      }
     }
 
     totalPlaysEffectiveAll += totalPlaysEffective;
+
+    const avgOts = avgNumber(pool.map(s => s.ots));
+    const otsTotal = (avgOts == null) ? null : totalPlaysEffective * avgOts;
+    if (avgOts == null) hasOts = false;
+    if (otsTotal != null) otsTotalAll += otsTotal;
+
+    chosenAll = chosenAll.concat(chosen);
+
+    perRegionRows.push({
+      region,
+      tier,
+      budget,
+      screens: chosen.length,
+      plays: totalPlaysEffective,
+      ots: otsTotal,
+      note: ""
+    });
+  }
+
+  // =========================
+  // 4) MAIN CALC PER REGION (почти как было, но budget берём из budgets[region])
+  // =========================
+  for (const pr of prepared) {
+    const region = pr.region;
+    const tier = pr.tier;
+    const pool = pr.pool;
+    const bidPlus20 = pr.bidPlus20;
+
+    let budget = Number(budgets[region] || 0);
+    
+
+    if (!Number.isFinite(budget) || budget <= 0) {
+      perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "budget=0" });
+      continue;
+    }
+
+    // бюджет уже "осваиваемый" по capBudgetAbs, но на всякий случай:
+    budget = Math.min(budget, pr.capBudgetAbs);
+
+    totalBudgetFinal += budget;
+let plannedPlaysFromGoal = null;
+if (brief.budget.mode === "goal_ots" && typeof __goalPlan === "object" && __goalPlan && __goalPlan[region]) {
+  plannedPlaysFromGoal = Number(__goalPlan[region].playsPlanned || 0);
+  if (!Number.isFinite(plannedPlaysFromGoal) || plannedPlaysFromGoal <= 0) plannedPlaysFromGoal = null;
+}
+    // ===== plays target & screens needed =====
+let totalPlaysTheory = 0;
+
+// goal_ots: plays считаем от цели OTS (ceil, чтобы цель добрать)
+// ===== Plays theory =====
+let totalPlaysTheory = 0;
+
+// goal_ots: plays считаем от плана (ceil, чтобы цель добрать)
+if (brief.budget.mode === "goal_ots" && goalPlan && goalPlan[region]) {
+  totalPlaysTheory = Math.ceil(Number(goalPlan[region].playsPlanned || 0));
+  if (!Number.isFinite(totalPlaysTheory) || totalPlaysTheory < 0) totalPlaysTheory = 0;
+} else {
+  // fixed/reco как было
+  totalPlaysTheory = Math.floor(budget / bidPlus20);
+  if (!Number.isFinite(totalPlaysTheory) || totalPlaysTheory < 0) totalPlaysTheory = 0;
+}
+
+// если вдруг 0 — пропускаем
+if (!Number.isFinite(totalPlaysTheory) || totalPlaysTheory <= 0) {
+  perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "цель=0" });
+  continue;
+}
+
+// Сколько экранов нужно МИНИМУМ, чтобы не превысить SC_MAX по ёмкости
+const maxPlaysPerScreenForPeriod = Math.floor(SC_MAX * days * hpd);
+let screensNeededByCapacity = Math.ceil(totalPlaysTheory / Math.max(1, maxPlaysPerScreenForPeriod));
+screensNeededByCapacity = Math.max(1, screensNeededByCapacity);
+
+// Для fixed/reco сохраняем твою старую “оптимизацию”, но всё равно уважаем ёмкость
+let screensNeeded = screensNeededByCapacity;
+
+if (brief.budget.mode !== "goal_ots") {
+  const playsPerHourTotalTheory = totalPlaysTheory / days / hpd;
+  const byOpt =
+    (brief.budget.mode !== "fixed")
+      ? Math.max(1, Math.ceil((playsPerHourTotalTheory) / SC_MAX))
+      : Math.max(1, Math.ceil((playsPerHourTotalTheory) / SC_OPT));
+
+  screensNeeded = Math.max(screensNeededByCapacity, byOpt);
+}
+
+// ограничиваем доступным пулом
+const screensChosenCount = Math.min(pool.length, screensNeeded);
+
+// выбор (равномерный по сетке, внутри ячейки — дешевле)
+const chosen = pickScreensUniformByGrid(pool, screensChosenCount, 2);
+
+// ===== plays effective (respect capacity) =====
+const capPlaysByChosen = Math.floor(SC_MAX * chosen.length * days * hpd);
+let totalPlaysEffective = Math.min(totalPlaysTheory, capPlaysByChosen);
+
+if (brief.budget.mode === "goal_ots" && goalPlan && goalPlan[region]) {
+  // в goal_ots нам важнее добрать plays, поэтому если не хватает — предупреждаем
+  if (totalPlaysEffective < totalPlaysTheory) {
+    warnings.push(`⚠️ Регион «${region}»: не хватает ёмкости даже при ${chosen.length} экранах (SC_MAX).`);
+  }
+} else {
+  // твои старые предупреждения можно оставить, но они теперь не нужны как раньше
+  const playsPerHourPerScreen = (totalPlaysTheory / days / hpd) / Math.max(1, chosen.length);
+  if (playsPerHourPerScreen > SC_OPT && playsPerHourPerScreen <= SC_MAX) {
+    warnings.push(`⚠️ Регион «${region}»: в среднем ${playsPerHourPerScreen.toFixed(1)} выходов/час на экран (выше оптимальных ${SC_OPT}).`);
+  }
+}
 
     const avgOts = avgNumber(pool.map(s => s.ots));
     const otsTotal = (avgOts == null) ? null : totalPlaysEffective * avgOts;
@@ -1794,7 +2033,11 @@ if (brief.budget.mode === "fixed") {
 
   const summaryText =
 `Бриф:
-— Бюджет: ${totalBudgetFinal.toLocaleString("ru-RU")} ₽ ${brief.budget.mode === "fixed" ? "(распределён по регионам)" : "(сумма рекомендаций)"}
+— Бюджет: ${totalBudgetFinal.toLocaleString("ru-RU")} ₽ ${
+  brief.budget.mode === "fixed"
+    ? "(распределён по регионам)"
+    : (brief.budget.mode === "goal_ots" ? "(под цель OTS)" : "(сумма рекомендаций)")
+}
 — Даты: ${brief.dates.start} → ${brief.dates.end} (дней: ${days})
 — Расписание: ${brief.schedule.type} (часов/день: ${hpd})
 — Регион(ы): ${regions.join(", ")}
