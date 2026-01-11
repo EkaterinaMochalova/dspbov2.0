@@ -434,6 +434,7 @@ function renderSelectedRegions() {
       state.selectedRegions = state.selectedRegions.filter(r => r !== region);
       state.selectedRegion = state.selectedRegions[0] || null;
       renderSelectedRegions();
+      renderProgress(); // ✅
     });
 
     wrap.appendChild(chip);
@@ -469,6 +470,7 @@ function renderRegionSuggestions(q) {
       sug.innerHTML = "";
 
       renderSelectedRegions();
+      renderProgress(); // ✅
     });
 
     sug.appendChild(b);
@@ -599,7 +601,8 @@ function renderFormats() {
       if (state.selectedFormats.has(fmt)) state.selectedFormats.delete(fmt);
       else state.selectedFormats.add(fmt);
       sync();
-    });
+      renderProgress(); // ✅ ВАЖНО
+});
 
     wrap.appendChild(b);
   });
@@ -1799,95 +1802,7 @@ prepared.push({
       );
     }
   }
-
-  // =========================
-  // 4) MAIN CALC PER REGION
-  // =========================
-  for (const pr of prepared) {
-    const region = pr.region;
-    const tier = pr.tier;
-    const pool = pr.pool;
-    const bidPlus20 = pr.bidPlus20;
-
-    let budget = Number(budgets[region] || 0);
-
-    if (!Number.isFinite(budget) || budget <= 0) {
-      perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "budget=0" });
-      continue;
-    }
-
-    // на всякий случай
-    budget = Math.min(budget, pr.capBudgetAbs);
-
-    totalBudgetFinal += budget;
-
-    // ===== plays theory =====
-    let totalPlaysTheory = 0;
-
-    if (brief.budget.mode === "goal_ots" && goalPlan && goalPlan[region]) {
-      totalPlaysTheory = Math.ceil(Number(goalPlan[region].playsPlanned || 0));
-    } else {
-      totalPlaysTheory = Math.floor(budget / bidPlus20);
-    }
-
-    if (!Number.isFinite(totalPlaysTheory) || totalPlaysTheory <= 0) {
-      perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "цель=0" });
-      continue;
-    }
-
-    // ===== screen count (уважаем ёмкость, особенно важно для goal_ots) =====
-    const maxPlaysPerScreenForPeriod = Math.floor(SC_MAX * days * hpd);
-    const screensNeededByCapacity = Math.max(1, Math.ceil(totalPlaysTheory / Math.max(1, maxPlaysPerScreenForPeriod)));
-
-    let screensNeeded = screensNeededByCapacity;
-
-    if (brief.budget.mode !== "goal_ots") {
-      const playsPerHourTotalTheory = totalPlaysTheory / days / hpd;
-      const byOpt =
-        (brief.budget.mode !== "fixed")
-          ? Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_MAX))
-          : Math.max(1, Math.ceil(playsPerHourTotalTheory / SC_OPT));
-      screensNeeded = Math.max(screensNeededByCapacity, byOpt);
-    }
-
-    const screensChosenCount = Math.min(pool.length, screensNeeded);
-
-    const chosen = pickScreensUniformByGrid(pool, screensChosenCount, 2);
-
-    // ===== plays effective (respect capacity) =====
-    const capPlaysByChosen = Math.floor(SC_MAX * chosen.length * days * hpd);
-    let totalPlaysEffective = Math.min(totalPlaysTheory, capPlaysByChosen);
-
-    if (brief.budget.mode === "goal_ots" && totalPlaysEffective < totalPlaysTheory) {
-      warnings.push(`⚠️ Регион «${region}»: не хватает ёмкости даже при ${chosen.length} экранах (SC_MAX).`);
-    } else if (brief.budget.mode !== "goal_ots") {
-      const playsPerHourPerScreen = (totalPlaysTheory / days / hpd) / Math.max(1, chosen.length);
-      if (playsPerHourPerScreen > SC_OPT && playsPerHourPerScreen <= SC_MAX) {
-        warnings.push(`⚠️ Регион «${region}»: в среднем ${playsPerHourPerScreen.toFixed(1)} выходов/час на экран (выше оптимальных ${SC_OPT}).`);
-      }
-    }
-
-    totalPlaysEffectiveAll += totalPlaysEffective;
-
-    const avgOts = avgNumber(pool.map(s => s.ots));
-    const otsTotal = (avgOts == null) ? null : totalPlaysEffective * avgOts;
-    if (avgOts == null) hasOts = false;
-    if (otsTotal != null) otsTotalAll += otsTotal;
-
-    chosenAll = chosenAll.concat(chosen);
-
-    perRegionRows.push({
-      region,
-      tier,
-      budget,
-      screens: chosen.length,
-      plays: totalPlaysEffective,
-      ots: otsTotal,
-      note: ""
-    });
-  }
-
-  // =========================
+  
   // 4) MAIN CALC PER REGION (почти как было, но budget берём из budgets[region])
   // =========================
   for (const pr of prepared) {
@@ -2171,6 +2086,7 @@ function bindPlannerUI() {
     b.addEventListener("click", () => {
       if (el("date-start")) el("date-start").value = b.dataset.start;
       if (el("date-end")) el("date-end").value = b.dataset.end;
+      renderProgress(); // ✅
     });
   });
 
