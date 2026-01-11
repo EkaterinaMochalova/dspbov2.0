@@ -211,6 +211,33 @@ function avgNumber(arr) {
   }
   return cnt ? (sum / cnt) : null;
 }
+function areRegionsReady(){
+  return Array.isArray(state.regionsAll) && state.regionsAll.length > 0;
+}
+
+function setRegionsUIReady(isReady){
+  const input = el("city-search");
+  const spinner = el("region-spinner");
+  const overlay = el("region-overlay");
+
+  if (input) {
+    input.disabled = !isReady;
+    input.placeholder = isReady ? "Введите регион…" : "Загружаю список регионов…";
+  }
+
+  // маленький спиннер в инпуте
+  if (spinner) spinner.style.display = isReady ? "none" : "block";
+
+  // серый overlay
+  if (overlay) overlay.style.display = isReady ? "none" : "flex";
+
+  // если не готово — убираем подсказки, чтобы не выглядело как “ничего не найдено”
+  if (!isReady) {
+    const sug = el("city-suggestions");
+    if (sug) sug.innerHTML = "";
+  }
+}
+
 
 function daysInclusive(startStr, endStr) {
   const s = new Date(startStr + "T00:00:00");
@@ -500,6 +527,9 @@ async function loadScreens() {
     if (!state.regionsAll.includes(reg)) state.regionsAll.push(reg);
   }
   state.regionsAll.sort((a, b) => a.localeCompare(b, "ru"));
+
+// ✅ регионы готовы — снимаем блокировку
+  setRegionsUIReady(true);
 
   // проставляем region каждому экрану
   for (const s of state.screens) {
@@ -1774,73 +1804,86 @@ function bindPlannerUI() {
   const selectionMode = el("selection-mode");
   if (selectionMode) selectionMode.addEventListener("change", renderSelectionExtra);
 
-  // ===== Regions input (READY-GUARD) =====
-  const regionSearch = el("city-search");
-  const sug = el("city-suggestions");
+  // ===== Regions input (READY-GUARD + LOADING UI) =====
+const regionSearch = el("city-search");
+const sug = el("city-suggestions");
+const overlay = el("region-overlay");
+const spinner = el("region-spinner");
+const field = el("region-field");
 
-  function regionsReadyNow() {
-    // если у тебя уже есть areRegionsReady() — используй его
-    if (typeof areRegionsReady === "function") return !!areRegionsReady();
-    // fallback: регионы готовы, когда есть список regionsAll
-    return Array.isArray(state?.regionsAll) && state.regionsAll.length > 0;
+function regionsReadyNow() {
+  if (typeof areRegionsReady === "function") return !!areRegionsReady();
+  return Array.isArray(state?.regionsAll) && state.regionsAll.length > 0;
+}
+
+function setRegionsReadyUI(isReady) {
+  if (!regionSearch) return;
+
+  if (isReady) {
+    regionSearch.disabled = false;
+    regionSearch.placeholder = "Начните вводить регион…";
+    if (overlay) overlay.style.display = "none";
+    if (spinner) spinner.style.display = "none";
+    if (field) field.classList.remove("is-loading");
+  } else {
+    regionSearch.disabled = true;
+    regionSearch.placeholder = "Загружаю список регионов…";
+    if (overlay) overlay.style.display = "block";
+    if (spinner) spinner.style.display = "inline-block";
+    if (field) field.classList.add("is-loading");
+    if (sug) sug.innerHTML = "";
   }
+}
 
-  function setRegionsReadyUI(isReady) {
-    // если у тебя уже есть setRegionsUIReady() — используй его
-    if (typeof setRegionsUIReady === "function") {
-      setRegionsUIReady(!!isReady);
+function showRegionsLoadingHint() {
+  if (!sug) return;
+  sug.innerHTML = `
+    <div style="font-size:12px; color:#667085; padding:8px 0;">
+      ⏳ Список регионов загружается… попробуйте через пару секунд.
+    </div>
+  `;
+}
+
+// 1) стартовое состояние
+setRegionsReadyUI(regionsReadyNow());
+
+// 2) когда экраны/регионы загрузились — включаем поле
+window.addEventListener("planner:screens-ready", () => {
+  setRegionsReadyUI(true);
+});
+
+// 3) если юзер фокусится / печатает слишком рано
+if (regionSearch) {
+  regionSearch.addEventListener("focus", () => {
+    if (!regionsReadyNow()) {
+      setRegionsReadyUI(false);
+      showRegionsLoadingHint();
+    }
+  });
+
+  regionSearch.addEventListener("input", (e) => {
+    if (!regionsReadyNow()) {
+      setRegionsReadyUI(false);
+      showRegionsLoadingHint();
       return;
     }
-    // fallback UI (если хелперов нет)
-    if (!regionSearch) return;
-    regionSearch.disabled = !isReady;
-    regionSearch.placeholder = isReady ? "Введите регион…" : "Загружаю список регионов…";
-  }
+    renderRegionSuggestions(e.target.value);
+  });
 
-  function showRegionsLoadingHint() {
-    if (!sug) return;
-    sug.innerHTML = `
-      <div style="font-size:12px; color:#666; padding:8px 0;">
-        ⏳ Список регионов загружается… попробуйте через пару секунд.
-      </div>
-    `;
-  }
+  // 4) блокируем Enter пока не готовы регионы
+  regionSearch.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
 
-  if (regionSearch) {
-    // 1) стартовое состояние
-    setRegionsReadyUI(regionsReadyNow());
-
-    // 2) если юзер фокусится слишком рано
-    regionSearch.addEventListener("focus", () => {
-      if (!regionsReadyNow()) {
-        setRegionsReadyUI(false);
-        showRegionsLoadingHint();
-      }
-    });
-
-    // 3) если начинает печатать слишком рано
-    regionSearch.addEventListener("input", (e) => {
-      if (!regionsReadyNow()) {
-        setRegionsReadyUI(false);
-        showRegionsLoadingHint();
-        return;
-      }
-      renderRegionSuggestions(e.target.value);
-    });
-
-    // 4) блокируем Enter пока не готовы регионы
-    regionSearch.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter") return;
-
-      if (!regionsReadyNow()) {
-        e.preventDefault();
-        setRegionsReadyUI(false);
-        showRegionsLoadingHint();
-      }
-      // если у тебя есть логика Enter ниже/в другом месте — пусть работает,
-      // мы тут только блокируем ранний Enter.
-    });
-  }
+    if (!regionsReadyNow()) {
+      e.preventDefault();
+      setRegionsReadyUI(false);
+      showRegionsLoadingHint();
+      return;
+    }
+    // ⚠️ ВАЖНО: тут НЕ делаем add по Enter,
+    // чтобы не задублировать твою существующую логику Enter ниже.
+  });
+}
 
   // ===== Downloads =====
   const downloadBtn = el("download-csv");
