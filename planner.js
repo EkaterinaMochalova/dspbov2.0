@@ -510,6 +510,21 @@ async function loadScreens() {
   renderSelectedCity();
   renderSelectedRegions();
 
+  // ✅ РЕГИОНЫ ГОТОВЫ — РАЗРЕШАЕМ ВВОД
+  try {
+    if (typeof setRegionsUIReady === "function") {
+      setRegionsUIReady(true);
+    } else {
+      const regionInput = document.getElementById("city-search");
+      if (regionInput) {
+        regionInput.disabled = false;
+        regionInput.placeholder = "Введите регион…";
+      }
+    }
+  } catch (e) {
+    console.warn("[regions] ui ready hook failed:", e);
+  }
+
   setStatus(
     `Всего доступно: ` +
     `Экранов: ${state.screens.length}. ` +
@@ -519,9 +534,12 @@ async function loadScreens() {
   );
 
   window.PLANNER.ready = true;
-  window.dispatchEvent(new CustomEvent("planner:screens-ready", { detail: { count: state.screens.length } }));
+  window.dispatchEvent(
+    new CustomEvent("planner:screens-ready", {
+      detail: { count: state.screens.length }
+    })
+  );
 }
-
 // ===== UI: formats =====
 function renderFormats() {
   const wrap = el("formats-wrap");
@@ -1756,9 +1774,75 @@ function bindPlannerUI() {
   const selectionMode = el("selection-mode");
   if (selectionMode) selectionMode.addEventListener("change", renderSelectionExtra);
 
+  // ===== Regions input (READY-GUARD) =====
   const regionSearch = el("city-search");
-  if (regionSearch) regionSearch.addEventListener("input", (e) => renderRegionSuggestions(e.target.value));
+  const sug = el("city-suggestions");
 
+  function regionsReadyNow() {
+    // если у тебя уже есть areRegionsReady() — используй его
+    if (typeof areRegionsReady === "function") return !!areRegionsReady();
+    // fallback: регионы готовы, когда есть список regionsAll
+    return Array.isArray(state?.regionsAll) && state.regionsAll.length > 0;
+  }
+
+  function setRegionsReadyUI(isReady) {
+    // если у тебя уже есть setRegionsUIReady() — используй его
+    if (typeof setRegionsUIReady === "function") {
+      setRegionsUIReady(!!isReady);
+      return;
+    }
+    // fallback UI (если хелперов нет)
+    if (!regionSearch) return;
+    regionSearch.disabled = !isReady;
+    regionSearch.placeholder = isReady ? "Введите регион…" : "Загружаю список регионов…";
+  }
+
+  function showRegionsLoadingHint() {
+    if (!sug) return;
+    sug.innerHTML = `
+      <div style="font-size:12px; color:#666; padding:8px 0;">
+        ⏳ Список регионов загружается… попробуйте через пару секунд.
+      </div>
+    `;
+  }
+
+  if (regionSearch) {
+    // 1) стартовое состояние
+    setRegionsReadyUI(regionsReadyNow());
+
+    // 2) если юзер фокусится слишком рано
+    regionSearch.addEventListener("focus", () => {
+      if (!regionsReadyNow()) {
+        setRegionsReadyUI(false);
+        showRegionsLoadingHint();
+      }
+    });
+
+    // 3) если начинает печатать слишком рано
+    regionSearch.addEventListener("input", (e) => {
+      if (!regionsReadyNow()) {
+        setRegionsReadyUI(false);
+        showRegionsLoadingHint();
+        return;
+      }
+      renderRegionSuggestions(e.target.value);
+    });
+
+    // 4) блокируем Enter пока не готовы регионы
+    regionSearch.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+
+      if (!regionsReadyNow()) {
+        e.preventDefault();
+        setRegionsReadyUI(false);
+        showRegionsLoadingHint();
+      }
+      // если у тебя есть логика Enter ниже/в другом месте — пусть работает,
+      // мы тут только блокируем ранний Enter.
+    });
+  }
+
+  // ===== Downloads =====
   const downloadBtn = el("download-csv");
   if (downloadBtn) downloadBtn.addEventListener("click", () => downloadXLSX(state.lastChosen));
 
@@ -1774,6 +1858,7 @@ function bindPlannerUI() {
     poiXlsxBtn.addEventListener("click", () => downloadPOIsXLSX(window.PLANNER.lastPOIs || []));
   }
 
+  // ===== Calc =====
   const calcBtn = el("calc-btn");
   if (calcBtn) calcBtn.addEventListener("click", () => onCalcClick());
 }
