@@ -696,6 +696,16 @@ function buildBrief() {
   brief.grp.max = Math.max(0, Math.min(9.98, brief.grp.max));
   if (brief.grp.max < brief.grp.min) [brief.grp.min, brief.grp.max] = [brief.grp.max, brief.grp.min];
 
+
+  // ✅ goal (для режима "от обратного")
+  brief.goal = {
+    ots: (() => {
+      const v = el("goal-ots")?.value;
+      const n = toNumber(v);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    })()
+  };
+
   return brief;
 }
 
@@ -1297,6 +1307,52 @@ function allocateBudgetAcrossRegions(totalBudget, regions, opts) {
   return raw.map(r => ({ region: r.region, budget: r.budget }));
 }
 
+// ================== MULTI-REGION TARGET (OTS) ==================
+function allocateTargetOtsAcrossRegions(totalOts, regions, opts = {}) {
+  if (!regions.length) return [];
+
+  const minShare = opts.minShare ?? 0.10;
+  const maxShare = opts.maxShare ?? 0.70;
+
+  const items = regions.map(r => ({
+    region: r.key,
+    tier: r.tier,
+    w: tierWeight(r.tier),
+    share: 0
+  }));
+
+  const sumW = items.reduce((a, b) => a + b.w, 0) || 1;
+  items.forEach(i => i.share = i.w / sumW);
+
+  // caps
+  items.forEach(i => {
+    if (i.share < minShare) i.share = minShare;
+    if (i.share > maxShare) i.share = maxShare;
+  });
+
+  const sumShares = items.reduce((a, b) => a + b.share, 0) || 1;
+  items.forEach(i => i.share /= sumShares);
+
+  // integer ots
+  let out = items.map(i => ({
+    region: i.region,
+    ots: Math.floor(totalOts * i.share)
+  }));
+
+  // fix rounding to exact total
+  let diff = Math.floor(totalOts) - out.reduce((a, b) => a + b.ots, 0);
+  let k = 0;
+  while (diff !== 0 && k < 100000) {
+    const idx = k % out.length;
+    out[idx].ots += diff > 0 ? 1 : -1;
+    diff += diff > 0 ? -1 : 1;
+    k++;
+  }
+
+  return out;
+}
+
+
 // ===== MAIN =====
 async function onCalcClick() {
   const brief = buildBrief();
@@ -1315,9 +1371,19 @@ async function onCalcClick() {
     return;
   }
 
-  if (brief.budget.mode === "fixed" && (!brief.budget.amount || brief.budget.amount <= 0)) {
-    alert("Введите бюджет или выберите «нужна рекомендация».");
-    return;
+  // ✅ budget validation: fixed / recommendation / goal_ots
+  if (brief.budget.mode === "fixed") {
+    if (!brief.budget.amount || brief.budget.amount <= 0) {
+      alert("Введите бюджет или выберите «нужна рекомендация» / «цель по OTS».");
+      return;
+    }
+  }
+
+  if (brief.budget.mode === "goal_ots") {
+    if (!brief.goal?.ots || brief.goal.ots <= 0) {
+      alert("Введите целевой OTS.");
+      return;
+    }
   }
 
   const days = daysInclusive(brief.dates.start, brief.dates.end);
@@ -1438,25 +1504,33 @@ async function onCalcClick() {
     }
 
     const avgBid = avgNumber(pool.map(s => s.minBid));
-    if (avgBid == null) {
-      perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "нет minBid" });
-      continue;
-    }
-    const bidPlus20 = avgBid * BID_MULTIPLIER;
+if (avgBid == null) {
+  perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "нет minBid" });
+  continue;
+}
+const bidPlus20 = avgBid * BID_MULTIPLIER;
 
-    // абсолютная ёмкость региона, если использовать ВСЕ доступные экраны (после фильтров)
-    const capPlaysAbs = Math.floor(SC_MAX * pool.length * days * hpd);
-    const capBudgetAbs = Math.floor(capPlaysAbs * bidPlus20);
+// ✅ нужно для режима goal_ots
+const avgOts = avgNumber(pool.map(s => s.ots)); // может быть null — это ок
 
-    prepared.push({
-      region,
-      tier,
-      pool,
-      avgBid,
-      bidPlus20,
-      capPlaysAbs,
-      capBudgetAbs
-    });
+// абсолютная ёмкость региона, если использовать ВСЕ доступные экраны (после фильтров)
+const capPlaysAbs = Math.floor(SC_MAX * pool.length * days * hpd);
+const capBudgetAbs = Math.floor(capPlaysAbs * bidPlus20);
+
+// ✅ ёмкость региона по OTS (если OTS есть)
+const capOtsAbs = (avgOts == null) ? null : (capPlaysAbs * avgOts);
+
+prepared.push({
+  region,
+  tier,
+  pool,
+  avgBid,
+  bidPlus20,
+  avgOts,
+  capPlaysAbs,
+  capBudgetAbs,
+  capOtsAbs
+});
   }
 
   if (!prepared.length) {
@@ -1465,37 +1539,78 @@ async function onCalcClick() {
     return;
   }
 
-  // =========================
-  // 2) INITIAL BUDGETS (fixed allocation or recommendation)
-  // =========================
-  const budgets = {}; // region -> planned budget
-  if (brief.budget.mode === "fixed") {
-    const totalBudget = Number(brief.budget.amount);
-    const fixedAllocation = allocateBudgetAcrossRegions(
-      totalBudget,
-      prepared.map(r => ({ key: r.region, tier: getTierForGeo(r.region) })),
-      { minShare: 0.10, maxShare: 0.70 }
-    );
+  // 2) INITIAL BUDGETS (fixed / recommendation / goal_ots)
+// =========================
+const budgets = {}; // region -> planned budget
 
-    for (const r of prepared) {
-      const found = fixedAllocation?.find(x => x.region === r.region);
-      budgets[r.region] = found ? Number(found.budget) : 0;
-    }
-  } else {
-    for (const r of prepared) {
-      // старая логика рекомендации сохраняется, но ограничение по maxBudget оставляем,
-      // и дополнительно потом включится перераспределение.
-      const BASE_MONTHLY_BY_TIER = { M: 2000000, SP: 1500000, A: 1000000, B: 500000, C: 300000, D: 100000 };
-      const baseMonthly = BASE_MONTHLY_BY_TIER[r.tier] ?? BASE_MONTHLY_BY_TIER.C;
-      const baseBudgetForPeriod = Math.floor(baseMonthly * (days / 30));
+if (brief.budget.mode === "fixed") {
+  const totalBudget = Number(brief.budget.amount);
+  const fixedAllocation = allocateBudgetAcrossRegions(
+    totalBudget,
+    prepared.map(r => ({ key: r.region, tier: getTierForGeo(r.region) })),
+    { minShare: 0.10, maxShare: 0.70 }
+  );
 
-      // прежний maxBudget для reco (как было)
-      const maxPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * r.pool.length * days);
-      const maxBudget = maxPlays * r.bidPlus20;
-
-      budgets[r.region] = Math.floor(Math.min(baseBudgetForPeriod, maxBudget));
-    }
+  for (const r of prepared) {
+    const found = fixedAllocation?.find(x => x.region === r.region);
+    budgets[r.region] = found ? Number(found.budget) : 0;
   }
+
+} else if (brief.budget.mode === "goal_ots") {
+  const totalOtsGoal = Number(brief.goal?.ots || 0);
+
+  const goalAllocation = allocateTargetOtsAcrossRegions(
+    totalOtsGoal,
+    prepared.map(r => ({ key: r.region, tier: getTierForGeo(r.region) })),
+    { minShare: 0.10, maxShare: 0.70 }
+  );
+
+  // пересчитываем OTS-цель региона -> plays -> budget (с учётом ёмкости)
+  for (const r of prepared) {
+    const found = goalAllocation?.find(x => x.region === r.region);
+    const targetOtsRegion = found ? Number(found.ots) : 0;
+
+    // если нет данных OTS — бюджет посчитать нельзя
+    if (!Number.isFinite(targetOtsRegion) || targetOtsRegion <= 0) {
+      budgets[r.region] = 0;
+      continue;
+    }
+    if (!Number.isFinite(r.avgOts) || r.avgOts <= 0) {
+      budgets[r.region] = 0;
+      continue;
+    }
+    if (!Number.isFinite(r.bidPlus20) || r.bidPlus20 <= 0) {
+      budgets[r.region] = 0;
+      continue;
+    }
+
+    // plays needed for target ots
+    const requiredPlays = Math.ceil(targetOtsRegion / r.avgOts);
+
+    // ёмкость региона = максимум выходов при использовании ВСЕХ экранов пула
+    const maxPlaysByCapacity = Math.floor(SC_MAX * hpd * days * r.pool.length);
+
+    const feasiblePlays = Math.min(requiredPlays, maxPlaysByCapacity);
+
+    budgets[r.region] = Math.floor(feasiblePlays * r.bidPlus20);
+  }
+
+} else {
+  // recommendation
+  for (const r of prepared) {
+    // старая логика рекомендации сохраняется, но ограничение по maxBudget оставляем
+    const BASE_MONTHLY_BY_TIER = { M: 2000000, SP: 1500000, A: 1000000, B: 500000, C: 300000, D: 100000 };
+    const baseMonthly = BASE_MONTHLY_BY_TIER[r.tier] ?? BASE_MONTHLY_BY_TIER.C;
+    const baseBudgetForPeriod = Math.floor(baseMonthly * (days / 30));
+
+    // прежний maxBudget для reco (как было)
+    const maxPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * r.pool.length * days);
+    const maxBudget = maxPlays * r.bidPlus20;
+
+    budgets[r.region] = Math.floor(Math.min(baseBudgetForPeriod, maxBudget));
+  }
+}
+  
 
   // =========================
   // 3) REDISTRIBUTION BY CAPACITY (важное новое поведение)
