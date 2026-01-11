@@ -1906,12 +1906,7 @@ if (brief.budget.mode === "goal_ots" && typeof __goalPlan === "object" && __goal
   plannedPlaysFromGoal = Number(__goalPlan[region].playsPlanned || 0);
   if (!Number.isFinite(plannedPlaysFromGoal) || plannedPlaysFromGoal <= 0) plannedPlaysFromGoal = null;
 }
-    // ===== plays target & screens needed =====
-let totalPlaysTheory = 0;
 
-// goal_ots: plays считаем от цели OTS (ceil, чтобы цель добрать)
-// ===== Plays theory =====
-let totalPlaysTheory = 0;
 
 // goal_ots: plays считаем от плана (ceil, чтобы цель добрать)
 if (brief.budget.mode === "goal_ots" && goalPlan && goalPlan[region]) {
