@@ -680,7 +680,7 @@ const budgetOk =
       enabled: !!el("grp-enabled")?.checked,
       min: toNumber(el("grp-min")?.value ?? 0),
       max: toNumber(el("grp-max")?.value ?? 9.98)
-    }
+    },
     reachMode: getReachModeFromUI()
   };
 
