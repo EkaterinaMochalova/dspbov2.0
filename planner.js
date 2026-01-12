@@ -2186,6 +2186,34 @@ document.querySelectorAll('input[name="reach_mode"]').forEach(x =>
     });
   }
 
+  // ===== Owners: Clear =====
+const ownerClearBtn = el("owner-clear");
+if (ownerClearBtn) {
+  ownerClearBtn.addEventListener("click", () => {
+    // 1) очистить state
+    if (window.state?.selectedOwners) {
+      state.selectedOwners.clear();
+    }
+
+    // 2) снять все чекбоксы подрядчиков
+    document
+      .querySelectorAll('#owner-wrap input[type="checkbox"]')
+      .forEach(cb => {
+        cb.checked = false;
+      });
+
+    // 3) визуально обновить pills (если используется стиль)
+    document
+      .querySelectorAll('#owner-wrap label')
+      .forEach(l => {
+        l.classList.remove("active");
+      });
+
+    // 4) пересчитать прогресс / кнопку
+    renderProgress();
+  });
+}
+
   const selectionMode = el("selection-mode");
   if (selectionMode) selectionMode.addEventListener("change", renderSelectionExtra);
 
