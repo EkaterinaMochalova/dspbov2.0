@@ -118,6 +118,8 @@ const POI_LABELS = {
   transport: "Транспорт (метро/станции)"
 };
 
+
+
 // ===== Model =====
 const BID_MULTIPLIER = 1.2;
 const SC_OPT = 30;
@@ -147,6 +149,16 @@ const state = {
 };
 
 window.PLANNER.state = state;
+
+function getReachModeFromUI(){
+  return document.querySelector('input[name="reach_mode"]:checked')?.value || "balanced";
+}
+
+function targetPlaysPerHourPerScreen(mode){
+  if (mode === "max_reach") return 10;
+  if (mode === "max_freq") return 60;
+  return 30; // balanced
+}
 
 // ===== Utils =====
 function el(id) { return document.getElementById(id); }
@@ -189,6 +201,10 @@ function getBudgetMode() {
 function getScheduleType() {
   // ожидаемые значения: all_day | peak | custom
   return document.querySelector('input[name="schedule"]:checked')?.value || "all_day";
+}
+
+function getReachModeFromUI(){
+  return document.querySelector('input[name="reach_mode"]:checked')?.value || "balanced";
 }
 
 function parseCSV(text) {
@@ -665,6 +681,7 @@ const budgetOk =
       min: toNumber(el("grp-min")?.value ?? 0),
       max: toNumber(el("grp-max")?.value ?? 9.98)
     }
+    reachMode: getReachModeFromUI()
   };
 
   const qsVal = (sel) => (root.querySelector(sel)?.value ?? "");
@@ -1317,6 +1334,20 @@ function allocateBudgetAcrossRegions(totalBudget, regions, opts) {
   return raw.map(r => ({ region: r.region, budget: r.budget }));
 }
 
+// --- Tier weights (for OTS allocation) ---
+function tierWeight(tier){
+  const t = String(tier ?? "").toUpperCase().trim();
+
+  // подстрой под свою систему tier'ов (A/B/C или 1/2/3)
+  if (t === "A" || t === "1") return 1.00;
+  if (t === "B" || t === "2") return 0.80;
+  if (t === "C" || t === "3") return 0.60;
+
+  // дефолт, если tier неизвестен
+  return 0.70;
+}
+
+
 // ================== MULTI-REGION TARGET (OTS) ==================
 function allocateTargetOtsAcrossRegions(totalOts, regions, opts = {}) {
   if (!regions || !regions.length) return [];
@@ -1487,6 +1518,7 @@ function computeGoalOtsPlan(prepared, totalOtsGoal, opts = {}) {
 // ===== MAIN =====
 async function onCalcClick() {
   const brief = buildBrief();
+  const pphTarget = targetPlaysPerHourPerScreen(brief.reachMode);
 
   if (!brief.dates.start || !brief.dates.end) {
     alert("Выберите даты начала и окончания.");
@@ -1556,6 +1588,7 @@ async function onCalcClick() {
     alert("GeoUtils не найден. Проверь подключение geo.js");
     return;
   }
+  
 
   // =========================
   // 1) PREPARE POOLS PER REGION (POI/GRP/owner/formats applied)
@@ -1856,12 +1889,14 @@ let screensNeeded = screensNeededByCapacity;
 
 if (brief.budget.mode !== "goal_ots") {
   const playsPerHourTotalTheory = totalPlaysTheory / days / hpd;
-  const byOpt =
-    (brief.budget.mode !== "fixed")
-      ? Math.max(1, Math.ceil((playsPerHourTotalTheory) / SC_MAX))
-      : Math.max(1, Math.ceil((playsPerHourTotalTheory) / SC_OPT));
 
-  screensNeeded = Math.max(screensNeededByCapacity, byOpt);
+  // "по стратегии": сколько экранов надо, чтобы средняя нагрузка не превышала pphTarget
+  const byStrategy = Math.max(1, Math.ceil(playsPerHourTotalTheory / Math.max(1, pphTarget)));
+
+  // "по потолку": сколько экранов надо, чтобы не превышать физический лимит SC_MAX
+  const byHardCap = Math.max(1, Math.ceil(playsPerHourTotalTheory / Math.max(1, SC_MAX)));
+
+  screensNeeded = Math.max(screensNeededByCapacity, byStrategy, byHardCap);
 }
 
 // ограничиваем доступным пулом
@@ -1882,9 +1917,9 @@ if (brief.budget.mode === "goal_ots" && goalPlan && goalPlan[region]) {
 } else {
   // твои старые предупреждения можно оставить, но они теперь не нужны как раньше
   const playsPerHourPerScreen = (totalPlaysTheory / days / hpd) / Math.max(1, chosen.length);
-  if (playsPerHourPerScreen > SC_OPT && playsPerHourPerScreen <= SC_MAX) {
-    warnings.push(`⚠️ Регион «${region}»: в среднем ${playsPerHourPerScreen.toFixed(1)} выходов/час на экран (выше оптимальных ${SC_OPT}).`);
-  }
+if (playsPerHourPerScreen > pphTarget && playsPerHourPerScreen <= SC_MAX) {
+  warnings.push(`⚠️ Регион «${region}»: в среднем ${playsPerHourPerScreen.toFixed(1)} выходов/час на экран (выше выбранной стратегии ${pphTarget}).`);
+}
 }
 
     const avgOts = avgNumber(pool.map(s => s.ots));
@@ -2097,7 +2132,9 @@ function bindPlannerUI() {
       if (wrap) wrap.style.display = mode === "fixed" ? "block" : "none";
     });
   });
-
+document.querySelectorAll('input[name="reach_mode"]').forEach(x =>
+  x.addEventListener("change", renderProgress)
+);
   document.querySelectorAll('input[name="schedule"]').forEach(r => {
     r.addEventListener("change", () => {
       const v = getScheduleType();
