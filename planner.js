@@ -425,38 +425,62 @@ function renderSelectedCity() {
 
 // ===== Regions UI (мультивыбор) =====
 function renderSelectedRegions() {
-  const wrap = el("region-selected"); // ✅ отдельный контейнер
+  const wrap = el("region-selected");
   if (!wrap) return;
 
-  if (!Array.isArray(state.selectedRegions)) state.selectedRegions = [];
+  const clearBtn = el("regions-clear");
+
+  const regions = Array.isArray(state.selectedRegions)
+    ? state.selectedRegions.map(r => String(r || "").trim()).filter(Boolean)
+    : [];
+
   wrap.innerHTML = "";
 
-  if (state.selectedRegions.length === 0) {
-    state.selectedRegion = null;
-    wrap.innerHTML = `<div style="font-size:12px; color:#666;">Регион не выбран</div>`;
-    return;
-  }
+  // показать/скрыть "очистить"
+  if (clearBtn) clearBtn.style.display = regions.length ? "inline-block" : "none";
 
-  state.selectedRegions.forEach((region, idx) => {
-    const chip = document.createElement("button");
-    cssButtonBase(chip);
+  regions.forEach((r) => {
+    const chip = document.createElement("div");
+    chip.className = "chip";
     chip.style.display = "inline-flex";
     chip.style.alignItems = "center";
-    chip.style.gap = "6px";
-    chip.textContent = "✕ " + region;
-    if (idx === 0) chip.style.fontWeight = "600";
+    chip.style.gap = "8px";
+    chip.style.padding = "6px 10px";
+    chip.style.border = "1px solid #ddd";
+    chip.style.borderRadius = "999px";
+    chip.style.background = "#fff";
 
-    chip.addEventListener("click", () => {
-      state.selectedRegions = state.selectedRegions.filter(r => r !== region);
-      state.selectedRegion = state.selectedRegions[0] || null;
+    const label = document.createElement("span");
+    label.textContent = r;
+
+    const x = document.createElement("button");
+    x.type = "button";
+    x.textContent = "×";
+    x.setAttribute("aria-label", `Удалить ${r}`);
+    x.style.border = "0";
+    x.style.background = "transparent";
+    x.style.cursor = "pointer";
+    x.style.fontSize = "18px";
+    x.style.lineHeight = "1";
+    x.style.padding = "0 2px";
+
+    x.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      state.selectedRegions = (state.selectedRegions || []).filter(x => String(x).trim() !== r);
+
+      // поддерживаем старое поле single
+      state.selectedRegion = (state.selectedRegions[0] || null);
+
       renderSelectedRegions();
-      renderProgress(); // ✅
+      renderProgress(); // чтобы кнопка "Рассчитать" обновилась
     });
 
+    chip.appendChild(label);
+    chip.appendChild(x);
     wrap.appendChild(chip);
   });
-
-  state.selectedRegion = state.selectedRegions[0] || null;
 }
 
 function renderRegionSuggestions(q) {
@@ -2164,6 +2188,17 @@ document.querySelectorAll('input[name="reach_mode"]').forEach(x =>
 
   const selectionMode = el("selection-mode");
   if (selectionMode) selectionMode.addEventListener("change", renderSelectionExtra);
+
+  const clearRegionsBtn = el("regions-clear");
+if (clearRegionsBtn) {
+  clearRegionsBtn.addEventListener("click", () => {
+    state.selectedRegions = [];
+    state.selectedRegion = null;
+
+    renderSelectedRegions();
+    renderProgress();
+  });
+}
 
 // ===== goal_ots input should re-check calc button =====
 const goalOtsInput = el("goal-ots");
