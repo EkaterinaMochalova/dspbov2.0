@@ -2136,7 +2136,13 @@ function renderProgress() {
   // если хочешь — можно подсказку в статус:
   // if (!ok) setStatus("Заполните: регион, даты, бюджет/OTS и форматы.");
 }
+function renderBudgetHints() {
+  const hint = el("budget-reco-hint");
+  if (!hint) return;
 
+  const mode = getBudgetMode(); // "fixed" | "recommendation" | "goal_ots"
+  hint.style.display = (mode === "recommendation") ? "block" : "none";
+}
 
 // ===== BIND UI =====
 function bindPlannerUI() {
@@ -2150,12 +2156,14 @@ function bindPlannerUI() {
   });
 
   document.querySelectorAll('input[name="budget_mode"]').forEach(r => {
-    r.addEventListener("change", () => {
-      const mode = getBudgetMode();
-      const wrap = el("budget-input-wrap");
-      if (wrap) wrap.style.display = mode === "fixed" ? "block" : "none";
-    });
+  r.addEventListener("change", () => {
+    const mode = getBudgetMode();
+    const wrap = el("budget-input-wrap");
+    if (wrap) wrap.style.display = mode === "fixed" ? "block" : "none";
+
+    renderBudgetHints(); // ✅ добавь
   });
+});
 document.querySelectorAll('input[name="reach_mode"]').forEach(x =>
   x.addEventListener("change", renderProgress)
 );
@@ -2262,6 +2270,7 @@ document.querySelectorAll('input[name="schedule"]').forEach(x => x.addEventListe
 
 // ВАЖНО: первый пересчёт
 renderProgress();
+renderBudgetHints(); // ✅ чтобы при загрузке было правильно  
   
 function regionsReadyNow() {
   if (typeof areRegionsReady === "function") return !!areRegionsReady();
