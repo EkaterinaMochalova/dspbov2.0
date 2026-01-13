@@ -2250,7 +2250,13 @@ const overlay = el("region-overlay");
 const spinner = el("region-spinner");
 const field = el("region-field");
 
-
+const ft = document.getElementById("formats-toggle");
+if (ft) {
+  ft.addEventListener("click", () => {
+    window.PLANNER.ui.formatsExpanded = !window.PLANNER.ui.formatsExpanded;
+    renderFormatsCards();
+  });
+}
 // обновляем кнопку при любом изменении формы
 [
   "date-start","date-end","budget-input","goal-ots",
