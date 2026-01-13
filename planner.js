@@ -2236,6 +2236,17 @@ if (clearRegionsBtn) {
   });
 }
 
+const ft = el("formats-toggle");
+if (ft && !ft.__bound) {
+  ft.__bound = true;
+  ft.addEventListener("click", () => {
+    window.PLANNER = window.PLANNER || {};
+    window.PLANNER.ui = window.PLANNER.ui || {};
+    window.PLANNER.ui.formatsExpanded = !window.PLANNER.ui.formatsExpanded;
+    renderFormatsCards();
+  });
+}
+  
 // ===== goal_ots input should re-check calc button =====
 const goalOtsInput = el("goal-ots");
 if (goalOtsInput) {
