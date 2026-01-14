@@ -1022,6 +1022,56 @@ function cityCenterFromScreens(screens) {
   return { lat, lon };
 }
 
+// ===== Nominatim (geocoding) =====
+const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
+
+async function geocodeAddressNominatim(query) {
+  const q = String(query || "").trim();
+  if (!q) return null;
+
+  const url =
+    `${NOMINATIM_URL}?format=jsonv2&limit=1&addressdetails=0&accept-language=ru&q=` +
+    encodeURIComponent(q);
+
+  console.log("[geo] nominatim request:", url);
+
+  const res = await fetch(url, { method: "GET" });
+  const txt = await res.text();
+
+  if (!res.ok) {
+    throw new Error(`Nominatim HTTP ${res.status}: ${txt.slice(0, 200)}`);
+  }
+
+  let json;
+  try { json = JSON.parse(txt); } catch {
+    throw new Error("Nominatim returned non-JSON: " + txt.slice(0, 200));
+  }
+
+  const hit = Array.isArray(json) && json.length ? json[0] : null;
+  if (!hit) return null;
+
+  const lat = Number(hit.lat);
+  const lon = Number(hit.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+  return { lat, lon };
+}
+
+function pickScreensNearPoint(screens, center, radiusMeters) {
+  const r = Number(radiusMeters || 0);
+  if (!center || !Number.isFinite(center.lat) || !Number.isFinite(center.lon) || !r) return [];
+
+  const dist = window.GeoUtils?.haversineMeters;
+  if (!dist) throw new Error("GeoUtils.haversineMeters is missing (need geo.js)");
+
+  return (screens || []).filter(s => {
+    const slat = Number(s.lat), slon = Number(s.lon);
+    if (!Number.isFinite(slat) || !Number.isFinite(slon)) return false;
+    return dist(slat, slon, center.lat, center.lon) <= r;
+  });
+}
+
+
 // ===== Overpass =====
 const OVERPASS_URLS = [
   "https://overpass.kumi.systems/api/interpreter",
@@ -1607,6 +1657,8 @@ async function onCalcClick() {
   let perRegionRows = [];
 
   const isPOI = (brief.selection?.mode === "poi");
+  const isNearAddress = (brief.selection?.mode === "near_address");
+  
 
   if (isPOI && !window.GeoUtils?.haversineMeters) {
     alert("GeoUtils не найден. Проверь подключение geo.js");
@@ -1671,6 +1723,51 @@ async function onCalcClick() {
       setStatus(`Экраны у POI: ${pool.length} из ${before} (регион: ${region}, POI: ${pois.length})`);
     }
 
+// Near address mode per region
+if (isNearAddress) {
+  const addr = String(brief.selection.address || "").trim();
+  const screenRadius = Number(brief.selection.radius_m || 500);
+
+  if (!addr) {
+    alert("Введите адрес.");
+    setStatus("");
+    return;
+  }
+  if (!window.GeoUtils?.haversineMeters) {
+    alert("GeoUtils не найден. Проверь подключение geo.js");
+    setStatus("");
+    return;
+  }
+
+  setStatus(`Геокодирую адрес: «${addr}»…`);
+
+  let pt = null;
+  try {
+    pt = await geocodeAddressNominatim(addr);
+  } catch (e) {
+    console.error("[geo] nominatim error:", e);
+    alert(e?.message || "Ошибка геокодинга (Nominatim).");
+    setStatus("");
+    return;
+  }
+
+  if (!pt) {
+    alert("Адрес не найден. Попробуй уточнить (город, улица, дом).");
+    setStatus("");
+    return;
+  }
+
+  const before = pool.length;
+  pool = pickScreensNearPoint(pool, pt, screenRadius);
+
+  if (!pool.length) {
+    perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "нет экранов у адреса" });
+    continue;
+  }
+
+  setStatus(`Экраны у адреса: ${pool.length} из ${before} (радиус: ${screenRadius} м)`);
+}
+    
     // GRP filter
     let grpDroppedNoValue = 0;
     if (brief.grp?.enabled) {
