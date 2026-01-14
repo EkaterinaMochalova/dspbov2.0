@@ -736,9 +736,9 @@ const budgetOk =
     brief.selection.radius_m = pickAnyNum(500, "#planner-radius", "#radius");
   }
   if (selectionMode === "route") {
-    brief.selection.from = pickAnyVal("#route-from");
-    brief.selection.to = pickAnyVal("#route-to");
-    brief.selection.radius_m = pickAnyNum(300, "#planner-radius", "#radius");
+  brief.selection.route_from = pickAnyVal("#route-from");
+  brief.selection.route_to   = pickAnyVal("#route-to");
+  brief.selection.radius_m   = pickAnyNum(300, "#planner-radius", "#radius");
   }
 
   if (!Number.isFinite(brief.grp.min)) brief.grp.min = 0;
@@ -794,6 +794,89 @@ function getTierForGeo(name) {
 }
 
 // ===== Helpers =====
+
+async function fetchRouteOSRM(A, B){
+  // A/B: {lat, lon}
+  // public OSRM (быстро для MVP). Для проды лучше свой/платный роутер.
+  const url =
+    "https://router.project-osrm.org/route/v1/driving/" +
+    `${A.lon},${A.lat};${B.lon},${B.lat}` +
+    "?overview=full&geometries=geojson";
+
+  const r = await fetch(url, { method: "GET" });
+  if(!r.ok) throw new Error("OSRM HTTP " + r.status);
+  const j = await r.json();
+
+  const coords = j?.routes?.[0]?.geometry?.coordinates;
+  if(!Array.isArray(coords) || coords.length < 2) return null;
+
+  // coords: array of [lon,lat]
+  return coords;
+}
+
+function getLatLon(s){
+  const lat = Number(
+    s?.lat ?? s?.LAT ?? s?.latitude ?? s?.Latitude ?? s?.y ?? s?.Y
+  );
+  const lon = Number(
+    s?.lon ?? s?.LON ?? s?.lng ?? s?.longitude ?? s?.Longitude ?? s?.x ?? s?.X
+  );
+  if(!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return { lat, lon };
+}
+
+function pickScreensNearPolyline(screens, lineLonLat, radiusM){
+  const out = [];
+  for(const s of screens){
+    const p = getLatLon(s);
+    if(!p) continue;
+
+    const d = distancePointToPolylineMeters({lon:p.lon, lat:p.lat}, lineLonLat);
+    if(d <= radiusM) out.push(s);
+  }
+  return out;
+}
+
+function distancePointToPolylineMeters(P, line){
+  // P: {lon,lat}, line: [[lon,lat],...]
+  let best = Infinity;
+  for(let i=0; i<line.length-1; i++){
+    const A = { lon: line[i][0],   lat: line[i][1] };
+    const B = { lon: line[i+1][0], lat: line[i+1][1] };
+    const d = distancePointToSegmentMeters(P, A, B);
+    if(d < best) best = d;
+  }
+  return best;
+}
+
+function distancePointToSegmentMeters(P, A, B){
+  // local projection (equirectangular)
+  const R = 6371000;
+  const lat0 = (A.lat + B.lat) * 0.5 * Math.PI/180;
+
+  const ax = A.lon * Math.PI/180 * Math.cos(lat0) * R;
+  const ay = A.lat * Math.PI/180 * R;
+  const bx = B.lon * Math.PI/180 * Math.cos(lat0) * R;
+  const by = B.lat * Math.PI/180 * R;
+  const px = P.lon * Math.PI/180 * Math.cos(lat0) * R;
+  const py = P.lat * Math.PI/180 * R;
+
+  const abx = bx - ax, aby = by - ay;
+  const apx = px - ax, apy = py - ay;
+  const ab2 = abx*abx + aby*aby;
+
+  let t = (ab2 === 0) ? 0 : (apx*abx + apy*aby) / ab2;
+  t = Math.max(0, Math.min(1, t));
+
+  const cx = ax + t*abx;
+  const cy = ay + t*aby;
+
+  const dx = px - cx;
+  const dy = py - cy;
+  return Math.sqrt(dx*dx + dy*dy);
+}
+
+
 function pickScreensByMinBid(screens, n) {
   const sorted = [...screens].sort((a, b) => {
     const aa = Number.isFinite(a.minBid) ? a.minBid : 1e18;
@@ -1767,6 +1850,62 @@ if (isNearAddress) {
 
   setStatus(`Экраны у адреса: ${pool.length} из ${before} (радиус: ${screenRadius} м)`);
 }
+
+
+    // ROUTE mode per region
+    if (brief.selection?.mode === "route") {
+      const fromTxt = String(brief.selection.route_from || "").trim();
+      const toTxt   = String(brief.selection.route_to || "").trim();
+      const screenRadius = Number(brief.selection.radius_m || 300);
+
+      if (!fromTxt || !toTxt) {
+        perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "не задан маршрут" });
+        continue;
+      }
+
+      setStatus(`Маршрут для региона «${region}»: ${fromTxt} → ${toTxt}…`);
+
+      let A = null, B = null, routeLine = null;
+      try {
+        A = await geocodeAddressNominatim(fromTxt, region);
+        B = await geocodeAddressNominatim(toTxt, region);
+      } catch (e) {
+        console.error("[route] geocode error:", e);
+      }
+
+      if (!A || !B || !Number.isFinite(A.lat) || !Number.isFinite(A.lon) || !Number.isFinite(B.lat) || !Number.isFinite(B.lon)) {
+        perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "точки маршрута не найдены" });
+        warnings.push(`⚠️ Регион «${region}»: не удалось геокодировать маршрут (${fromTxt} → ${toTxt}).`);
+        continue;
+      }
+
+      try {
+        // OSRM: вернёт массив координат [lon,lat] (GeoJSON LineString)
+        routeLine = await fetchRouteOSRM(A, B);
+      } catch (e) {
+        console.error("[route] osrm error:", e);
+      }
+
+      // если OSRM недоступен (CORS/сеть) — хотя бы прямой отрезок A-B (fallback)
+      if (!Array.isArray(routeLine) || routeLine.length < 2) {
+        routeLine = [[A.lon, A.lat], [B.lon, B.lat]];
+        warnings.push(`⚠️ Регион «${region}»: OSRM недоступен, использую прямую линию A–B.`);
+      }
+
+      const before = pool.length;
+      pool = pickScreensNearPolyline(pool, routeLine, screenRadius);
+
+      if (!pool.length) {
+        perRegionRows.push({ region, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "нет экранов у маршрута" });
+        continue;
+      }
+
+      setStatus(`Экраны у маршрута: ${pool.length} из ${before} (радиус: ${screenRadius}м)`);
+    }
+
+    // GRP filter
+
+
     
     // GRP filter
     let grpDroppedNoValue = 0;
