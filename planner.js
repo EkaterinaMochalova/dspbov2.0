@@ -2243,7 +2243,10 @@ if (ft && !ft.__bound) {
     window.PLANNER = window.PLANNER || {};
     window.PLANNER.ui = window.PLANNER.ui || {};
     window.PLANNER.ui.formatsExpanded = !window.PLANNER.ui.formatsExpanded;
-    renderFormatsCards();
+
+    if (typeof window.renderFormatsCards === "function") {
+      window.renderFormatsCards();
+    }
   });
 }
   
