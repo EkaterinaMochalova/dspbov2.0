@@ -2219,6 +2219,8 @@ if (ownerClearBtn) {
 
     // 4) пересчитать прогресс / кнопку
     renderProgress();
+    updateOwnerSelectedCount();
+updateOwnerCollapseUI();
   });
 }
 
@@ -2235,7 +2237,70 @@ if (clearRegionsBtn) {
     renderProgress();
   });
 }
-  
+// ===== Owners: Collapse / Expand =====
+function updateOwnerSelectedCount() {
+  const elCount = el("owner-selected-count");
+  if (!elCount) return;
+
+  const selected = (state?.selectedOwners && typeof state.selectedOwners.size === "number")
+    ? state.selectedOwners.size
+    : document.querySelectorAll('#owner-wrap input[type="checkbox"]:checked').length;
+
+  elCount.textContent = selected ? `Выбрано: ${selected}` : "";
+}
+
+function updateOwnerCollapseUI() {
+  window.PLANNER = window.PLANNER || {};
+  window.PLANNER.ui = window.PLANNER.ui || {};
+  if (typeof window.PLANNER.ui.ownersExpanded !== "boolean") window.PLANNER.ui.ownersExpanded = false;
+
+  const wrap = el("owner-wrap");
+  const btn = el("owner-toggle");
+  if (!wrap || !btn) return;
+
+  const expanded = !!window.PLANNER.ui.ownersExpanded;
+
+  // ставим/снимаем класс свёрнутого состояния
+  wrap.classList.toggle("owner-collapsed", !expanded);
+
+  // показывать кнопку только если реально есть что раскрывать
+  // (после классов свёртки scrollHeight может меняться — проверяем “натуральную” высоту)
+  const natural = wrap.scrollHeight;        // полная высота
+  const limit = 128;                        // должно совпадать с CSS max-height
+
+  const needToggle = natural > (limit + 10);
+  btn.style.display = needToggle ? "inline-flex" : "none";
+  btn.textContent = expanded ? "Свернуть операторов" : "Показать всех операторов";
+}
+
+// клик по кнопке
+const ownerToggle = el("owner-toggle");
+if (ownerToggle && !ownerToggle.__bound) {
+  ownerToggle.__bound = true;
+  ownerToggle.addEventListener("click", () => {
+    window.PLANNER = window.PLANNER || {};
+    window.PLANNER.ui = window.PLANNER.ui || {};
+    window.PLANNER.ui.ownersExpanded = !window.PLANNER.ui.ownersExpanded;
+    updateOwnerCollapseUI();
+  });
+}
+
+// обновлять счётчик и высоту при изменениях чекбоксов
+const ownerWrap = el("owner-wrap");
+if (ownerWrap && !ownerWrap.__bound) {
+  ownerWrap.__bound = true;
+  ownerWrap.addEventListener("change", () => {
+    updateOwnerSelectedCount();
+    // если список стал больше/меньше — переоценим необходимость кнопки
+    updateOwnerCollapseUI();
+  });
+}
+
+// первичный расчёт после биндинга
+setTimeout(() => {
+  updateOwnerSelectedCount();
+  updateOwnerCollapseUI();
+}, 0);  
 // ===== goal_ots input should re-check calc button =====
 const goalOtsInput = el("goal-ots");
 if (goalOtsInput) {
