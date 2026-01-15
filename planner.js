@@ -887,7 +887,7 @@ function downloadPlanXLSX() {
     ["OTS", (meta?.totalOts == null ? "—" : fmtOts(meta?.totalOts))],
     ["Экраны", fmtInt(chosen.length)],
     [""],
-    ["Карта (OSM)", mapLink || "—"],
+    ["Карта (OSM)", "Открыть карту"],
     [""],
     ["Предупреждения"],
     ...(Array.isArray(warnings) && warnings.length ? warnings.map(w => [String(w)]) : [["—"]])
@@ -934,6 +934,24 @@ function downloadPlanXLSX() {
   const wb = XLSX.utils.book_new();
 
   const wsSummary = XLSX.utils.aoa_to_sheet(summaryAoA);
+  // --- hyperlink for map (Excel-safe) ---
+if (mapLink) {
+  // найдём строку "Карта (OSM)"
+  const range = XLSX.utils.decode_range(wsSummary["!ref"]);
+  for (let R = range.s.r; R <= range.e.r; R++) {
+    const a = wsSummary[XLSX.utils.encode_cell({ r: R, c: 0 })];
+    if (a && String(a.v).trim() === "Карта (OSM)") {
+      const cellAddr = XLSX.utils.encode_cell({ r: R, c: 1 }); // колонка B
+      wsSummary[cellAddr] = wsSummary[cellAddr] || { t: "s", v: "Открыть карту" };
+      wsSummary[cellAddr].t = "s";
+      wsSummary[cellAddr].v = "Открыть карту";
+
+      // ВАЖНО: именно .l (link object), НЕ формула HYPERLINK()
+      wsSummary[cellAddr].l = { Target: mapLink, Tooltip: "Открыть карту с выбранными экранами" };
+      break;
+    }
+  }
+}
   const wsRegions = XLSX.utils.aoa_to_sheet(regionsAoA);
   const wsScreens = XLSX.utils.aoa_to_sheet(screensAoA);
 
@@ -951,6 +969,37 @@ function downloadPlanXLSX() {
   const fname = `plan_${d1 || "start"}_${d2 || "end"}.xlsx`;
 
   XLSX.writeFile(wb, fname);
+}
+
+
+function buildUmapLinkFromScreens(screens){
+  // берём только валидные координаты
+  const pts = (screens || [])
+    .map(s => ({ 
+      lat: Number(s.lat ?? s.latitude), 
+      lon: Number(s.lon ?? s.lng ?? s.longitude),
+      gid: String(s.gid ?? s.GID ?? s.screen_id ?? "").trim()
+    }))
+    .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+
+  if(!pts.length) return "";
+
+  // GeoJSON FeatureCollection (минимальный)
+  const geojson = {
+    type: "FeatureCollection",
+    features: pts.map(p => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [p.lon, p.lat] },
+      properties: p.gid ? { name: p.gid } : {}
+    }))
+  };
+
+  // ВАЖНО: encodeURIComponent, без пробелов/переносов
+  const data = encodeURIComponent(JSON.stringify(geojson));
+
+  // uMap (OSM) откроет карту со всеми точками
+  // (надёжнее, чем пытаться запихнуть все точки в openstreetmap.org)
+  return `https://umap.openstreetmap.fr/ru/map/new/?data=${data}`;
 }
 
 function distancePointToPolylineMeters(P, line){
