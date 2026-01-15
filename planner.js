@@ -2710,6 +2710,7 @@ if (planBtn && !planBtn.__bound) {
     downloadPlanXlsx(lc);
   });
 }
+  }
 
 // ===== Owners: Collapse / Expand =====
 function updateOwnerSelectedCount() {
