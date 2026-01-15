@@ -1130,6 +1130,96 @@ function downloadPOIsXLSX(pois) {
   XLSX.writeFile(wb, "pois.xlsx");
 }
 
+function downloadPlanXlsx(lastCalc) {
+  if (!lastCalc) return;
+
+  if (typeof XLSX === "undefined") {
+    alert("XLSX не подключён. Проверь <script src=...xlsx.full.min.js> в HTML.");
+    return;
+  }
+
+  const brief = lastCalc.brief || {};
+  const meta = lastCalc.meta || {};
+  const perRegion = Array.isArray(lastCalc.perRegion) ? lastCalc.perRegion : [];
+  const chosen = Array.isArray(lastCalc.chosen) ? lastCalc.chosen : [];
+  const warnings = Array.isArray(lastCalc.warnings) ? lastCalc.warnings : [];
+
+  const nf = (n) => (Number.isFinite(n) ? Math.floor(n).toLocaleString("ru-RU") : "—");
+  const rf = (n) => (Number.isFinite(n) ? Math.round(n).toLocaleString("ru-RU") : "—");
+
+  // ===== Sheet 1: Summary =====
+  const summaryRows = [
+    ["План размещения (MVP)"],
+    [""],
+    ["Период", `${brief?.dates?.start || "—"} → ${brief?.dates?.end || "—"}`],
+    ["Дней", meta.days ?? "—"],
+    ["Часов/день", meta.hpd ?? "—"],
+    ["Регионы", (brief?.geo?.regions || []).join(", ") || "—"],
+    ["Режим бюджета", brief?.budget?.mode || "—"],
+    ["Бюджет (итого), ₽", nf(meta.totalBudget)],
+    ["Выходов (итого)", nf(meta.totalPlays)],
+    ["OTS (итого)", meta.totalOts == null ? "—" : rf(meta.totalOts)],
+    [""],
+    ["Подбор", brief?.selection?.mode || "—"],
+    ["GRP фильтр", brief?.grp?.enabled ? `${brief.grp.min}–${brief.grp.max}` : "нет"],
+    [""],
+    ["Предупреждения"],
+    ...warnings.slice(0, 50).map(w => [w])
+  ];
+
+  const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+  wsSummary["!cols"] = [{ wch: 28 }, { wch: 80 }];
+
+  // ===== Sheet 2: Per-region =====
+  const prHeader = ["Регион", "Tier", "Бюджет, ₽", "Экранов", "Выходов", "OTS", "Комментарий"];
+  const prRows = perRegion.map(r => ([
+    String(r.region || ""),
+    String(r.tier || ""),
+    Number.isFinite(r.budget) ? Math.floor(r.budget) : "",
+    Number.isFinite(r.screens) ? Math.floor(r.screens) : "",
+    Number.isFinite(r.plays) ? Math.floor(r.plays) : "",
+    (r.ots == null || !Number.isFinite(r.ots)) ? "" : Math.round(r.ots),
+    String(r.note || "")
+  ]));
+
+  const wsPerRegion = XLSX.utils.aoa_to_sheet([prHeader, ...prRows]);
+  wsPerRegion["!cols"] = [
+    { wch: 26 }, { wch: 6 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 28 }
+  ];
+
+  // ===== Sheet 3: Screens =====
+  const scHeader = ["screen_id", "GID", "region", "format", "owner", "minBid", "ots", "grp", "address", "lat", "lon"];
+  const scRows = chosen.map(s => ([
+    s.screen_id ?? "",
+    s.gid ?? s.GID ?? "",
+    s.region ?? "",
+    s.format ?? "",
+    s.owner ?? s.OWNER ?? s.operator ?? "",
+    Number.isFinite(s.minBid) ? s.minBid : "",
+    Number.isFinite(s.ots) ? s.ots : "",
+    Number.isFinite(s.grp) ? s.grp : "",
+    s.address ?? "",
+    Number.isFinite(s.lat) ? s.lat : "",
+    Number.isFinite(s.lon) ? s.lon : ""
+  ]));
+
+  const wsScreens = XLSX.utils.aoa_to_sheet([scHeader, ...scRows]);
+  wsScreens["!cols"] = [
+    { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 24 },
+    { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 40 }, { wch: 10 }, { wch: 10 }
+  ];
+
+  // ===== Workbook =====
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, wsSummary, "Summary");
+  XLSX.utils.book_append_sheet(wb, wsPerRegion, "By region");
+  XLSX.utils.book_append_sheet(wb, wsScreens, "Screens");
+
+  const fname = `plan_${(brief?.dates?.start || "start")}_${(brief?.dates?.end || "end")}.xlsx`;
+  XLSX.writeFile(wb, fname);
+}
+
+
 function clearPhotosCarousel() {
   const box = document.getElementById("screens-photos");
   const row = document.getElementById("screens-photos-row");
@@ -2604,16 +2694,21 @@ if (clearRegionsBtn) {
   });
 
   // ===== Download plan (xlsx) =====
+// ===== Download plan (xlsx) =====
 const planBtn = el("download-plan-xlsx");
 if (planBtn && !planBtn.__bound) {
   planBtn.__bound = true;
-  planBtn.disabled = true; // до первого успешного расчёта
+  planBtn.disabled = true; // включим после расчёта
+
   planBtn.addEventListener("click", () => {
     const lc = window.PLANNER?.lastCalc;
     if (!lc) return alert("Сначала нажмите «Рассчитать».");
-    downloadPlanXlsx(lc); // эту функцию сделаем/подключим
+
+    if (typeof downloadPlanXlsx !== "function") {
+      return alert("downloadPlanXlsx не найден. Проверь, что функция добавлена в planner.js и XLSX подключён.");
+    }
+    downloadPlanXlsx(lc);
   });
-}
 }
 
 // ===== Owners: Collapse / Expand =====
