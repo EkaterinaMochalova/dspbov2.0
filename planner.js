@@ -1130,11 +1130,11 @@ function downloadPOIsXLSX(pois) {
   XLSX.writeFile(wb, "pois.xlsx");
 }
 
-function downloadPlanXlsx(lastCalc) {
+async function downloadPlanXlsx(lastCalc) {
   if (!lastCalc) return;
 
-  if (typeof XLSX === "undefined") {
-    alert("XLSX не подключён. Проверь <script src=...xlsx.full.min.js> в HTML.");
+  if (typeof ExcelJS === "undefined") {
+    alert("ExcelJS не подключён. Проверь <script src=...exceljs.min.js> в HTML.");
     return;
   }
 
@@ -1142,81 +1142,359 @@ function downloadPlanXlsx(lastCalc) {
   const meta = lastCalc.meta || {};
   const perRegion = Array.isArray(lastCalc.perRegion) ? lastCalc.perRegion : [];
   const chosen = Array.isArray(lastCalc.chosen) ? lastCalc.chosen : [];
-  const warnings = Array.isArray(lastCalc.warnings) ? lastCalc.warnings : [];
 
+  // ---------- helpers ----------
+  const safeStr = (v) => String(v ?? "").trim();
   const nf = (n) => (Number.isFinite(n) ? Math.floor(n).toLocaleString("ru-RU") : "—");
-  const rf = (n) => (Number.isFinite(n) ? Math.round(n).toLocaleString("ru-RU") : "—");
+  const of = (n) => (Number.isFinite(n) ? Math.round(n).toLocaleString("ru-RU") : "—");
+  const money = (n) => (Number.isFinite(n) ? `${Math.floor(n).toLocaleString("ru-RU")} ₽` : "—");
 
-  // ===== Sheet 1: Summary =====
-  const summaryRows = [
-    ["План размещения (MVP)"],
-    [""],
-    ["Период", `${brief?.dates?.start || "—"} → ${brief?.dates?.end || "—"}`],
-    ["Дней", meta.days ?? "—"],
-    ["Часов/день", meta.hpd ?? "—"],
-    ["Регионы", (brief?.geo?.regions || []).join(", ") || "—"],
-    ["Режим бюджета", brief?.budget?.mode || "—"],
-    ["Бюджет (итого), ₽", nf(meta.totalBudget)],
-    ["Выходов (итого)", nf(meta.totalPlays)],
-    ["OTS (итого)", meta.totalOts == null ? "—" : rf(meta.totalOts)],
-    [""],
-    ["Подбор", brief?.selection?.mode || "—"],
-    ["GRP фильтр", brief?.grp?.enabled ? `${brief.grp.min}–${brief.grp.max}` : "нет"],
-    [""],
-    ["Предупреждения"],
-    ...warnings.slice(0, 50).map(w => [w])
+  function getFormatsTextFromBrief() {
+    const fm = brief?.formats?.mode || "auto";
+    const sel = Array.isArray(brief?.formats?.selected) ? brief.formats.selected : [];
+    if (fm === "auto") return "Рекомендация";
+    if (sel.length) return sel.join(", ");
+    return "—";
+  }
+
+  // “расписание” красиво
+  function getScheduleText() {
+    const t = brief?.schedule?.type || brief?.schedule || "—";
+    if (t === "all_day") return "Весь день (07:00–22:00)";
+    if (t === "peak") return "Часы пик (07:00–10:00 / 17:00–21:00)";
+    if (t === "custom") {
+      const a = safeStr(brief?.schedule?.from) || safeStr(brief?.schedule?.time_from) || safeStr(brief?.schedule?.start) || "";
+      const b = safeStr(brief?.schedule?.to) || safeStr(brief?.schedule?.time_to) || safeStr(brief?.schedule?.end) || "";
+      return `Своё время (${a || "—"}–${b || "—"})`;
+    }
+    return safeStr(t);
+  }
+
+  // Ссылка на карту: соберём bbox/центр из выбранных экранов и дадим OSM ссылку
+  function buildMapLinkFromChosenScreens(screens) {
+    const pts = (Array.isArray(screens) ? screens : [])
+      .map(s => ({
+        lat: Number(s.lat ?? s.latitude),
+        lon: Number(s.lon ?? s.lng ?? s.longitude)
+      }))
+      .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+
+    if (!pts.length) return null;
+
+    let minLat = pts[0].lat, maxLat = pts[0].lat, minLon = pts[0].lon, maxLon = pts[0].lon;
+    for (const p of pts) {
+      if (p.lat < minLat) minLat = p.lat;
+      if (p.lat > maxLat) maxLat = p.lat;
+      if (p.lon < minLon) minLon = p.lon;
+      if (p.lon > maxLon) maxLon = p.lon;
+    }
+
+    const cLat = (minLat + maxLat) / 2;
+    const cLon = (minLon + maxLon) / 2;
+
+    // OSM: маркер в центре + bbox (удобно для обзора)
+    const url = `https://www.openstreetmap.org/?mlat=${cLat}&mlon=${cLon}#map=11/${cLat}/${cLon}`;
+    return url;
+  }
+
+  const mapLink = buildMapLinkFromChosenScreens(chosen);
+
+  const regionsText = Array.isArray(brief?.geo?.regions) && brief.geo.regions.length
+    ? brief.geo.regions.join(", ")
+    : safeStr(brief?.geo?.region) || "—";
+
+  const formatsText = getFormatsTextFromBrief();
+  const scheduleText = getScheduleText();
+
+  const totalScreens = chosen.length;
+  const totalBudget = Number(meta.totalBudget); // ты уже фиксила на totalBudgetFinal
+  const totalPlays = Number(meta.totalPlays);
+  const totalOts = meta.totalOts == null ? null : Number(meta.totalOts);
+
+  // Если в perRegion лежит note/пустые строки — уберём “мусор”
+  const perRegionClean = perRegion
+    .filter(r => Number(r.screens || 0) > 0 || Number(r.budget || 0) > 0 || Number(r.plays || 0) > 0 || (r.ots != null))
+    .slice()
+    .sort((a, b) => Number(b.budget || 0) - Number(a.budget || 0));
+
+  // Для “форматы по региону” (сейчас у тебя нет perRegion.formats)
+  // Сделаем из chosen: region -> top formats
+  const formatsByRegion = {};
+  for (const s of chosen) {
+    const r = safeStr(s.region);
+    const f = safeStr(s.format);
+    if (!r || !f) continue;
+    formatsByRegion[r] = formatsByRegion[r] || {};
+    formatsByRegion[r][f] = (formatsByRegion[r][f] || 0) + 1;
+  }
+  function formatsSummaryForRegion(region) {
+    const m = formatsByRegion[region];
+    if (!m) return "—";
+    const arr = Object.entries(m).sort((a, b) => b[1] - a[1]);
+    // покажем топ-3 формата (чтобы не превращать в простыню)
+    return arr.slice(0, 3).map(([k, v]) => `${k} (${v})`).join(", ");
+  }
+
+  // ---------- workbook ----------
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Omni Planner";
+  wb.created = new Date();
+
+  // ========== Styles ==========
+  const COLOR_BG = "0F172A";     // тёмный (шапки)
+  const COLOR_BG2 = "F1F5F9";    // светлый фон
+  const COLOR_ACCENT = "2563EB"; // синий
+  const COLOR_GRID = "E2E8F0";
+
+  const headerFill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_BG } };
+  const headerFont = { name: "Inter", size: 12, bold: true, color: { argb: "FFFFFF" } };
+  const subHeaderFill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_BG2 } };
+  const subHeaderFont = { name: "Inter", size: 11, bold: true, color: { argb: "0F172A" } };
+  const baseFont = { name: "Inter", size: 11, color: { argb: "0F172A" } };
+
+  function styleCellBase(cell) {
+    cell.font = baseFont;
+    cell.alignment = { vertical: "middle", wrapText: true };
+  }
+  function borderThin(cell) {
+    cell.border = {
+      top: { style: "thin", color: { argb: COLOR_GRID } },
+      left: { style: "thin", color: { argb: COLOR_GRID } },
+      bottom: { style: "thin", color: { argb: COLOR_GRID } },
+      right: { style: "thin", color: { argb: COLOR_GRID } }
+    };
+  }
+
+  // =========================
+  // Sheet 1: План
+  // =========================
+  const wsPlan = wb.addWorksheet("План", { views: [{ state: "frozen", xSplit: 0, ySplit: 6 }] });
+
+  wsPlan.columns = [
+    { key: "k", width: 26 },
+    { key: "v", width: 56 },
+    { key: "x", width: 2 },
+    { key: "k2", width: 22 },
+    { key: "v2", width: 26 }
   ];
 
-  const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
-  wsSummary["!cols"] = [{ wch: 28 }, { wch: 80 }];
+  // Title row
+  wsPlan.mergeCells("A1:E1");
+  wsPlan.getCell("A1").value = "План размещения";
+  wsPlan.getCell("A1").fill = headerFill;
+  wsPlan.getCell("A1").font = { name: "Inter", size: 16, bold: true, color: { argb: "FFFFFF" } };
+  wsPlan.getCell("A1").alignment = { vertical: "middle", horizontal: "left" };
+  wsPlan.getRow(1).height = 28;
 
-  // ===== Sheet 2: Per-region =====
-  const prHeader = ["Регион", "Tier", "Бюджет, ₽", "Экранов", "Выходов", "OTS", "Комментарий"];
-  const prRows = perRegion.map(r => ([
-    String(r.region || ""),
-    String(r.tier || ""),
-    Number.isFinite(r.budget) ? Math.floor(r.budget) : "",
-    Number.isFinite(r.screens) ? Math.floor(r.screens) : "",
-    Number.isFinite(r.plays) ? Math.floor(r.plays) : "",
-    (r.ots == null || !Number.isFinite(r.ots)) ? "" : Math.round(r.ots),
-    String(r.note || "")
-  ]));
+  // Subtitle
+  wsPlan.mergeCells("A2:E2");
+  wsPlan.getCell("A2").value = "Сводные параметры и разбивка по регионам";
+  wsPlan.getCell("A2").fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_ACCENT } };
+  wsPlan.getCell("A2").font = { name: "Inter", size: 12, bold: true, color: { argb: "FFFFFF" } };
+  wsPlan.getRow(2).height = 20;
 
-  const wsPerRegion = XLSX.utils.aoa_to_sheet([prHeader, ...prRows]);
-  wsPerRegion["!cols"] = [
-    { wch: 26 }, { wch: 6 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 28 }
+  // KPI block header
+  wsPlan.mergeCells("A4:B4");
+  wsPlan.getCell("A4").value = "Параметры";
+  wsPlan.getCell("A4").fill = subHeaderFill;
+  wsPlan.getCell("A4").font = subHeaderFont;
+  wsPlan.getCell("A4").alignment = { vertical: "middle" };
+
+  wsPlan.mergeCells("D4:E4");
+  wsPlan.getCell("D4").value = "Итог";
+  wsPlan.getCell("D4").fill = subHeaderFill;
+  wsPlan.getCell("D4").font = subHeaderFont;
+  wsPlan.getCell("D4").alignment = { vertical: "middle" };
+
+  // rows: left side params, right side totals
+  const rows = [
+    ["Период", `${safeStr(brief?.dates?.start) || "—"} → ${safeStr(brief?.dates?.end) || "—"}`, "","Бюджет", money(totalBudget)],
+    ["Дней", meta.days ?? "—", "", "Выходы", nf(totalPlays)],
+    ["Часов/день", meta.hpd ?? "—", "", "OTS", (totalOts == null ? "—" : of(totalOts))],
+    ["Расписание", scheduleText, "", "Экранов", nf(totalScreens)],
+    ["Регионы", regionsText, "", "Форматы", formatsText]
   ];
 
-  // ===== Sheet 3: Screens =====
-  const scHeader = ["screen_id", "GID", "region", "format", "owner", "minBid", "ots", "grp", "address", "lat", "lon"];
-  const scRows = chosen.map(s => ([
-    s.screen_id ?? "",
-    s.gid ?? s.GID ?? "",
-    s.region ?? "",
-    s.format ?? "",
-    s.owner ?? s.OWNER ?? s.operator ?? "",
-    Number.isFinite(s.minBid) ? s.minBid : "",
-    Number.isFinite(s.ots) ? s.ots : "",
-    Number.isFinite(s.grp) ? s.grp : "",
-    s.address ?? "",
-    Number.isFinite(s.lat) ? s.lat : "",
-    Number.isFinite(s.lon) ? s.lon : ""
-  ]));
+  let startRow = 5;
+  for (let i = 0; i < rows.length; i++) {
+    const r = wsPlan.getRow(startRow + i);
+    r.values = [null, ...rows[i]]; // exceljs row.values is 1-based
+    r.height = 18;
 
-  const wsScreens = XLSX.utils.aoa_to_sheet([scHeader, ...scRows]);
-  wsScreens["!cols"] = [
-    { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 24 },
-    { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 40 }, { wch: 10 }, { wch: 10 }
+    // style all cells in row
+    ["A", "B", "C", "D", "E"].forEach(col => {
+      const cell = wsPlan.getCell(`${col}${startRow + i}`);
+      styleCellBase(cell);
+      borderThin(cell);
+      if (col === "A" || col === "D") {
+        cell.font = { ...baseFont, bold: true };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFFF" } };
+      }
+      if (col === "C") {
+        cell.border = undefined;
+        cell.fill = undefined;
+      }
+    });
+  }
+
+  // Map link row
+  const mapRow = startRow + rows.length + 1;
+  wsPlan.mergeCells(`A${mapRow}:B${mapRow}`);
+  wsPlan.getCell(`A${mapRow}`).value = "Ссылка на карту";
+  wsPlan.getCell(`A${mapRow}`).font = { ...baseFont, bold: true };
+  wsPlan.getCell(`A${mapRow}`).fill = subHeaderFill;
+  wsPlan.getCell(`A${mapRow}`).alignment = { vertical: "middle" };
+  borderThin(wsPlan.getCell(`A${mapRow}`));
+  borderThin(wsPlan.getCell(`B${mapRow}`));
+
+  wsPlan.mergeCells(`D${mapRow}:E${mapRow}`);
+  const linkCell = wsPlan.getCell(`D${mapRow}`);
+  linkCell.value = mapLink
+    ? { text: "Открыть карту (OSM)", hyperlink: mapLink }
+    : "— (нет координат выбранных экранов)";
+  linkCell.font = mapLink ? { ...baseFont, color: { argb: "1D4ED8" }, underline: true } : baseFont;
+  linkCell.fill = subHeaderFill;
+  linkCell.alignment = { vertical: "middle" };
+  borderThin(wsPlan.getCell(`D${mapRow}`));
+  borderThin(wsPlan.getCell(`E${mapRow}`));
+
+  // Regions table header
+  const tblHeaderRow = mapRow + 2;
+  wsPlan.getRow(tblHeaderRow).values = [null, "Регион", "Экранов", "Форматы (топ-3)", "Бюджет, ₽", "Выходы", "OTS"];
+  // we have only A-E columns defined; so instead we'll use A-E and keep it compact:
+  // Let's put table in A..E: Region | Screens | Formats | Budget | Plays/OTS (merged)
+  // Simpler: A Region, B Screens, C Formats, D Budget, E "Выходы / OTS"
+  wsPlan.getRow(tblHeaderRow).values = [null, "Регион", "Экранов", "Форматы (топ-3)", "Бюджет, ₽", "Выходы / OTS"];
+  wsPlan.getRow(tblHeaderRow).height = 20;
+
+  ["A","B","C","D","E"].forEach((col, idx) => {
+    const cell = wsPlan.getCell(`${col}${tblHeaderRow}`);
+    cell.value = ["Регион","Экранов","Форматы (топ-3)","Бюджет, ₽","Выходы / OTS"][idx];
+    cell.fill = headerFill;
+    cell.font = headerFont;
+    cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+    borderThin(cell);
+  });
+
+  // Regions rows
+  let rr = tblHeaderRow + 1;
+  for (const r of perRegionClean) {
+    const region = safeStr(r.region);
+    const screens = Number.isFinite(r.screens) ? Math.floor(r.screens) : 0;
+    const budget = Number.isFinite(r.budget) ? Math.floor(r.budget) : 0;
+    const plays = Number.isFinite(r.plays) ? Math.floor(r.plays) : 0;
+    const ots = (r.ots == null || !Number.isFinite(r.ots)) ? null : Math.round(r.ots);
+
+    const formatsR = formatsSummaryForRegion(region);
+
+    wsPlan.getRow(rr).height = 18;
+
+    const rowVals = [
+      region,
+      screens ? nf(screens) : "—",
+      formatsR,
+      budget ? money(budget) : "—",
+      `${plays ? nf(plays) : "—"} / ${ots == null ? "—" : of(ots)}`
+    ];
+
+    ["A","B","C","D","E"].forEach((col, i) => {
+      const cell = wsPlan.getCell(`${col}${rr}`);
+      cell.value = rowVals[i];
+      styleCellBase(cell);
+      borderThin(cell);
+      if (i === 1) cell.alignment = { vertical: "middle", horizontal: "right" };
+      if (i === 3 || i === 4) cell.alignment = { vertical: "middle", horizontal: "right" };
+    });
+
+    rr++;
+  }
+
+  // Make column widths nicer
+  wsPlan.getColumn("A").width = 28;
+  wsPlan.getColumn("B").width = 10;
+  wsPlan.getColumn("C").width = 42;
+  wsPlan.getColumn("D").width = 16;
+  wsPlan.getColumn("E").width = 18;
+
+  // =========================
+  // Sheet 2: Экраны
+  // =========================
+  const wsScreens = wb.addWorksheet("Экраны", { views: [{ state: "frozen", xSplit: 0, ySplit: 1 }] });
+
+  wsScreens.columns = [
+    { header: "GID", key: "gid", width: 18 },
+    { header: "screen_id", key: "screen_id", width: 14 },
+    { header: "region", key: "region", width: 18 },
+    { header: "format", key: "format", width: 18 },
+    { header: "owner", key: "owner", width: 24 },
+    { header: "minBid", key: "minBid", width: 10 },
+    { header: "ots", key: "ots", width: 10 },
+    { header: "grp", key: "grp", width: 8 },
+    { header: "address", key: "address", width: 42 },
+    { header: "lat", key: "lat", width: 10 },
+    { header: "lon", key: "lon", width: 10 }
   ];
 
-  // ===== Workbook =====
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, wsSummary, "Summary");
-  XLSX.utils.book_append_sheet(wb, wsPerRegion, "By region");
-  XLSX.utils.book_append_sheet(wb, wsScreens, "Screens");
+  // Style header row
+  const hdr = wsScreens.getRow(1);
+  hdr.height = 20;
+  hdr.eachCell((cell) => {
+    cell.fill = headerFill;
+    cell.font = headerFont;
+    cell.alignment = { vertical: "middle", horizontal: "left" };
+    borderThin(cell);
+  });
 
-  const fname = `plan_${(brief?.dates?.start || "start")}_${(brief?.dates?.end || "end")}.xlsx`;
-  XLSX.writeFile(wb, fname);
+  // Add rows
+  for (const s of chosen) {
+    wsScreens.addRow({
+      gid: s.gid ?? s.GID ?? "",
+      screen_id: s.screen_id ?? "",
+      region: s.region ?? "",
+      format: s.format ?? "",
+      owner: s.owner ?? s.OWNER ?? s.operator ?? "",
+      minBid: Number.isFinite(s.minBid) ? s.minBid : "",
+      ots: Number.isFinite(s.ots) ? s.ots : "",
+      grp: Number.isFinite(s.grp) ? s.grp : "",
+      address: s.address ?? "",
+      lat: Number.isFinite(s.lat) ? s.lat : (Number.isFinite(s.latitude) ? s.latitude : ""),
+      lon: Number.isFinite(s.lon) ? s.lon : (Number.isFinite(s.longitude) ? s.longitude : (Number.isFinite(s.lng) ? s.lng : ""))
+    });
+  }
+
+  // Style data rows
+  wsScreens.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+    row.height = 16;
+    row.eachCell((cell) => {
+      styleCellBase(cell);
+      borderThin(cell);
+    });
+  });
+
+  // Autofilter
+  wsScreens.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: wsScreens.columns.length }
+  };
+
+  // ---------- write file ----------
+  const fileName = `plan_${safeStr(brief?.dates?.start) || "start"}_${safeStr(brief?.dates?.end) || "end"}.xlsx`;
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  });
+
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(a.href);
+    a.remove();
+  }, 0);
 }
 
 
