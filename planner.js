@@ -2019,9 +2019,6 @@ if (isNearAddress) {
       setStatus(`Экраны у маршрута: ${pool.length} из ${before} (радиус: ${screenRadius}м)`);
     }
 
-    // GRP filter
-
-
     
     // GRP filter
     let grpDroppedNoValue = 0;
@@ -2284,6 +2281,7 @@ const chosen = pickScreensUniformByGrid(pool, screensChosenCount, 2);
 // ===== plays effective (respect capacity) =====
 const capPlaysByChosen = Math.floor(SC_MAX * chosen.length * days * hpd);
 let totalPlaysEffective = Math.min(totalPlaysTheory, capPlaysByChosen);
+    totalPlaysEffectiveAll += totalPlaysEffective;
 
 if (brief.budget.mode === "goal_ots" && goalPlan && goalPlan[region]) {
   // в goal_ots нам важнее добрать plays, поэтому если не хватает — предупреждаем
@@ -2341,13 +2339,11 @@ if (playsPerHourPerScreen > pphTarget && playsPerHourPerScreen <= SC_MAX) {
     meta: {
       days,
       hpd,
-      totalBudget: totalBudgetAll,
+      totalBudget: totalBudgetFinal,
       totalPlays: totalPlaysEffectiveAll,
       totalOts: (Number.isFinite(otsTotalAll) ? otsTotalAll : null)
     }
   };
-const planBtn = el("download-plan-xlsx");
-if (planBtn) planBtn.disabled = false;
   
   window.dispatchEvent(new CustomEvent("planner:calc-done", {
     detail: { chosen: chosenAll, perRegion: perRegionRows }
@@ -2403,6 +2399,9 @@ ${perRegionText}`
 
   if (el("summary")) el("summary").textContent = summaryText;
   if (el("download-csv")) el("download-csv").disabled = chosenAll.length === 0;
+
+  const planBtn = el("download-plan-xlsx");
+  if (planBtn) planBtn.disabled = chosenAll.length === 0;
 
   if (el("results")) {
     el("results").innerHTML = `
@@ -2603,6 +2602,18 @@ if (clearRegionsBtn) {
     renderSelectedRegions();
     renderProgress();
   });
+
+  // ===== Download plan (xlsx) =====
+const planBtn = el("download-plan-xlsx");
+if (planBtn && !planBtn.__bound) {
+  planBtn.__bound = true;
+  planBtn.disabled = true; // до первого успешного расчёта
+  planBtn.addEventListener("click", () => {
+    const lc = window.PLANNER?.lastCalc;
+    if (!lc) return alert("Сначала нажмите «Рассчитать».");
+    downloadPlanXlsx(lc); // эту функцию сделаем/подключим
+  });
+}
 }
 
 // ===== Owners: Collapse / Expand =====
@@ -2795,12 +2806,6 @@ if (regionSearch) {
   if (poiXlsxBtn) {
     poiXlsxBtn.disabled = true;
     poiXlsxBtn.addEventListener("click", () => downloadPOIsXLSX(window.PLANNER.lastPOIs || []));
-  }
-
-  const planBtn = el("download-plan-xlsx");
-  if (planBtn && !planBtn.__bound) {
-    planBtn.__bound = true;
-    planBtn.addEventListener("click", downloadPlanXLSX);
   }
 
   // ===== Calc =====
