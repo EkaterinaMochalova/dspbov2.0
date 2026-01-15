@@ -837,6 +837,122 @@ function pickScreensNearPolyline(screens, lineLonLat, radiusM){
   return out;
 }
 
+function buildOSMLinkFromScreens(screens) {
+  const pts = (Array.isArray(screens) ? screens : [])
+    .map(s => {
+      const lat = Number(s.lat ?? s.latitude);
+      const lon = Number(s.lon ?? s.lng ?? s.longitude);
+      return (Number.isFinite(lat) && Number.isFinite(lon)) ? { lat, lon } : null;
+    })
+    .filter(Boolean);
+
+  if (!pts.length) return "";
+
+  const lat = pts.reduce((a, p) => a + p.lat, 0) / pts.length;
+  const lon = pts.reduce((a, p) => a + p.lon, 0) / pts.length;
+
+  const z = 10; // можно сделать умнее по bbox, но для MVP ок
+  return `https://www.openstreetmap.org/#map=${z}/${lat.toFixed(6)}/${lon.toFixed(6)}`;
+}
+
+function downloadPlanXLSX() {
+  const calc = window.PLANNER?.lastCalc;
+  if (!calc?.brief || !Array.isArray(calc?.chosen) || !Array.isArray(calc?.perRegion)) {
+    alert("Сначала нажмите «Рассчитать», чтобы сформировать план.");
+    return;
+  }
+
+  const { brief, chosen, perRegion, warnings, meta } = calc;
+
+  const fmtMoney = (n) => (Number.isFinite(n) ? Math.floor(n).toLocaleString("ru-RU") : "—");
+  const fmtInt = (n) => (Number.isFinite(n) ? Math.floor(n).toLocaleString("ru-RU") : "—");
+  const fmtOts = (n) => (Number.isFinite(n) ? Math.round(n).toLocaleString("ru-RU") : "—");
+
+  const mapLink = buildOSMLinkFromScreens(chosen);
+
+  // ===== Sheet 1: Summary =====
+  const summaryAoA = [
+    ["План размещения (экспорт)"],
+    [""],
+    ["Период", `${brief?.dates?.start || "—"} — ${brief?.dates?.end || "—"}`],
+    ["Регионы", (brief?.geo?.regions || []).join(", ") || "—"],
+    ["Расписание", brief?.schedule?.type || "—"],
+    ["Время", (brief?.schedule?.type === "custom") ? `${brief?.schedule?.from || "—"}–${brief?.schedule?.to || "—"}` : "—"],
+    ["Режим расчёта", brief?.budget?.mode || "—"],
+    ["Цель OTS", brief?.goal?.ots ? fmtOts(brief.goal.ots) : "—"],
+    [""],
+    ["Итоги"],
+    ["Бюджет, ₽", fmtMoney(meta?.totalBudget)],
+    ["Выходы", fmtInt(meta?.totalPlays)],
+    ["OTS", (meta?.totalOts == null ? "—" : fmtOts(meta?.totalOts))],
+    ["Экраны", fmtInt(chosen.length)],
+    [""],
+    ["Карта (OSM)", mapLink || "—"],
+    [""],
+    ["Предупреждения"],
+    ...(Array.isArray(warnings) && warnings.length ? warnings.map(w => [String(w)]) : [["—"]])
+  ];
+
+  // ===== Sheet 2: Regions =====
+  const regionsAoA = [
+    ["Регион", "Тир", "Бюджет, ₽", "Экраны", "Выходы", "OTS", "Примечание"]
+  ].concat(
+    (perRegion || [])
+      .slice()
+      .sort((a, b) => Number(b.budget || 0) - Number(a.budget || 0))
+      .map(r => ([
+        r.region || "",
+        r.tier || "",
+        Number.isFinite(r.budget) ? Math.floor(r.budget) : "",
+        Number.isFinite(r.screens) ? Math.floor(r.screens) : "",
+        Number.isFinite(r.plays) ? Math.floor(r.plays) : "",
+        (r.ots == null || !Number.isFinite(r.ots)) ? "" : Math.round(r.ots),
+        r.note || ""
+      ]))
+  );
+
+  // ===== Sheet 3: Screens =====
+  // Берём ключевые поля, чтобы файл был “операционный”
+  const screensAoA = [
+    ["GID", "Регион", "Формат", "Оператор", "Адрес/описание", "Широта", "Долгота", "minBid", "OTS", "GRP"]
+  ].concat(
+    chosen.map(s => ([
+      s.gid ?? s.GID ?? "",
+      s.region ?? "",
+      s.format ?? "",
+      s.owner ?? s.operator ?? s.vendor ?? "",
+      s.address ?? s.title ?? s.name ?? "",
+      Number(s.lat ?? s.latitude) || "",
+      Number(s.lon ?? s.lng ?? s.longitude) || "",
+      Number(s.minBid) || "",
+      Number(s.ots) || "",
+      Number.isFinite(s.grp) ? Number(s.grp) : ""
+    ]))
+  );
+
+  // ===== Build workbook =====
+  const wb = XLSX.utils.book_new();
+
+  const wsSummary = XLSX.utils.aoa_to_sheet(summaryAoA);
+  const wsRegions = XLSX.utils.aoa_to_sheet(regionsAoA);
+  const wsScreens = XLSX.utils.aoa_to_sheet(screensAoA);
+
+  // чуть-чуть “красоты”: ширины колонок
+  wsSummary["!cols"] = [{ wch: 22 }, { wch: 70 }];
+  wsRegions["!cols"] = [{ wch: 26 }, { wch: 6 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 30 }];
+  wsScreens["!cols"] = [{ wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 22 }, { wch: 40 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 8 }];
+
+  XLSX.utils.book_append_sheet(wb, wsSummary, "Сводка");
+  XLSX.utils.book_append_sheet(wb, wsRegions, "Регионы");
+  XLSX.utils.book_append_sheet(wb, wsScreens, "Экраны");
+
+  const d1 = (brief?.dates?.start || "").replaceAll("-", "");
+  const d2 = (brief?.dates?.end || "").replaceAll("-", "");
+  const fname = `plan_${d1 || "start"}_${d2 || "end"}.xlsx`;
+
+  XLSX.writeFile(wb, fname);
+}
+
 function distancePointToPolylineMeters(P, line){
   // P: {lon,lat}, line: [[lon,lat],...]
   let best = Infinity;
@@ -2216,6 +2332,23 @@ if (playsPerHourPerScreen > pphTarget && playsPerHourPerScreen <= SC_MAX) {
 
   state.lastChosen = chosenAll;
 
+  window.PLANNER = window.PLANNER || {};
+  window.PLANNER.lastCalc = {
+    brief,
+    chosen: chosenAll,
+    perRegion: perRegionRows,
+    warnings: warnings || [],
+    meta: {
+      days,
+      hpd,
+      totalBudget: totalBudgetAll,
+      totalPlays: totalPlaysEffectiveAll,
+      totalOts: (Number.isFinite(otsTotalAll) ? otsTotalAll : null)
+    }
+  };
+const planBtn = el("download-plan-xlsx");
+if (planBtn) planBtn.disabled = false;
+  
   window.dispatchEvent(new CustomEvent("planner:calc-done", {
     detail: { chosen: chosenAll, perRegion: perRegionRows }
   }));
@@ -2662,6 +2795,12 @@ if (regionSearch) {
   if (poiXlsxBtn) {
     poiXlsxBtn.disabled = true;
     poiXlsxBtn.addEventListener("click", () => downloadPOIsXLSX(window.PLANNER.lastPOIs || []));
+  }
+
+  const planBtn = el("download-plan-xlsx");
+  if (planBtn && !planBtn.__bound) {
+    planBtn.__bound = true;
+    planBtn.addEventListener("click", downloadPlanXLSX);
   }
 
   // ===== Calc =====
