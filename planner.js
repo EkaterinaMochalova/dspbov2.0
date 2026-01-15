@@ -1172,31 +1172,46 @@ async function downloadPlanXlsx(lastCalc) {
 
   // Ссылка на карту: соберём bbox/центр из выбранных экранов и дадим OSM ссылку
   function buildMapLinkFromChosenScreens(screens) {
-    const pts = (Array.isArray(screens) ? screens : [])
-      .map(s => ({
-        lat: Number(s.lat ?? s.latitude),
-        lon: Number(s.lon ?? s.lng ?? s.longitude)
-      }))
-      .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+  const pts = (Array.isArray(screens) ? screens : [])
+    .map(s => ({
+      lat: Number(s.lat ?? s.latitude),
+      lon: Number(s.lon ?? s.lng ?? s.longitude),
+      title: String(s.screen_id ?? s.gid ?? s.GID ?? "").trim(),
+      region: String(s.region ?? "").trim(),
+      format: String(s.format ?? "").trim(),
+      owner: String(s.owner ?? s.OWNER ?? s.operator ?? "").trim(),
+      address: String(s.address ?? "").trim(),
+    }))
+    .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
 
-    if (!pts.length) return null;
+  if (!pts.length) return null;
 
-    let minLat = pts[0].lat, maxLat = pts[0].lat, minLon = pts[0].lon, maxLon = pts[0].lon;
-    for (const p of pts) {
-      if (p.lat < minLat) minLat = p.lat;
-      if (p.lat > maxLat) maxLat = p.lat;
-      if (p.lon < minLon) minLon = p.lon;
-      if (p.lon > maxLon) maxLon = p.lon;
+  const features = pts.map(p => ({
+    type: "Feature",
+    geometry: { type: "Point", coordinates: [p.lon, p.lat] },
+    properties: {
+      name: p.title || "Экран",
+      description: [
+        p.region ? `Регион: ${p.region}` : "",
+        p.format ? `Формат: ${p.format}` : "",
+        p.owner ? `Оператор: ${p.owner}` : "",
+        p.address ? `Адрес: ${p.address}` : "",
+      ].filter(Boolean).join("<br>")
     }
+  }));
 
-    const cLat = (minLat + maxLat) / 2;
-    const cLon = (minLon + maxLon) / 2;
+  const geojson = {
+    type: "FeatureCollection",
+    features
+  };
 
-    // OSM: маркер в центре + bbox (удобно для обзора)
-    const url = `https://www.openstreetmap.org/?mlat=${cLat}&mlon=${cLon}#map=11/${cLat}/${cLon}`;
-    return url;
-  }
+  // ВАЖНО: data= должен быть urlencoded
+  const data = encodeURIComponent(JSON.stringify(geojson));
 
+  // uMap: откроет карту и подхватит GeoJSON из URL
+  // zoom/lat/lon можно не задавать: uMap сам зумит по данным
+  return `https://umap.openstreetmap.fr/ru/map/?data=${data}`;
+}
   const mapLink = buildMapLinkFromChosenScreens(chosen);
 
   const regionsText = Array.isArray(brief?.geo?.regions) && brief.geo.regions.length
