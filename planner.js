@@ -413,12 +413,6 @@ function formatMeta(fmt) {
   };
 }
 
-function getScreensFilteredByOwner(pool) {
-  const sel = state.selectedOwners;
-  if (!sel || sel.size === 0) return pool;
-  return (pool || []).filter(s => sel.has(String(s.owner ?? "").trim()));
-}
-
 // ===== UI: selection extra =====
 function renderSelectionExtra() {
   const mode = el("selection-mode")?.value || "city_even";
@@ -1066,7 +1060,10 @@ function pickScreensUniformByGrid(pool, count, stepKm = 2, perCellMax = 2) {
   for (const cell of cells) {
     cell.sort((a, b) => (a.minBid ?? 1e18) - (b.minBid ?? 1e18));
   }
-  cells.sort(() => Math.random() - 0.5);
+  for (let i = cells.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [cells[i], cells[j]] = [cells[j], cells[i]];
+  }
 
   const result = [];
   const takenPerCell = new Map();
@@ -1779,7 +1776,7 @@ async function onCalcClick() {
       anyPOIs = anyPOIs.concat(pois);
       window.PLANNER.lastPOIs = anyPOIs;
 
-      try { renderPOIList(anyPOIs); } catch { }
+      try { renderPOIList(anyPOIs); } catch(e) { console.warn("[poi] renderPOIList not implemented:", e.message); }
 
       const before = pool.length;
       pool = pickScreensNearPOIs(pool, pois, screenRadius);
