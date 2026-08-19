@@ -739,14 +739,19 @@ function renderSelectionExtra() {
 
       <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
         <button type="button" id="addr-add-btn" style="
-          flex:1; min-width:120px; padding:8px; border:1.5px dashed #c4b5fd; border-radius:10px;
+          flex:1; min-width:110px; padding:8px; border:1.5px dashed #c4b5fd; border-radius:10px;
           background:#faf8ff; color:#5B3EF5; font-size:13px; cursor:pointer;">
           + Добавить адрес
         </button>
         <button type="button" id="addr-import-btn" style="
-          flex:1; min-width:120px; padding:8px; border:1.5px dashed #c4b5fd; border-radius:10px;
+          flex:1; min-width:110px; padding:8px; border:1.5px dashed #c4b5fd; border-radius:10px;
           background:#faf8ff; color:#5B3EF5; font-size:13px; cursor:pointer;">
           ↓ Импортировать список
+        </button>
+        <button type="button" id="addr-2gis-btn" style="
+          flex:1; min-width:110px; padding:8px; border:1.5px dashed #1DB244; border-radius:10px;
+          background:#f4fdf7; color:#1DB244; font-size:13px; cursor:pointer;">
+          2ГИС: подобрать
         </button>
       </div>
 
@@ -780,31 +785,154 @@ function renderSelectionExtra() {
         </div>
       </div>
 
+      <!-- Панель 2ГИС: подбор адресов по бренду -->
+      <div id="addr-2gis-panel" style="display:none; background:#f4fdf7; border:1px solid #1DB244;
+           border-radius:12px; padding:12px; margin-bottom:8px;">
+        <div style="font-size:12px; font-weight:600; color:#1DB244; margin-bottom:8px;">
+          Нет готового списка? Найдём адреса объектов в выбранных регионах и подставим их сюда.
+        </div>
+        <input type="text" id="addr-2gis-brand" placeholder="Напр.: Пятёрочка, Магнит, McDonald's"
+          style="width:100%; box-sizing:border-box; padding:9px 12px; border:1px solid #b7e3c6;
+                 border-radius:8px; font-size:13px; outline:none;">
+        <div style="display:flex; gap:8px; margin-top:8px; align-items:center; flex-wrap:wrap;">
+          <button type="button" id="addr-2gis-apply" style="
+            padding:8px 18px; background:#1DB244; color:#fff; border:none;
+            border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;">
+            Найти адреса
+          </button>
+          <button type="button" id="addr-2gis-cancel" style="
+            padding:8px 14px; background:#fff; color:#888; border:1px solid #ddd;
+            border-radius:8px; font-size:13px; cursor:pointer;">
+            Отмена
+          </button>
+          <span id="addr-2gis-status" style="font-size:12px; color:#667085;"></span>
+        </div>
+      </div>
+
       <input id="planner-radius" type="number" min="50" value="500" placeholder="Радиус, м"
              style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-top:4px;">
       <div style="font-size:12px; color:#666; margin-top:6px;">
         Геокодируем каждый адрес и берём экраны в радиусе от любого из них.
+        Число справа от адреса — сколько экранов попадает в радиус.
       </div>
     `;
 
-    function addAddressRow(value) {
+    // Кэш координат: адрес → точка. Живёт в state, поэтому onCalcClick не геокодирует
+    // повторно то, что уже посчитано здесь.
+    state.addressPoints = state.addressPoints || new Map();
+
+    const currentRadius = () => Math.max(1, Number(el("planner-radius")?.value || 500));
+
+    // Подсказку региона добавляем ТОЛЬКО если города ещё нет в самом адресе:
+    // геокодер получает запрос вида «регион, адрес», и на «Москва, Тверская 7,
+    // Москва» ничего не находит, хотя без подсказки находит сразу.
+    function regionHintFor(addr) {
+      const region = (Array.isArray(state.selectedRegions) && state.selectedRegions[0]) || "";
+      if (!region) return "";
+      const a = normalizeGeoName(addr);
+      const r = normalizeGeoName(region);
+      return (r && a.includes(r)) ? "" : region;
+    }
+
+    // Пул для подсчёта: экраны выбранных регионов. Если регион не выбран или ничего
+    // не совпало — считаем по всему инвентарю, иначе счётчик молча показывал бы 0.
+    function addrPool() {
+      const all = (Array.isArray(state.screensAll) && state.screensAll.length)
+        ? state.screensAll
+        : (Array.isArray(state.screens) ? state.screens : []);
+      const regions = Array.isArray(state.selectedRegions) ? state.selectedRegions : [];
+      if (!regions.length) return all;
+      const inRegion = all.filter(s => regions.some(r => screenMatchesGeoChoice(s, r)));
+      return inRegion.length ? inRegion : all;
+    }
+
+    function setRowStatus(row, text, color, title) {
+      const st = row.querySelector(".addr-status");
+      if (!st) return;
+      st.textContent = text;
+      st.style.color = color || "#667085";
+      st.title = title || "";
+    }
+
+    // Геокодирует (если координат ещё нет) и считает экраны в радиусе.
+    // countOnly — пересчёт после смены радиуса, без повторного геокодирования.
+    async function resolveRow(row, countOnly) {
+      const inp = row.querySelector(".planner-addr-input");
+      if (!inp) return;
+      const addr = String(inp.value || "").trim();
+      if (!addr) { setRowStatus(row, "", "#667085"); return; }
+
+      const key = normalizeKey(addr);
+      let pt = state.addressPoints.get(key);
+
+      if (!pt && !countOnly) {
+        setRowStatus(row, "⏳", "#8b83c5", "Ищу адрес на карте…");
+        const token = ++row._resolveToken;
+        try {
+          pt = await geocodeAddressNominatim(addr, regionHintFor(addr));
+        } catch (e) {
+          console.warn("[addr] geocode failed:", e.message);
+          pt = null;
+        }
+        // Пока шёл запрос, адрес могли переписать — тогда результат уже не про эту строку.
+        if (token !== row._resolveToken) return;
+        if (pt) state.addressPoints.set(key, pt);
+      }
+
+      if (!pt) { setRowStatus(row, "не найден", "#dc2626", "Уточните город, улицу и дом"); return; }
+
+      const n = pickScreensNearPoint(addrPool(), pt, currentRadius()).length;
+      setRowStatus(row, n ? `${n} экр.` : "0 экр.",
+        n ? "#5b3ef5" : "#dc2626",
+        n ? `Экранов в радиусе ${currentRadius()} м` : "В этом радиусе экранов нет — увеличьте радиус");
+    }
+
+    function scheduleResolve(row) {
+      clearTimeout(row._resolveTimer);
+      row._resolveTimer = setTimeout(() => resolveRow(row, false), 700);
+    }
+
+    function recountAll(countOnly) {
+      document.querySelectorAll("#addr-list .addr-row").forEach(row => resolveRow(row, countOnly));
+    }
+
+    function addAddressRow(value, point) {
       const list = el("addr-list");
       if (!list) return;
       const row = document.createElement("div");
       row.className = "addr-row";
       row.style.cssText = "display:flex; gap:6px; align-items:center;";
+      row._resolveToken = 0;
+
       const inp = document.createElement("input");
       inp.type = "text"; inp.placeholder = "Адрес";
       inp.value = value || "";
-      inp.style.cssText = "flex:1; padding:10px; border:1px solid #ddd; border-radius:10px; font-size:14px;";
+      inp.style.cssText = "flex:1; padding:10px; border:1px solid #ddd; border-radius:10px; font-size:14px; min-width:0;";
       inp.className = "planner-addr-input";
+
+      // Счётчик экранов рядом с адресом: без него непонятно, что даст этот адрес,
+      // пока не нажмёшь «Рассчитать».
+      const status = document.createElement("span");
+      status.className = "addr-status";
+      status.style.cssText = "min-width:62px; text-align:right; font-size:12px; font-weight:600; color:#667085; white-space:nowrap;";
+
       const del = document.createElement("button");
       del.type = "button"; del.textContent = "×";
       del.style.cssText = "background:none; border:none; font-size:20px; color:#aaa; cursor:pointer; line-height:1; padding:0 4px;";
       del.addEventListener("click", () => { row.remove(); });
-      row.appendChild(inp); row.appendChild(del);
+
+      row.appendChild(inp); row.appendChild(status); row.appendChild(del);
       list.appendChild(row);
       attachAddressSuggest(inp);
+
+      inp.addEventListener("input", () => scheduleResolve(row));
+      inp.addEventListener("change", () => scheduleResolve(row));
+
+      // Координаты из 2ГИС известны сразу — геокодировать нечего, только считаем.
+      if (point && Number.isFinite(point.lat) && Number.isFinite(point.lon)) {
+        state.addressPoints.set(normalizeKey(value || ""), { lat: point.lat, lon: point.lon });
+      }
+      if (value) resolveRow(row, false);
       return inp;
     }
 
@@ -830,18 +958,20 @@ function renderSelectionExtra() {
         : `Свернуть список (${rows.length} адресов)`;
     }
 
-    function bulkAddAddresses(lines) {
-      const clean = lines.map(l => String(l || "").trim()).filter(Boolean);
+    // items: строки или { address, lat, lon } — второе приходит из 2ГИС вместе с точкой.
+    function bulkAddAddresses(items) {
+      const clean = (Array.isArray(items) ? items : [])
+        .map(it => (typeof it === "string") ? { address: it } : it)
+        .filter(it => it && String(it.address || "").trim())
+        .map(it => ({ address: String(it.address).trim(), lat: it.lat, lon: it.lon }));
       if (!clean.length) return 0;
-      // Clear empty rows first
+      // Убираем пустые строки, чтобы список не начинался с болтающегося поля
       document.querySelectorAll(".planner-addr-input").forEach(i => {
         if (!i.value.trim()) i.closest(".addr-row")?.remove();
       });
-      clean.forEach(addr => addAddressRow(addr));
-      // Auto-collapse if many addresses
-      if (clean.length > ADDR_COLLAPSE_LIMIT) {
-        addrCollapsed = true;
-      }
+      clean.forEach(it => addAddressRow(it.address,
+        (Number.isFinite(it.lat) && Number.isFinite(it.lon)) ? { lat: it.lat, lon: it.lon } : null));
+      if (clean.length > ADDR_COLLAPSE_LIMIT) addrCollapsed = true;
       updateAddrToggle();
       return clean.length;
     }
@@ -858,6 +988,12 @@ function renderSelectionExtra() {
     window.PLANNER = window.PLANNER || {};
     window.PLANNER.setAddresses = (list) => bulkAddAddresses(Array.isArray(list) ? list : []);
 
+    // Смена радиуса не требует повторного геокодирования — только пересчёта.
+    el("planner-radius")?.addEventListener("input", () => recountAll(true));
+    // Инвентарь или регионы поменялись — счётчики устарели.
+    window.addEventListener("planner:screens-ready", () => recountAll(true));
+    window.addEventListener("planner:pool-updated", () => recountAll(true));
+
     el("addr-add-btn")?.addEventListener("click", () => {
       const inp = addAddressRow();
       inp?.focus();
@@ -872,6 +1008,59 @@ function renderSelectionExtra() {
     el("addr-import-cancel")?.addEventListener("click", () => {
       const panel = el("addr-import-panel");
       if (panel) panel.style.display = "none";
+    });
+
+    // ---- 2ГИС: подбор адресов по бренду ----
+    el("addr-2gis-btn")?.addEventListener("click", () => {
+      const panel = el("addr-2gis-panel");
+      if (panel) panel.style.display = panel.style.display === "none" ? "block" : "none";
+      el("addr-2gis-brand")?.focus();
+    });
+    el("addr-2gis-cancel")?.addEventListener("click", () => {
+      const panel = el("addr-2gis-panel");
+      if (panel) panel.style.display = "none";
+    });
+
+    el("addr-2gis-apply")?.addEventListener("click", async () => {
+      const btn    = el("addr-2gis-apply");
+      const status = el("addr-2gis-status");
+      const brand  = String(el("addr-2gis-brand")?.value || "").trim();
+      if (!brand) { if (status) { status.textContent = "Введите название бренда."; status.style.color = "#dc2626"; } return; }
+
+      const pool = addrPool();
+      const withCoords = pool.filter(s => Number.isFinite(Number(s.lat)) && Number.isFinite(Number(s.lon)));
+      if (!withCoords.length) {
+        if (status) { status.textContent = "Инвентарь ещё загружается."; status.style.color = "#dc2626"; }
+        return;
+      }
+      // Центр поиска — центроид инвентаря выбранных регионов.
+      const cLat = withCoords.reduce((a, s) => a + Number(s.lat), 0) / withCoords.length;
+      const cLon = withCoords.reduce((a, s) => a + Number(s.lon), 0) / withCoords.length;
+
+      btn.disabled = true;
+      const btnText = btn.textContent;
+      btn.textContent = "Ищу…";
+      if (status) { status.style.color = "#667085"; status.textContent = "Загружаю объекты 2ГИС…"; }
+
+      try {
+        const found = await fetch2gisAddresses(brand, cLat, cLon, (n, total) => {
+          if (status) status.textContent = `Загружаю объекты 2ГИС: ${n}` + (total ? ` из ${total}` : "");
+        });
+        if (!found.length) {
+          if (status) { status.textContent = `2ГИС не нашёл «${brand}» в этих регионах.`; status.style.color = "#dc2626"; }
+        } else {
+          const added = bulkAddAddresses(found);
+          if (status) { status.textContent = `Добавлено адресов: ${added}`; status.style.color = "#1DB244"; }
+          const panel = el("addr-2gis-panel");
+          if (panel) panel.style.display = "none";
+        }
+      } catch (err) {
+        console.error("[2gis]", err);
+        if (status) { status.textContent = "Ошибка: " + err.message; status.style.color = "#dc2626"; }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = btnText;
+      }
     });
 
     // Загрузка файла — авто-добавление без нажатия кнопки
@@ -3107,6 +3296,54 @@ function attachAddressSuggest(inputEl) {
   inputEl.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDropdown(); });
 }
 
+// Адреса объектов бренда из 2ГИС. Отдаём адрес ВМЕСТЕ с точкой: координата уже
+// известна, и повторно геокодировать её незачем.
+// Ключ и воркер-прокси те же, что использовал прежний блок «Рядом с объектами».
+const GEO2GIS_KEY = "ba3c806e-746b-40b7-a1c8-4fc79c1a9667";
+const GEO2GIS_PROXY = "https://silent-surf-cd5e.mochalova-kathrine-v.workers.dev/2gis";
+
+async function fetch2gisAddresses(query, centerLat, centerLon, onProgress) {
+  const PAGE_SIZE = 50;
+  const CITY_RADIUS = 50000;   // поиск по городу целиком
+  const MAX_PAGES = 40;        // предохранитель: 40 × 50 = 2000 объектов
+  const out = [];
+  const seen = new Set();
+
+  let page = 1, totalPages = 1, total = 0;
+  while (page <= totalPages && page <= MAX_PAGES) {
+    const url = GEO2GIS_PROXY +
+      "?q=" + encodeURIComponent(query) +
+      "&location=" + centerLon + "," + centerLat +
+      "&radius=" + CITY_RADIUS +
+      "&page=" + page +
+      "&page_size=" + PAGE_SIZE +
+      "&fields=" + encodeURIComponent("items.point,items.address_name,items.full_address_name") +
+      "&key=" + GEO2GIS_KEY;
+
+    const data = await fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
+    if (!data?.result) break;
+
+    const items = data.result.items || [];
+    for (const item of items) {
+      const pt = item.point;
+      if (!pt || !Number.isFinite(Number(pt.lat)) || !Number.isFinite(Number(pt.lon))) continue;
+      const address = String(item.full_address_name || item.address_name || item.name || "").trim();
+      if (!address) continue;
+      const key = normalizeKey(address);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ address, lat: Number(pt.lat), lon: Number(pt.lon) });
+    }
+
+    total = data.result.total || 0;
+    totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    if (typeof onProgress === "function") onProgress(out.length, total);
+    page++;
+    if (!items.length) break;
+  }
+  return out;
+}
+
 function pickScreensNearPoint(screens, center, radiusMeters) {
   const r = Number(radiusMeters || 0);
   if (!center || !Number.isFinite(center.lat) || !Number.isFinite(center.lon) || !r) return [];
@@ -3511,11 +3748,18 @@ async function onCalcClick() {
     const GEOCODE_DELAY_MS = 350; // Nominatim rate limit: 1 req/sec
     for (let i = 0; i < addresses.length; i++) {
       const addr = addresses[i];
+      // Список адресов уже геокодировал каждую строку, когда считал экраны рядом —
+      // берём готовую точку и не ходим в геокодер второй раз.
+      const cached = state.addressPoints?.get(normalizeKey(addr));
+      if (cached) { _geocodedPoints.push(cached); continue; }
+
       setStatus(`Геокодирую ${i + 1}/${addresses.length}: «${addr}»…`);
       try {
         const pt = await geocodeAddressNominatim(addr);
-        if (pt) _geocodedPoints.push(pt);
-        else console.warn("[geo] not found:", addr);
+        if (pt) {
+          _geocodedPoints.push(pt);
+          state.addressPoints?.set(normalizeKey(addr), pt);
+        } else console.warn("[geo] not found:", addr);
       } catch (e) {
         console.error("[geo] geocode error:", e);
       }
