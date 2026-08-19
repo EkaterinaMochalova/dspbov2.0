@@ -3952,20 +3952,38 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
     const sectionsHtml = regionsOrdered.map(regionName => {
       const regItems = (byReg.get(regionName) || []);
 
+      // Сомнительные (аномально низкая ставка) — в начало списка: цель в том,
+      // чтобы пользователь их увидел, а не искал в конце горизонтальной прокрутки.
+      // Сортируем массив на месте, а не копию: обработчик клика ниже достаёт экран
+      // по data-idx из byReg.get(region), и копия развалила бы это соответствие.
+      regItems.sort((a, b) => (b._suspiciousBid ? 1 : 0) - (a._suspiciousBid ? 1 : 0));
+
       const cards = regItems.map((s, idx) => {
         const url = escapeHtml(getImg(s));
         const gid = escapeHtml(getGid(s));
         const own = escapeHtml(getOwner(s));
         const addr = escapeHtml(getAddr(s));
+        const susp = !!s._suspiciousBid;
+        const suspStyle = susp
+          ? "border:2px solid #e04444; box-shadow:0 0 0 3px rgba(224,68,68,.10);"
+          : "border:1px solid rgba(15,23,42,.10);";
+        const suspBadge = susp
+          ? \`<div style="margin-top:6px; display:inline-block; padding:2px 7px; border-radius:6px;
+                 background:#fff1f1; color:#c62828; font-size:10px; font-weight:700;"
+                 title="Ставка ниже 40% медианы по своему формату и городу">
+               Низкая ставка
+             </div>\`
+          : "";
 
         return \`
           <div class="img-card" data-region="\${escapeHtml(regionName)}" data-idx="\${idx}" data-gid="\${gid}"
-               style="min-width:220px; max-width:220px; border:1px solid rgba(15,23,42,.10); border-radius:14px; overflow:hidden; background:#fff; cursor:pointer;">
+               style="min-width:220px; max-width:220px; \${suspStyle} border-radius:14px; overflow:hidden; background:#fff; cursor:pointer;">
             <div style="height:140px; background:#f2f4f8; display:flex; align-items:center; justify-content:center;">
               <img src="\${url}" alt="\${gid}" loading="lazy" style="width:100%; height:100%; object-fit:cover;">
             </div>
             <div style="padding:10px;">
               <div style="font-weight:800; font-size:13px; line-height:1.2;">\${gid || "\\u2014"}</div>
+              \${suspBadge}
               <div style="font-size:12px; color:#555; margin-top:4px;">\${own || "\\u2014"}</div>
               <div style="font-size:12px; color:#777; margin-top:4px; line-height:1.25; max-height:2.5em; overflow:hidden;">\${addr || ""}</div>
               <div style="display:flex; gap:6px; margin-top:8px;">

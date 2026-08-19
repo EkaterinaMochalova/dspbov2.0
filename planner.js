@@ -177,6 +177,62 @@ function getScreenPphCap(s) {
 }
 const RECO_HOURS_PER_DAY = 12; // для режима "нужна рекомендация"
 
+// ===== Сомнительные экраны =====
+// Единственный признак — аномально низкая ставка: она почти всегда означает, что
+// экран не открутится или в инвентаре мусорные данные. Сравниваем с медианой по
+// своему формату в своём городе (не со средним: одна копеечная ставка утягивает
+// среднее и «прячет» саму себя). Группы меньше MIN_GROUP статистически бессмысленны,
+// поэтому для них берём медиану по формату целиком, а если и её нет — по всему набору.
+const SUSPICIOUS_BID_RATIO = 0.4; // ниже 40 % медианы группы
+const SUSPICIOUS_MIN_GROUP = 5;
+
+function _median(nums) {
+  const a = nums.filter(v => Number.isFinite(v) && v > 0).sort((x, y) => x - y);
+  if (!a.length) return null;
+  const mid = a.length >> 1;
+  return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
+}
+
+// Проставляет s._suspiciousBid / s._suspiciousMedian. Возвращает список сомнительных.
+function markSuspiciousScreens(screens, brief) {
+  const list = Array.isArray(screens) ? screens : [];
+  list.forEach(s => { s._suspiciousBid = false; s._suspiciousMedian = null; });
+  if (list.length < SUSPICIOUS_MIN_GROUP) return [];
+
+  const bidOf = s => screenBid(s, brief);
+  const byFmtCity = new Map();
+  const byFmt = new Map();
+  for (const s of list) {
+    const fmt = String(s.format || "").trim();
+    const city = String(s.city || s.region || "").trim();
+    const k1 = fmt + "\u0000" + city;
+    if (!byFmtCity.has(k1)) byFmtCity.set(k1, []);
+    if (!byFmt.has(fmt)) byFmt.set(fmt, []);
+    byFmtCity.get(k1).push(bidOf(s));
+    byFmt.get(fmt).push(bidOf(s));
+  }
+
+  const medAll = _median(list.map(bidOf));
+  const suspicious = [];
+  for (const s of list) {
+    const bid = bidOf(s);
+    if (!Number.isFinite(bid) || bid <= 0) continue;
+    const fmt = String(s.format || "").trim();
+    const city = String(s.city || s.region || "").trim();
+    const group = byFmtCity.get(fmt + "\u0000" + city) || [];
+    const med = (group.length >= SUSPICIOUS_MIN_GROUP)
+      ? _median(group)
+      : ((byFmt.get(fmt) || []).length >= SUSPICIOUS_MIN_GROUP ? _median(byFmt.get(fmt)) : medAll);
+    if (!Number.isFinite(med) || med <= 0) continue;
+    if (bid < med * SUSPICIOUS_BID_RATIO) {
+      s._suspiciousBid = true;
+      s._suspiciousMedian = med;
+      suspicious.push(s);
+    }
+  }
+  return suspicious;
+}
+
 // ===== Плановая ёмкость =====
 // Ёмкость по показам = часы размещения за период × Σ коэффициента формата.
 // Коэффициенты заданы бизнесом: 8 выходов/час для медиафасадов, 30 для остальных
@@ -256,6 +312,7 @@ const state = {
   dspInventoryCache: null,
   dspInventoryWarmupPromise: null,
   dspInventoryWarmupDone: false,
+  dspInventoryCachedAt: null,   // когда инвентарь реально приехал из API
   dspRegionToCities: {},
 
   // VK Affinity data: Map<GID, {segmentName: affinityValue}>
@@ -4731,6 +4788,32 @@ async function onCalcClick() {
       const allPoolScreens = prepared.flatMap(r => r.pool);
       await dspFetchForecastBids(allPoolScreens, brief);
 
+      // «Только активные»: до этого момента активность проверялась лишь по наличию
+      // ставки и (если API его прислал) slotCountPerDay, а на списке инвентаря этого
+      // поля нет — поэтому экраны без единого аукциона доезжали до плана. Прогноз —
+      // единственный источник, который про это знает: если по экрану не вернулась
+      // статистика, крутить на нём нечего. Фильтруем здесь, а не раньше, потому что
+      // прогноз доступен только после этого запроса.
+      if (brief.onlyActiveBids !== false) {
+        let droppedNoForecast = 0;
+        for (const r of prepared) {
+          const before = r.pool.length;
+          const filtered = r.pool.filter(s => !(Number.isFinite(s._dspId) && s._noForecast));
+          // Не выносим регион в ноль: если прогноза нет вообще ни по одному экрану,
+          // это скорее сбой запроса, чем реально мёртвый инвентарь.
+          if (filtered.length > 0) {
+            r.pool = filtered;
+            droppedNoForecast += before - filtered.length;
+          }
+        }
+        if (droppedNoForecast > 0) {
+          warnings.push(
+            `ℹ️ Исключено ${droppedNoForecast} экр. без данных аукциона за последние 90 дней ` +
+            `(«только активные»).`
+          );
+        }
+      }
+
       // Пересчитываем bidPlus20 по реальным recoBid для каждого региона
       for (const pr of prepared) {
         const recos = pr.pool.map(s => s.recoBid).filter(v => Number.isFinite(v) && v > 0);
@@ -5169,6 +5252,19 @@ async function onCalcClick() {
     if (chosenAll.length < before) {
       warnings.push(`ℹ️ ${before - chosenAll.length} экр. исключено вручную (кнопка "Вернуть все" внизу).`);
     }
+  }
+
+  // Сомнительные экраны: помечаем перед отдачей в UI, чтобы карусель могла их
+  // подсветить и вынести вперёд. В выгрузку это намеренно не идёт.
+  const suspicious = markSuspiciousScreens(chosenAll, brief);
+  if (suspicious.length) {
+    const shown = suspicious.slice(0, 3).map(s => _screenIdOf(s)).filter(Boolean).join(", ");
+    warnings.push(
+      `⚠️ Подозрительно низкая ставка у ${suspicious.length} экр. ` +
+      `(ниже ${Math.round(SUSPICIOUS_BID_RATIO * 100)}% медианы по своему формату и городу` +
+      `${shown ? `: ${shown}${suspicious.length > 3 ? " и др." : ""}` : ""}). ` +
+      `Подсвечены красным в списке экранов — проверьте или замените.`
+    );
   }
 
   state.lastChosen = chosenAll;
@@ -6092,6 +6188,8 @@ async function dspFetchForecastBids(screens, brief) {
       // currently selected duration the same way a fresh fetch would (see below).
       s._baseRecoBid = cached.recoBid;
       s.recoBid = cached.recoBid * _durationRatioForScreen(s, state.selectedDurationMs);
+      s._noForecast = false;
+      s._forecastMethod = cached.method ?? null;
     } else {
       toFetch.push(s);
     }
@@ -6132,6 +6230,9 @@ async function dspFetchForecastBids(screens, brief) {
 
   // Записываем в кэш и на экраны
   const idToScreen = new Map(toFetch.map(s => [s._dspId, s]));
+  // По умолчанию считаем, что прогноза нет: снимем флаг на тех, по кому пришла
+  // статистика. Это единственный доступный признак «по экрану не было аукционов».
+  toFetch.forEach(s => { s._noForecast = true; s._forecastMethod = null; });
   for (const res of results) {
     if (res.status !== "fulfilled" || !res.value?.elements) continue;
     for (const [idStr, elem] of Object.entries(res.value.elements)) {
@@ -6142,9 +6243,11 @@ async function dspFetchForecastBids(screens, brief) {
       // INVENTORY и FORMAT_CITY — реальные/статистические данные, берём как есть
       const method = elem?.referenceData?.method;
       if (method === "MIN_BID") price = price * BID_MULTIPLIER;
-      _recoBidCache.set(dspId, { recoBid: price, ts: now });
+      _recoBidCache.set(dspId, { recoBid: price, ts: now, method });
       const s = idToScreen.get(dspId);
       if (s) {
+        s._noForecast = false;
+        s._forecastMethod = method || null;
         // price is duration-agnostic (this forecast endpoint has no duration concept) —
         // scale it by the currently selected duration's ratio, same as the cache-hit path.
         s._baseRecoBid = price;
@@ -6484,6 +6587,10 @@ function renderDspUserBar() {
     <span style="display:inline-flex;align-items:center;gap:6px;background:#f0f2f5;border-radius:20px;padding:4px 6px 4px 8px;font-size:12px;line-height:1;">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
       ${emailHtml}
+      <span id="dsp-inv-age" style="color:#888;font-size:11px;white-space:nowrap;"></span>
+      <a href="#" id="dsp-inv-refresh" style="display:inline-flex;align-items:center;gap:3px;margin-left:2px;padding:2px 8px;background:#fff;border:1px solid #ddd;border-radius:12px;color:#666;text-decoration:none;font-size:11px;white-space:nowrap;">
+        Обновить
+      </a>
       <a href="#" id="dsp-logout-btn" style="display:inline-flex;align-items:center;gap:3px;margin-left:2px;padding:2px 8px;background:#fff;border:1px solid #ddd;border-radius:12px;color:#666;text-decoration:none;font-size:11px;white-space:nowrap;">
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         Выйти
@@ -6493,6 +6600,41 @@ function renderDspUserBar() {
     e.preventDefault();
     dspLogout();
   });
+
+  renderDspInventoryAge();
+
+  document.getElementById("dsp-inv-refresh")?.addEventListener("click", async e => {
+    e.preventDefault();
+    const link = e.currentTarget;
+    link.textContent = "Обновляю…";
+    link.style.pointerEvents = "none";
+    try {
+      await dspForceReloadAllInventoriesBlocking();
+      state.dspInventoryCachedAt = Date.now();
+      window.dispatchEvent(new CustomEvent("planner:screens-ready", { detail: { count: state.screensAll?.length || 0 } }));
+    } catch (err) {
+      console.warn("[DSP] manual refresh failed:", err);
+      alert("Не удалось обновить инвентарь: " + err.message);
+    } finally {
+      link.textContent = "Обновить";
+      link.style.pointerEvents = "";
+      renderDspInventoryAge();
+    }
+  });
+}
+
+// Возраст инвентаря в шапке: без него неясно, смотришь ты свежие ставки или
+// вчерашний кэш.
+function renderDspInventoryAge() {
+  const node = document.getElementById("dsp-inv-age");
+  if (!node) return;
+  const ts = state.dspInventoryCachedAt;
+  if (!Number.isFinite(ts)) { node.textContent = ""; return; }
+  const min = Math.round((Date.now() - ts) / 60000);
+  node.textContent = min < 1 ? "данные: только что"
+    : min < 60 ? `данные: ${min} мин назад`
+    : `данные: ${Math.round(min / 60)} ч назад`;
+  node.title = "Время загрузки инвентаря из DSP. Кэш живёт 24 часа, «Обновить» перезагружает принудительно.";
 }
 
 function dspLogout() {
@@ -7085,7 +7227,10 @@ function dspApplyInventories(raw) {
 }
 
 // ---- IndexedDB-кэш инвентаря (нет лимита размера, переживает Shift+R) ----
-const DSP_CACHE_TTL  = 7 * 24 * 60 * 60 * 1000; // 7 дней
+// Ставки и OTS в инвентаре меняются, а кэш жил 7 суток — отсюда жалобы на
+// неактуальные данные. Сутки: старт по-прежнему мгновенный, но данные не
+// «протухают» на неделю. Возраст кэша виден в шапке, рядом — «Обновить».
+const DSP_CACHE_TTL  = 24 * 60 * 60 * 1000; // 24 часа
 const DSP_IDB_NAME   = "dsp_planner";
 const DSP_IDB_STORE  = "inventory";
 const DSP_IDB_VER    = 1;
@@ -7122,6 +7267,7 @@ async function dspSaveInventoryToStorage(cityCache) {
       tx.oncomplete = res; tx.onerror = rej;
     });
     db.close();
+    state.dspInventoryCachedAt = Date.now();
     console.log(`[DSP] inventory saved to IndexedDB (${total} screens), ttl=24h`);
     // Также чистим старые localStorage-кэши
     ["dsp_inv_v2", "dsp_inv_v3_" + (getDspAgencyId() || "default")].forEach(k => {
@@ -7157,6 +7303,7 @@ async function dspLoadInventoryFromStorage() {
     const ageMin = Math.round((Date.now() - rec.ts) / 60000);
     console.log(`[DSP] IDB cache hit: ${total} screens, age=${ageMin}min`);
     if (total === 0) return null;
+    state.dspInventoryCachedAt = rec.ts;
     return rec.d;
   } catch (e) {
     console.warn("[DSP] IDB load failed:", e.message);
