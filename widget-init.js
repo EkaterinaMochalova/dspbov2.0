@@ -6536,4 +6536,25 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
 })();
 `);
 
+  // Script block: авто-скролл к сводке после расчёта
+  runScript(`
+(function(){
+  // Кнопка «Рассчитать» стоит внизу левой колонки, а сводка рендерится в правой —
+  // на десктопе к моменту клика она уже уехала вверх за экран, на мобиле лежит
+  // ниже всей формы. После calc-done подтягиваем её в вид.
+  // window.scrollTo, а не scrollIntoView: в Tilda виджет лежит во вложенных
+  // скролл-контейнерах, и scrollIntoView промахивается (см. setStep выше).
+  window.addEventListener("planner:calc-done", () => {
+    const target = document.querySelector("#planner-widget .planner-right");
+    if (!target) return;
+    // Ждём, пока остальные calc-done подписчики дорисуют сводку и графики,
+    // иначе прокручиваем к ещё пустому блоку и промахиваемся по высоте.
+    setTimeout(() => {
+      const top = target.getBoundingClientRect().top + window.scrollY - 20;
+      window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+    }, 80);
+  });
+})();
+`);
+
 })().catch(e => console.error("[widget-init]", e));

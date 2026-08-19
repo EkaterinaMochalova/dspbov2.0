@@ -141,6 +141,18 @@ const POI_LABELS = {
 const BID_MULTIPLIER = 1.8;
 const SC_OPT = 30;
 const SC_MAX = 60;
+
+// Выходов/час на экран для режима «подскажите бюджет» в разрезе выбранного тира.
+// «Оптимальный» — плановая ёмкость SC_OPT, «Максимум» — физический потолок SC_MAX,
+// «Минимум» — те же 0.35 от оптимума, что и в computeRecoBudgetTiers.
+// Без этого выбранный на шаге «Цели» тир молча игнорировался, как только задано
+// количество конструкций: бюджет всегда считался по оптимуму (жалоба «выбрал
+// минимум → после кнопки конструкций посчитало на огромный бюджет»).
+function recoPphForTier(recoTier) {
+  if (recoTier === "min") return SC_OPT * 0.35;
+  if (recoTier === "max") return SC_MAX;
+  return SC_OPT;
+}
 const MF_MAX_PPH = 12; // MediaFacade physical cap: max 12 plays/hour
 
 // Per-screen plays-per-hour cap based on format
@@ -150,6 +162,41 @@ function getScreenPphCap(s) {
   return SC_MAX;
 }
 const RECO_HOURS_PER_DAY = 12; // для режима "нужна рекомендация"
+
+// ===== Плановая ёмкость =====
+// Ёмкость по показам = часы размещения за период × Σ коэффициента формата.
+// Коэффициенты заданы бизнесом: 8 выходов/час для медиафасадов, 30 для остальных
+// форматов. Это НЕ физический потолок экрана (getScreenPphCap — 12/60), а плановая
+// планка: выше неё нельзя ни рекомендовать «максимальный» бюджет, ни молча принять
+// цель клиента по бюджету/показам/OTS.
+const CAPACITY_PPH_MF = 8;
+const CAPACITY_PPH_DEFAULT = 30;
+
+function capacityPphForScreen(s) {
+  const fmt = String(s?.format || "").toUpperCase();
+  return (fmt === "MEDIAFACADE" || fmt === "MF") ? CAPACITY_PPH_MF : CAPACITY_PPH_DEFAULT;
+}
+
+// hoursTotal — суммарные часы размещения за период (дней × часов/день).
+// Возвращает null, если считать не из чего: вызывающий код тогда просто не проверяет.
+function computeCapacity(screens, hoursTotal, bidMode) {
+  const list = Array.isArray(screens) ? screens : [];
+  if (!list.length || !Number.isFinite(hoursTotal) || hoursTotal <= 0) return null;
+
+  const pphSum = list.reduce((sum, s) => sum + capacityPphForScreen(s), 0);
+  const plays  = Math.floor(hoursTotal * pphSum);
+  const avgBid = avgEffectiveBid(list, bidMode, 1);
+  const avgOts = avgNumberNonZero(list.map(s => s.ots));
+
+  return {
+    screens: list.length,
+    hours:   hoursTotal,
+    avgPph:  pphSum / list.length,
+    plays,
+    budget:  (Number.isFinite(avgBid) && avgBid > 0) ? Math.floor(plays * avgBid) : null,
+    ots:     (avgOts != null && avgOts > 0) ? Math.round(plays * avgOts) : null,
+  };
+}
 
 // "Активный" экран = есть валидная ставка И (нет данных о слотах в сутки ИЛИ их > 0).
 // slotCountPerDay сейчас не всегда приходит от API (см. mapDspInventory) — если его
@@ -3031,6 +3078,45 @@ function _extractAddrLines(rows) {
  * Auto-detects city/region names from parsed rows and matches them
  * against state.regionsAll. Returns { matched: string[], unmatched: string[] }.
  */
+// Сокращения городов, которые не ловятся ни точным, ни префиксным сравнением.
+// Ключ — уже нормализованное (normalizeGeoName) написание.
+const CITY_ALIASES = {
+  "мск": "Москва",
+  "moscow": "Москва",
+  "спб": "Санкт-Петербург",
+  "питер": "Санкт-Петербург",
+  "spb": "Санкт-Петербург",
+  "екб": "Екатеринбург",
+  "ебург": "Екатеринбург",
+  "нск": "Новосибирск",
+  "нн": "Нижний Новгород",
+  "ростов на дону": "Ростов-на-Дону",
+};
+
+// «Н.Новгород», «С.-Петербург», «Н.Челны» — обычная запись в клиентских файлах.
+// Разбиваем имя на слова по точкам/дефисам/пробелам и считаем совпадением случай,
+// когда каждое слово исходника является префиксом соответствующего слова известного
+// города: «н|новгород» → «нижний|новгород», «с|петербург» → «санкт|петербург».
+function _cityWords(s) {
+  return normalizeGeoName(s).split(/[\s.\-‐-―]+/).filter(Boolean);
+}
+
+function _resolveCityAbbrev(raw, allKnown) {
+  const rawWords = _cityWords(raw);
+  // Однословные названия уже покрыты точным/префиксным сравнением — трогать их
+  // здесь опасно (слишком много ложных совпадений).
+  if (rawWords.length < 2) return null;
+
+  const hits = [];
+  for (const known of allKnown) {
+    const kw = _cityWords(known);
+    if (kw.length !== rawWords.length) continue;
+    if (rawWords.every((w, i) => kw[i].startsWith(w))) hits.push(known);
+  }
+  // Неоднозначное сокращение оставляем ненайденным, чтобы не подставить чужой город.
+  return hits.length === 1 ? hits[0] : null;
+}
+
 function _extractAndMatchCities(rows) {
   if (!rows || !rows.length) return { matched: [], unmatched: [] };
   const keys = Object.keys(rows[0]);
@@ -3073,6 +3159,19 @@ function _extractAndMatchCities(rows) {
       allKnownLC[i].startsWith(rawLC) || rawLC.startsWith(allKnownLC[i])
     );
     if (partial) { matched.push(partial); continue; }
+    // Нормализованное сравнение: снимает «г. »/«город », ё/е и лишние пробелы.
+    const rawNorm = normalizeGeoName(raw);
+    const normIdx = allKnown.findIndex(r => normalizeGeoName(r) === rawNorm);
+    if (normIdx !== -1) { matched.push(allKnown[normIdx]); continue; }
+    // Явный алиас («мск», «спб», …) — сверяем, что такой город вообще есть в пуле.
+    const alias = CITY_ALIASES[rawNorm];
+    if (alias) {
+      const aliasIdx = allKnownLC.indexOf(alias.toLowerCase());
+      if (aliasIdx !== -1) { matched.push(allKnown[aliasIdx]); continue; }
+    }
+    // Сокращения вида «Н.Новгород» / «С.-Петербург».
+    const abbrev = _resolveCityAbbrev(raw, allKnown);
+    if (abbrev) { matched.push(abbrev); continue; }
     unmatched.push(raw);
   }
   return { matched: [...new Set(matched)], unmatched };
@@ -4325,6 +4424,45 @@ async function onCalcClick() {
   }
 
   // =========================
+  // 1b) ПЛАНОВАЯ ЁМКОСТЬ
+  // =========================
+  // Считаем потолок по показам для всего собранного пула и сверяем с тем, что
+  // запросил клиент. Если запрошенное больше — говорим прямо, что именно упирается
+  // в лимит и какой лимит, а не молча урезаем результат в середине расчёта.
+  const capacityAll = computeCapacity(prepared.flatMap(r => r.pool), days * hpdFixed, brief.bidMode);
+  if (capacityAll) {
+    const capTxt =
+      `лимит ${capacityAll.plays.toLocaleString("ru-RU")} показов ` +
+      `(${capacityAll.screens.toLocaleString("ru-RU")} поверхностей × ` +
+      `${Math.round(capacityAll.hours).toLocaleString("ru-RU")} ч размещения)`;
+
+    if (brief.budget.mode === "fixed" && capacityAll.budget != null) {
+      const asked = Number(brief.budget.amount || 0);
+      if (asked > capacityAll.budget) {
+        warnings.push(
+          `⚠️ Бюджет ${Math.round(asked).toLocaleString("ru-RU")} ₽ превышает ёмкость инвентаря: ` +
+          `освоить получится не больше ${capacityAll.budget.toLocaleString("ru-RU")} ₽ — ${capTxt}.`
+        );
+      }
+    } else if (brief.budget.mode === "goal_plays") {
+      const asked = Number(brief.goal?.plays || 0);
+      if (asked > capacityAll.plays) {
+        warnings.push(
+          `⚠️ Цель ${Math.round(asked).toLocaleString("ru-RU")} показов превышает ёмкость инвентаря — ${capTxt}.`
+        );
+      }
+    } else if (brief.budget.mode === "goal_ots" && capacityAll.ots != null) {
+      const asked = Number(brief.goal?.ots || 0);
+      if (asked > capacityAll.ots) {
+        warnings.push(
+          `⚠️ Цель ${Math.round(asked).toLocaleString("ru-RU")} OTS превышает ёмкость инвентаря: ` +
+          `максимум ${capacityAll.ots.toLocaleString("ru-RU")} OTS — ${capTxt}.`
+        );
+      }
+    }
+  }
+
+  // =========================
   // 2) INITIAL BUDGETS
   // =========================
   const budgets = {};
@@ -4397,14 +4535,19 @@ async function onCalcClick() {
   } else {
     // Recommendation mode
     if (brief.constructions?.enabled && brief.constructions.count > 0) {
-      // Бюджет = N конструкций × SC_OPT выходов/ч × реальных часов кампании × avg рекомендованная ставка.
-      // Используем SC_OPT (ёмкость), а не pphTarget (стратегия охвата/частоты):
-      // pphTarget определяет кол-во экранов, SC_OPT — реальная ёмкость планирования.
+      // Бюджет = N конструкций × выходов/ч по выбранному тиру × реальных часов
+      // кампании × avg рекомендованная ставка. Берём ёмкость (recoPphForTier), а не
+      // pphTarget (стратегия охвата/частоты): pphTarget определяет кол-во экранов,
+      // ёмкость — реальный объём планирования.
       const N = brief.constructions.count;
       const allPoolScreens0 = prepared.flatMap(r => r.pool);
       // Используем уже загруженный recoBid (если DSP-режим) или minBid×BID_MULTIPLIER
       const recoBid = avgEffectiveBid(allPoolScreens0, brief.bidMode, 1);
-      const totalBudget = Math.round(N * SC_OPT * days * hpdFixed * recoBid);
+      // Частота ограничена плановой ёмкостью формата: «максимум» не должен просить
+      // больше показов, чем инвентарь физически способен отдать.
+      const _capPph = capacityAll ? capacityAll.avgPph : CAPACITY_PPH_DEFAULT;
+      const _pph = Math.min(recoPphForTier(brief.recoTier), _capPph);
+      const totalBudget = Math.round(N * _pph * days * hpdFixed * recoBid);
 
       const alloc = allocateBudgetAcrossRegions(
         totalBudget,
@@ -4440,9 +4583,11 @@ async function onCalcClick() {
       const MAX_MONTHLY_BY_TIER  = { M: 30_000_000, SP: 15_000_000, A: 5_000_000, B: 2_000_000, C: 1_000_000, D: 300_000 };
 
       for (const r of prepared) {
-        const avgBid   = avgEffectiveBid(r.pool, brief.bidMode, 1);
-        const capPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * r.pool.length * days);
-        const capBudget = Math.floor(capPlays * avgBid);
+        // Потолок — плановая ёмкость на реальных часах расписания (раньше здесь был
+        // SC_MAX × RECO_HOURS_PER_DAY, т.е. 60 вых/ч × условные 12 ч/день, что давало
+        // потолок заметно выше реально осваиваемого объёма).
+        const cap = computeCapacity(r.pool, days * hpdFixed, brief.bidMode);
+        const capBudget = cap?.budget ?? Infinity;
 
         const optRaw = Math.floor((BASE_MONTHLY_BY_TIER[r.tier] ?? BASE_MONTHLY_BY_TIER.C) * (days / 30));
         const maxRaw = Math.floor((MAX_MONTHLY_BY_TIER[r.tier]  ?? MAX_MONTHLY_BY_TIER.C)  * (days / 30));
@@ -4585,7 +4730,9 @@ async function onCalcClick() {
         if (allRecos.length > 0) {
           const N = brief.constructions.count;
           const overallAvgReco = allRecos.reduce((a, b) => a + b, 0) / allRecos.length;
-          const totalBudget = Math.round(N * SC_OPT * days * hpdFixed * overallAvgReco);
+          const _capPph2 = capacityAll ? capacityAll.avgPph : CAPACITY_PPH_DEFAULT;
+          const _pph2 = Math.min(recoPphForTier(brief.recoTier), _capPph2);
+          const totalBudget = Math.round(N * _pph2 * days * hpdFixed * overallAvgReco);
           const alloc = allocateBudgetAcrossRegions(
             totalBudget,
             prepared.map(r => ({ key: r.region, tier: getTierForGeo(r.region) })),
@@ -4890,13 +5037,15 @@ async function onCalcClick() {
 
     if (brief.budget.mode !== "goal_ots" && brief.budget.mode !== "goal_plays") {
       const playsPerHourPerScreen = (totalPlaysEffective / days / hpd) / Math.max(1, chosen.length);
-      if (playsPerHourPerScreen > pphTarget && playsPerHourPerScreen <= SC_MAX) {
-        warnings.push(`⚠️ Регион «${regionDisplay}»: в среднем ${playsPerHourPerScreen.toFixed(1)} выходов/час на экран (выше выбранной стратегии ${pphTarget}).`);
-      }
-      // In GID+budget mode frequency is a calculated output, not a target — suppress warning.
-      const desiredPph = (_isGidRegion && hasBudget) ? null : (ppmManual > 0 ? ppmManual : (_isGidRegion ? null : pphTarget));
+      // Частоту сравниваем ТОЛЬКО с явно запрошенной: ppm-слайдер конструкций или
+      // per-region override. «Стратегия подбора» задаёт количество экранов, а не
+      // частоту, и её дефолт (max_reach → 5 вых/ч) почти всегда ниже фактической —
+      // из-за этого предупреждения «выше/ниже выбранной стратегии» вылезали
+      // практически на каждом расчёте, хотя стратегию пользователь не выбирал.
+      // В GID-режиме с бюджетом частота — результат (бюджет ÷ ставка), не цель.
+      const desiredPph = (_isGidRegion && hasBudget) ? null : (ppmManual > 0 ? ppmManual : null);
       if (desiredPph != null && playsPerHourPerScreen < desiredPph - 0.4) {
-        warnings.push(`⚠️ Бюджет позволяет ${playsPerHourPerScreen.toFixed(1)} вых/час на экран (запрошено ${desiredPph}). Увеличьте бюджет для полной частоты.`);
+        warnings.push(`⚠️ Регион «${regionDisplay}»: бюджет позволяет ${playsPerHourPerScreen.toFixed(1)} вых/час на экран (запрошено ${desiredPph}). Увеличьте бюджет для полной частоты.`);
       }
     }
 
