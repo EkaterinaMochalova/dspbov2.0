@@ -801,6 +801,10 @@ function renderSelectionExtra() {
         <input type="text" id="addr-2gis-brand" placeholder="Напр.: Пятёрочка, Магнит, McDonald's"
           style="width:100%; box-sizing:border-box; padding:9px 12px; border:1px solid #b7e3c6;
                  border-radius:8px; font-size:13px; outline:none;">
+        <label style="display:flex; align-items:center; gap:6px; margin-top:8px; font-size:12px; color:#33691e; cursor:pointer;">
+          <input type="checkbox" id="addr-2gis-full">
+          Искать полнее (обход сеткой — дольше, но находит больше объектов)
+        </label>
         <div style="display:flex; gap:8px; margin-top:8px; align-items:center; flex-wrap:wrap;">
           <button type="button" id="addr-2gis-apply" style="
             padding:8px 18px; background:#1DB244; color:#fff; border:none;
@@ -853,6 +857,31 @@ function renderSelectionExtra() {
       return inRegion.length ? inRegion : all;
     }
 
+    // По центроиду инвентаря на каждый выбранный регион. Регионы без экранов с
+    // координатами просто пропускаем.
+    function geo2gisCenters() {
+      const regions = Array.isArray(state.selectedRegions) ? state.selectedRegions : [];
+      const all = (Array.isArray(state.screensAll) && state.screensAll.length)
+        ? state.screensAll
+        : (Array.isArray(state.screens) ? state.screens : []);
+      const centroid = (arr, label) => {
+        const pts = arr.filter(s => Number.isFinite(Number(s.lat)) && Number.isFinite(Number(s.lon)));
+        if (!pts.length) return null;
+        return {
+          lat: pts.reduce((a, s) => a + Number(s.lat), 0) / pts.length,
+          lon: pts.reduce((a, s) => a + Number(s.lon), 0) / pts.length,
+          label,
+        };
+      };
+      if (!regions.length) {
+        const c = centroid(all, "");
+        return c ? [c] : [];
+      }
+      return regions
+        .map(r => centroid(all.filter(s => screenMatchesGeoChoice(s, r)), r))
+        .filter(Boolean);
+    }
+
     function setRowStatus(row, text, color, title) {
       const st = row.querySelector(".addr-status");
       if (!st) return;
@@ -899,11 +928,18 @@ function renderSelectionExtra() {
       row._resolveTimer = setTimeout(() => resolveRow(row, false), 700);
     }
 
+    // Пересчёт счётчиков — O(строк × размер пула), а planner:pool-updated прилетает
+    // почти на каждый ввод. Через 2ГИС в списке может оказаться несколько сотен
+    // адресов, поэтому без дебаунса виджет встал бы колом.
+    let _recountTimer = null;
     function recountAll(countOnly) {
-      document.querySelectorAll("#addr-list .addr-row").forEach(row => resolveRow(row, countOnly));
+      clearTimeout(_recountTimer);
+      _recountTimer = setTimeout(() => {
+        document.querySelectorAll("#addr-list .addr-row").forEach(row => resolveRow(row, countOnly));
+      }, 250);
     }
 
-    function addAddressRow(value, point) {
+    function addAddressRow(value, point, opts) {
       const list = el("addr-list");
       if (!list) return;
       const row = document.createElement("div");
@@ -939,7 +975,9 @@ function renderSelectionExtra() {
       if (point && Number.isFinite(point.lat) && Number.isFinite(point.lon)) {
         state.addressPoints.set(normalizeKey(value || ""), { lat: point.lat, lon: point.lon });
       }
-      if (value) resolveRow(row, false);
+      // При массовом добавлении разрешение строк запускает bulkAddAddresses одним
+      // проходом в конце — иначе на 500 адресов уйдёт 500 отдельных пересчётов.
+      if (value && !opts?.defer) resolveRow(row, false);
       return inp;
     }
 
@@ -977,9 +1015,11 @@ function renderSelectionExtra() {
         if (!i.value.trim()) i.closest(".addr-row")?.remove();
       });
       clean.forEach(it => addAddressRow(it.address,
-        (Number.isFinite(it.lat) && Number.isFinite(it.lon)) ? { lat: it.lat, lon: it.lon } : null));
+        (Number.isFinite(it.lat) && Number.isFinite(it.lon)) ? { lat: it.lat, lon: it.lon } : null,
+        { defer: true }));
       if (clean.length > ADDR_COLLAPSE_LIMIT) addrCollapsed = true;
       updateAddrToggle();
+      recountAll(false);
       return clean.length;
     }
 
@@ -997,6 +1037,8 @@ function renderSelectionExtra() {
 
     // Смена радиуса не требует повторного геокодирования — только пересчёта.
     el("planner-radius")?.addEventListener("input", () => recountAll(true));
+    // Массовое добавление (импорт, 2ГИС) считает счётчики один раз в конце, а не
+    // по строке на каждую добавленную: строк может быть несколько сотен.
     // Инвентарь или регионы поменялись — счётчики устарели.
     window.addEventListener("planner:screens-ready", () => recountAll(true));
     window.addEventListener("planner:pool-updated", () => recountAll(true));
@@ -1034,15 +1076,14 @@ function renderSelectionExtra() {
       const brand  = String(el("addr-2gis-brand")?.value || "").trim();
       if (!brand) { if (status) { status.textContent = "Введите название бренда."; status.style.color = "#dc2626"; } return; }
 
-      const pool = addrPool();
-      const withCoords = pool.filter(s => Number.isFinite(Number(s.lat)) && Number.isFinite(Number(s.lon)));
-      if (!withCoords.length) {
+      // Центр поиска — по одному на регион. Один общий центроид на несколько
+      // регионов попадал бы в чистое поле между городами, и круг радиусом 40 км
+      // не накрывал бы ни один из них.
+      const centers = geo2gisCenters();
+      if (!centers.length) {
         if (status) { status.textContent = "Инвентарь ещё загружается."; status.style.color = "#dc2626"; }
         return;
       }
-      // Центр поиска — центроид инвентаря выбранных регионов.
-      const cLat = withCoords.reduce((a, s) => a + Number(s.lat), 0) / withCoords.length;
-      const cLon = withCoords.reduce((a, s) => a + Number(s.lon), 0) / withCoords.length;
 
       btn.disabled = true;
       const btnText = btn.textContent;
@@ -1050,14 +1091,23 @@ function renderSelectionExtra() {
       if (status) { status.style.color = "#667085"; status.textContent = "Загружаю объекты 2ГИС…"; }
 
       try {
-        const found = await fetch2gisAddresses(brand, cLat, cLon, (n, total) => {
-          if (status) status.textContent = `Загружаю объекты 2ГИС: ${n}` + (total ? ` из ${total}` : "");
+        const full = !!el("addr-2gis-full")?.checked;
+        const res = await fetch2gisAddresses(brand, centers, { full }, (n, stage) => {
+          if (status) status.textContent = `2ГИС, ${stage}: найдено ${n}`;
         });
-        if (!found.length) {
+        if (res.error) {
+          if (status) { status.textContent = "Ошибка: " + res.error; status.style.color = "#dc2626"; }
+        } else if (!res.results.length) {
           if (status) { status.textContent = `2ГИС не нашёл «${brand}» в этих регионах.`; status.style.color = "#dc2626"; }
         } else {
-          const added = bulkAddAddresses(found);
-          if (status) { status.textContent = `Добавлено адресов: ${added}`; status.style.color = "#1DB244"; }
+          const added = bulkAddAddresses(res.results);
+          const notes = [];
+          if (res.capped) notes.push("показаны первые " + added);
+          if (res.withoutAddress) notes.push(res.withoutAddress + " объектов без адреса пропущено");
+          if (status) {
+            status.textContent = `Добавлено адресов: ${added}` + (notes.length ? ` (${notes.join(", ")})` : "");
+            status.style.color = "#1DB244";
+          }
           const panel = el("addr-2gis-panel");
           if (panel) panel.style.display = "none";
         }
@@ -3340,52 +3390,171 @@ function attachAddressSuggest(inputEl) {
   inputEl.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDropdown(); });
 }
 
-// Адреса объектов бренда из 2ГИС. Отдаём адрес ВМЕСТЕ с точкой: координата уже
-// известна, и повторно геокодировать её незачем.
-// Ключ и воркер-прокси те же, что использовал прежний блок «Рядом с объектами».
+// ===== Подбор адресов через 2ГИС =====
+// Портировано из omni360-tools (lib/addresses-core.js) — там метод проверен
+// замерами по API, здесь он подогнан под планировщик: центр берём из координат
+// инвентаря выбранных регионов, а не геокодируем город по названию.
+//
+// Что было не так в прежней версии и почему выдача выглядела странно:
+//   • слался параметр `location`, а круговой фильтр в /3.0/items — это `point`.
+//     Замер: «Пятёрочка/Казань» — 490 объектов через point против 190 через
+//     location, «Магнит/Казань» — 314 против 211. Треть-две трети выдачи терялись;
+//   • radius=50000 при задокументированном пределе 40000;
+//   • пагинация строилась от result.total, а он у 2ГИС ненадёжен — листать надо,
+//     пока страницы не кончатся (неполная страница или 404 itemNotFound);
+//   • дедуп шёл по тексту адреса, а не по координатам.
+//
+// Отдельно: «point + radius» у 2ГИС — НЕ геометрический фильтр. Для одних запросов
+// total растёт с радиусом, для других падает, причём объекты из малого радиуса не
+// попадают в выдачу большого. Поэтому у полного режима есть второй проход сеткой.
 const GEO2GIS_KEY = "ba3c806e-746b-40b7-a1c8-4fc79c1a9667";
 const GEO2GIS_PROXY = "https://silent-surf-cd5e.mochalova-kathrine-v.workers.dev/2gis";
+const GEO2GIS = {
+  RADIUS_MAX: 40000,      // предел API
+  PAGE_SIZE: 50,          // предел API
+  MAX_PAGES: 60,          // предохранитель на одну точку
+  MAX_RESULTS: 600,       // сколько адресов достаточно для адресной программы
+  GRID: 4,                // сетка 4×4 во «полном» режиме
+  GRID_SPAN: 0.3,         // сторона области обхода в градусах (≈33 км)
+  GRID_RADIUS: 6000,      // радиус в точке сетки; круги перекрываются
+};
 
-async function fetch2gisAddresses(query, centerLat, centerLon, onProgress) {
-  const PAGE_SIZE = 50;
-  const CITY_RADIUS = 50000;   // поиск по городу целиком
-  const MAX_PAGES = 40;        // предохранитель: 40 × 50 = 2000 объектов
+// Адрес объекта: сначала короткий address_name, потом структурные компоненты,
+// и только в конце full_address_name — он длиннее и чаще содержит лишнее.
+function _2gisAddressOf(item) {
+  if (item.address_name) return String(item.address_name).trim();
+  const addr = item.address || {};
+  if (addr.name) return String(addr.name).trim();
+  const comps = addr.components || [];
+  const parts = [];
+  for (const c of comps) {
+    if (c.street && c.number) parts.push(c.street + ", " + c.number);
+    else if (c.street) parts.push(c.street);
+  }
+  if (parts.length) return parts.join("; ");
+  return String(item.full_address_name || "").trim();
+}
+
+// Одна страница выдачи. done=true — выдача кончилась (штатно или из-за ошибки).
+async function _2gisFetchPage(query, center, radius, page) {
+  const url = GEO2GIS_PROXY +
+    "?q=" + encodeURIComponent(query) +
+    "&point=" + center.lon + "," + center.lat +
+    "&radius=" + Math.min(radius, GEO2GIS.RADIUS_MAX) +
+    "&page=" + page +
+    "&page_size=" + GEO2GIS.PAGE_SIZE +
+    "&fields=" + encodeURIComponent("items.point,items.address,items.address_name,items.full_address_name") +
+    "&key=" + GEO2GIS_KEY;
+
+  let data = null;
+  try {
+    const r = await fetch(url);
+    data = await r.json();
+  } catch (e) {
+    return { items: [], done: true, error: "2ГИС не ответил: " + e.message };
+  }
+
+  const code = data?.meta?.code;
+  if (code !== 200) {
+    // 404 itemNotFound — выдача закончилась, это нормальное завершение
+    const type = data?.meta?.error?.type || "";
+    if (code === 404 || type === "itemNotFound") return { items: [], done: true };
+    return { items: [], done: true, error: data?.meta?.error?.message || ("2ГИС ответил " + code) };
+  }
+
+  const raw = data?.result?.items || [];
+  const items = [];
+  for (const it of raw) {
+    const p = it.point;
+    if (!p || !Number.isFinite(Number(p.lat)) || !Number.isFinite(Number(p.lon))) continue;
+    items.push({ address: _2gisAddressOf(it), lat: Number(p.lat), lon: Number(p.lon) });
+  }
+  // Неполная страница — дальше ничего нет. На result.total не опираемся: он врёт.
+  return { items, done: raw.length < GEO2GIS.PAGE_SIZE };
+}
+
+// Вычерпывает одну точку: листает страницы, пока они не кончатся.
+async function _2gisSweepPoint(query, center, radius, sink) {
+  for (let page = 1; page <= GEO2GIS.MAX_PAGES; page++) {
+    const r = await _2gisFetchPage(query, center, radius, page);
+    for (const it of r.items) sink.push(it);
+    if (r.error) return { error: r.error };
+    if (r.done) break;
+    if (sink.size() >= GEO2GIS.MAX_RESULTS) return { capped: true };
+  }
+  return {};
+}
+
+// Точки сетки вокруг центра.
+function _2gisBuildSectors(center, grid, span) {
+  const step = span / grid;
+  const half = span / 2;
   const out = [];
-  const seen = new Set();
-
-  let page = 1, totalPages = 1, total = 0;
-  while (page <= totalPages && page <= MAX_PAGES) {
-    const url = GEO2GIS_PROXY +
-      "?q=" + encodeURIComponent(query) +
-      "&location=" + centerLon + "," + centerLat +
-      "&radius=" + CITY_RADIUS +
-      "&page=" + page +
-      "&page_size=" + PAGE_SIZE +
-      "&fields=" + encodeURIComponent("items.point,items.address_name,items.full_address_name") +
-      "&key=" + GEO2GIS_KEY;
-
-    const data = await fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
-    if (!data?.result) break;
-
-    const items = data.result.items || [];
-    for (const item of items) {
-      const pt = item.point;
-      if (!pt || !Number.isFinite(Number(pt.lat)) || !Number.isFinite(Number(pt.lon))) continue;
-      const address = String(item.full_address_name || item.address_name || item.name || "").trim();
-      if (!address) continue;
-      const key = normalizeKey(address);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({ address, lat: Number(pt.lat), lon: Number(pt.lon) });
+  for (let i = 0; i < grid; i++) {
+    for (let j = 0; j < grid; j++) {
+      out.push({
+        lat: center.lat - half + step / 2 + i * step,
+        lon: center.lon - half + step / 2 + j * step,
+      });
     }
-
-    total = data.result.total || 0;
-    totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-    if (typeof onProgress === "function") onProgress(out.length, total);
-    page++;
-    if (!items.length) break;
   }
   return out;
+}
+
+/**
+ * Ищет адреса объектов бренда вокруг каждого из центров.
+ * centers  — [{lat, lon}], по одному на выбранный регион.
+ * opts.full — второй проход сеткой (дольше, но полнее).
+ * Возвращает [{address, lat, lon}] без дублей по координатам.
+ */
+async function fetch2gisAddresses(query, centers, opts = {}, onProgress) {
+  const list = (Array.isArray(centers) ? centers : [centers])
+    .filter(c => c && Number.isFinite(Number(c.lat)) && Number.isFinite(Number(c.lon)))
+    .map(c => ({ lat: Number(c.lat), lon: Number(c.lon), label: c.label || "" }));
+  if (!list.length) return { results: [], error: "нет координат для поиска" };
+
+  // Дедуп по координатам, а не по тексту: один и тот же адрес пишется по-разному,
+  // а разные объекты иногда делят одну строку адреса.
+  const byCoord = new Map();
+  const sink = {
+    push(it) {
+      const key = it.lat.toFixed(6) + "," + it.lon.toFixed(6);
+      if (!byCoord.has(key)) byCoord.set(key, it);
+    },
+    size: () => byCoord.size,
+  };
+
+  const report = (stage) => { if (typeof onProgress === "function") onProgress(byCoord.size, stage); };
+
+  let error = null, capped = false;
+
+  for (const center of list) {
+    if (capped || error) break;
+    const where = center.label ? ` (${center.label})` : "";
+
+    report("широкий поиск" + where);
+    const wide = await _2gisSweepPoint(query, center, GEO2GIS.RADIUS_MAX, sink);
+    if (wide.error) { error = wide.error; break; }
+    if (wide.capped) { capped = true; break; }
+
+    if (!opts.full) continue;
+
+    const sectors = _2gisBuildSectors(center, GEO2GIS.GRID, GEO2GIS.GRID_SPAN);
+    for (let i = 0; i < sectors.length; i++) {
+      report(`сектор ${i + 1} из ${sectors.length}${where}`);
+      const r = await _2gisSweepPoint(query, sectors[i], GEO2GIS.GRID_RADIUS, sink);
+      if (r.error) { error = r.error; break; }
+      if (r.capped) { capped = true; break; }
+    }
+  }
+
+  let results = [...byCoord.values()].filter(it => it.address);
+  const withoutAddress = byCoord.size - results.length;
+  if (results.length > GEO2GIS.MAX_RESULTS) {
+    results = results.slice(0, GEO2GIS.MAX_RESULTS);
+    capped = true;
+  }
+  return { results, withoutAddress, capped, error };
 }
 
 function pickScreensNearPoint(screens, center, radiusMeters) {
