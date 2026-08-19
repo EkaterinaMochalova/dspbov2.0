@@ -1738,25 +1738,13 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
       <button type="button" class="sel-chip active" data-mode="city_even">
         <span class="sel-chip-ico">⚡</span><span>Равномерно</span>
       </button>
-      <button type="button" class="sel-chip" data-mode="poi">
-        <span class="sel-chip-ico">📍</span><span>Рядом с POI</span>
-      </button>
       <button type="button" class="sel-chip" data-mode="near_address">
         <span class="sel-chip-ico">🏠</span><span>Рядом с адресом</span>
-      </button>
-      <button type="button" class="sel-chip" data-mode="highway">
-        <span class="sel-chip-ico">🛣</span><span>По магистрали</span>
-      </button>
-      <button type="button" class="sel-chip" data-mode="route">
-        <span class="sel-chip-ico">🚗</span><span>Маршрут</span>
       </button>
     </div>
     <select id="selection-mode" style="display:none;">
       <option value="city_even">Равномерно по региону</option>
-      <option value="poi">Рядом с POI</option>
       <option value="near_address">Рядом с адресом</option>
-      <option value="highway">Вдоль магистрали / шоссе</option>
-      <option value="route">Вдоль маршрута</option>
       <option value="manual_screens">По GID-списку</option>
     </select>
     <div id="selection-extra" style="margin-top:10px;"></div>
@@ -2381,9 +2369,6 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
     const map = {
       city_even: "Равномерно по региону",
       near_address: "Рядом с адресом",
-      poi: "Рядом с POI",
-      highway: "Вдоль магистрали",
-      route: "Вдоль маршрута",
       manual_screens: "По GID-списку"
     };
     return map[m] || m;

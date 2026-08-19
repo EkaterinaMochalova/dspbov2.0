@@ -63,80 +63,6 @@ window.PLANNER.ui.photosAllowed = false;
 // (опционально) чтобы проще было обращаться из любого места
 window.FORMAT_LABELS = window.FORMAT_LABELS || FORMAT_LABELS;
 
-// ===== POI =====
-const POI_QUERIES = {
-  fitness: `
-    nwr(area.a)["leisure"="fitness_centre"];
-    nwr(area.a)["amenity"="gym"];
-    nwr(area.a)["sport"="fitness"];
-    nwr(area.a)["leisure"="sports_centre"]["sport"="fitness"];
-  `,
-  pet_store: `
-    nwr(area.a)["shop"="pet"];
-    nwr(area.a)["shop"="pet_grooming"];
-    nwr(area.a)["amenity"="veterinary"];
-  `,
-  supermarket: `
-    nwr(area.a)["shop"="supermarket"];
-    nwr(area.a)["shop"="convenience"];
-    nwr(area.a)["shop"="hypermarket"];
-  `,
-  mall: `
-    nwr(area.a)["shop"="mall"];
-  `,
-  cafe: `
-    nwr(area.a)["amenity"="cafe"];
-    nwr(area.a)["shop"="coffee"];
-  `,
-  restaurant: `
-    nwr(area.a)["amenity"="restaurant"];
-    nwr(area.a)["amenity"="fast_food"];
-    nwr(area.a)["amenity"="food_court"];
-  `,
-  pharmacy: `
-    nwr(area.a)["amenity"="pharmacy"];
-  `,
-  school: `
-    nwr(area.a)["amenity"="school"];
-  `,
-  university: `
-    nwr(area.a)["amenity"="university"];
-    nwr(area.a)["amenity"="college"];
-  `,
-  hospital: `
-    nwr(area.a)["amenity"="hospital"];
-    nwr(area.a)["amenity"="clinic"];
-  `,
-  gas_station: `
-    nwr(area.a)["amenity"="fuel"];
-  `,
-  bank: `
-    nwr(area.a)["amenity"="bank"];
-    nwr(area.a)["amenity"="atm"];
-  `,
-  transport: `
-    nwr(area.a)["public_transport"];
-    nwr(area.a)["railway"="station"];
-    nwr(area.a)["railway"="subway_entrance"];
-  `
-};
-
-const POI_LABELS = {
-  fitness: "Фитнес-клубы",
-  pet_store: "Зоомагазины",
-  supermarket: "Супермаркеты",
-  mall: "Торговые центры",
-  cafe: "Кафе / кофе",
-  restaurant: "Рестораны / фастфуд",
-  pharmacy: "Аптеки",
-  school: "Школы",
-  university: "ВУЗы",
-  hospital: "Больницы / клиники",
-  gas_station: "АЗС",
-  bank: "Банки / банкоматы",
-  transport: "Транспорт (метро/станции)"
-};
-
 // ===== Model =====
 const BID_MULTIPLIER = 1.8;
 const SC_OPT = 30;
@@ -1022,56 +948,6 @@ function renderSelectionExtra() {
     return;
   }
 
-  if (mode === "poi") {
-    const keys = Object.keys(POI_QUERIES || {});
-    const options = keys.map(k => `<option value="${k}">${POI_LABELS[k] || k}</option>`).join("");
-
-    extra.innerHTML = `
-      <select id="poi-type"
-              style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-        ${options}
-      </select>
-
-      <input id="planner-radius" type="number" min="50" value="500" placeholder="Радиус вокруг POI, м"
-             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
-
-      <div style="font-size:12px; color:#666; margin-top:6px;">
-        POI-тип берём из OpenStreetMap (Overpass), затем выбираем экраны вокруг POI.
-      </div>
-    `;
-    return;
-  }
-
-  if (mode === "route") {
-    extra.innerHTML = `
-      <input id="route-from" type="text" placeholder="Точка А"
-             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-      <input id="route-to" type="text" placeholder="Точка Б"
-             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-      <input id="planner-radius" type="number" min="50" value="300" placeholder="Радиус от маршрута, м"
-             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
-      <div style="font-size:12px; color:#666; margin-top:6px;">
-        MVP: маршрут сохраняем в бриф (без построения).
-      </div>
-    `;
-    attachAddressSuggest(el("route-from"));
-    attachAddressSuggest(el("route-to"));
-    return;
-  }
-
-  if (mode === "highway") {
-    extra.innerHTML = `
-      <input id="highway-name" type="text" placeholder="Название дороги, например: Рублёвское шоссе"
-             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-      <input id="planner-radius" type="number" min="50" value="500" placeholder="Радиус от дороги, м"
-             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
-      <div style="font-size:12px; color:#666; margin-top:6px;">
-        Введите название магистрали, шоссе или улицы. Экраны будут подобраны вдоль всей дороги в заданном радиусе.
-      </div>
-    `;
-    return;
-  }
-
   if (mode === "manual_screens") {
     // GID textarea lives in step 1 (geo-gids-block) — don't re-render
     if (el("manual-gids")) { extra.innerHTML = ""; return; }
@@ -1709,19 +1585,6 @@ const globalIntervals = (scheduleType === "weekly" && typeof getGlobalScheduleFr
     brief.selection.address   = addresses[0] || ""; // backward compat
     brief.selection.radius_m  = pickAnyNum(500, "#planner-radius", "#radius");
   }
-  if (selectionMode === "poi") {
-    brief.selection.poi_type = String(qsVal("#poi-type") || "pet_store").trim();
-    brief.selection.radius_m = pickAnyNum(500, "#planner-radius", "#radius");
-  }
-  if (selectionMode === "route") {
-    brief.selection.route_from = pickAnyVal("#route-from");
-    brief.selection.route_to = pickAnyVal("#route-to");
-    brief.selection.radius_m = pickAnyNum(300, "#planner-radius", "#radius");
-  }
-  if (selectionMode === "highway") {
-    brief.selection.highway_name = el("highway-name")?.value || "";
-    brief.selection.radius_m = pickAnyNum(500, "#planner-radius", "#radius");
-  }
   if (selectionMode === "manual_screens") {
     brief.selection.manual_gids = _parseManualGids(el("manual-gids")?.value || "");
   }
@@ -1769,148 +1632,6 @@ function getTierForGeo(name) {
 }
 
 // ===== Helpers =====
-async function fetchRouteOSRM(A, B) {
-  const url =
-    "https://router.project-osrm.org/route/v1/driving/" +
-    `${A.lon},${A.lat};${B.lon},${B.lat}` +
-    "?overview=full&geometries=geojson";
-
-  const r = await fetch(url, { method: "GET" });
-  if (!r.ok) throw new Error("OSRM HTTP " + r.status);
-  const j = await r.json();
-
-  const coords = j?.routes?.[0]?.geometry?.coordinates;
-  if (!Array.isArray(coords) || coords.length < 2) return null;
-
-  return coords; // [ [lon,lat], ... ]
-}
-
-// Yandex geocode of a road name → returns {center, bbox} or null
-async function geocodeRoadYandex(roadName, regionHint) {
-  const key = window.YANDEX_MAPS_KEY;
-  if (!key) return null;
-  const query = regionHint ? `${roadName}, ${regionHint}` : roadName;
-  const url = `https://geocode-maps.yandex.ru/1.x/?apikey=${key}&geocode=${encodeURIComponent(query)}&results=1&format=json&kind=street`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error("Yandex geocode HTTP " + r.status);
-  const j = await r.json();
-  const member = j?.response?.GeoObjectCollection?.featureMember?.[0];
-  if (!member) return null;
-  const gobj = member.GeoObject;
-  const pos = gobj?.Point?.pos?.split(" ");
-  const lower = gobj?.boundedBy?.Envelope?.lowerCorner?.split(" ");
-  const upper = gobj?.boundedBy?.Envelope?.upperCorner?.split(" ");
-  if (!pos || !lower || !upper) return null;
-  return {
-    center: { lon: Number(pos[0]), lat: Number(pos[1]) },
-    bbox: {
-      minLon: Number(lower[0]), minLat: Number(lower[1]),
-      maxLon: Number(upper[0]), maxLat: Number(upper[1]),
-    }
-  };
-}
-
-// Parse Overpass response elements into [[lon,lat], ...] polyline
-function _parseOverpassPolyline(data) {
-  const nodes = {};
-  for (const el of (data.elements || [])) {
-    if (el.type === "node") nodes[el.id] = el;
-  }
-  const allPoints = [];
-  for (const el of (data.elements || [])) {
-    if (el.type === "way" && Array.isArray(el.nodes)) {
-      for (const nid of el.nodes) {
-        const n = nodes[nid];
-        if (n) allPoints.push([n.lon, n.lat]);
-      }
-    }
-  }
-  return allPoints;
-}
-
-async function fetchHighwayGeometry(roadName, regionHint) {
-  const q = String(roadName || "").trim();
-  if (!q) return null;
-
-  const qSafe = q.replace(/"/g, "");
-  const OVERPASS_ENDPOINTS = [
-    "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass.openstreetmap.ru/api/interpreter",
-  ];
-
-  // Step 1: Try Yandex to get the road's bounding box
-  let bbox = null;
-  if (window.YANDEX_MAPS_KEY) {
-    try {
-      const yRes = await geocodeRoadYandex(q, regionHint);
-      if (yRes?.bbox) {
-        bbox = yRes.bbox;
-        console.log(`[highway] Yandex bbox for «${q}»:`, bbox);
-      }
-    } catch(e) {
-      console.warn("[highway] Yandex geocode road failed:", e.message);
-    }
-  }
-
-  // Step 2: Try Overpass with bbox (targeted = faster, less rate-limited)
-  // bbox query: [south,west,north,east]
-  const bboxStr = bbox
-    ? `${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon}`
-    : null;
-
-  // Expand bbox slightly (0.05° ≈ 5 km padding)
-  const bboxExpandedStr = bbox
-    ? `${bbox.minLat - 0.05},${bbox.minLon - 0.05},${bbox.maxLat + 0.05},${bbox.maxLon + 0.05}`
-    : null;
-
-  const makeQuery = (useBbox) => useBbox
-    ? `[out:json][timeout:15];(way["name"~"${qSafe}",i]["highway"](${useBbox});>;);out body;`
-    : `[out:json][timeout:20];(way["name"~"${qSafe}",i]["highway"];>;);out body;`;
-
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    // Try bbox query first (if we have one), then full query
-    const queries = bboxExpandedStr
-      ? [makeQuery(bboxExpandedStr), makeQuery(null)]
-      : [makeQuery(null)];
-
-    for (const overpassQuery of queries) {
-      try {
-        const resp = await fetch(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: "data=" + encodeURIComponent(overpassQuery),
-          signal: AbortSignal.timeout(20000),
-        });
-        if (!resp.ok) {
-          if (resp.status === 429) { console.warn("[highway] Overpass 429 on", endpoint); break; }
-          throw new Error("Overpass HTTP " + resp.status);
-        }
-        const data = await resp.json();
-        const pts = _parseOverpassPolyline(data);
-        if (pts.length >= 2) {
-          console.log(`[highway] got ${pts.length} points from ${endpoint}`);
-          return pts;
-        }
-      } catch(e) {
-        console.warn(`[highway] ${endpoint} failed:`, e.message);
-      }
-    }
-  }
-
-  // Step 3: Fallback — if Yandex gave us a bbox, synthesize a simple diagonal polyline
-  // so screens near the road corridor are still matched
-  if (bbox) {
-    console.warn("[highway] Overpass unavailable, falling back to Yandex bbox diagonal");
-    return [
-      [bbox.minLon, bbox.minLat],
-      [bbox.maxLon, bbox.maxLat],
-    ];
-  }
-
-  return null;
-}
-
 function getLatLon(s) {
   const lat = Number(
     s?.lat ?? s?.LAT ?? s?.latitude ?? s?.Latitude ?? s?.y ?? s?.Y
@@ -1920,55 +1641,6 @@ function getLatLon(s) {
   );
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   return { lat, lon };
-}
-
-function distancePointToPolylineMeters(P, line) {
-  let best = Infinity;
-  for (let i = 0; i < line.length - 1; i++) {
-    const A = { lon: line[i][0], lat: line[i][1] };
-    const B = { lon: line[i + 1][0], lat: line[i + 1][1] };
-    const d = distancePointToSegmentMeters(P, A, B);
-    if (d < best) best = d;
-  }
-  return best;
-}
-
-function distancePointToSegmentMeters(P, A, B) {
-  const R = 6371000;
-  const lat0 = (A.lat + B.lat) * 0.5 * Math.PI / 180;
-
-  const ax = A.lon * Math.PI / 180 * Math.cos(lat0) * R;
-  const ay = A.lat * Math.PI / 180 * R;
-  const bx = B.lon * Math.PI / 180 * Math.cos(lat0) * R;
-  const by = B.lat * Math.PI / 180 * R;
-  const px = P.lon * Math.PI / 180 * Math.cos(lat0) * R;
-  const py = P.lat * Math.PI / 180 * R;
-
-  const abx = bx - ax, aby = by - ay;
-  const apx = px - ax, apy = py - ay;
-  const ab2 = abx * abx + aby * aby;
-
-  let t = (ab2 === 0) ? 0 : (apx * abx + apy * aby) / ab2;
-  t = Math.max(0, Math.min(1, t));
-
-  const cx = ax + t * abx;
-  const cy = ay + t * aby;
-
-  const dx = px - cx;
-  const dy = py - cy;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-function pickScreensNearPolyline(screens, lineLonLat, radiusM) {
-  const out = [];
-  for (const s of screens) {
-    const p = getLatLon(s);
-    if (!p) continue;
-
-    const d = distancePointToPolylineMeters({ lon: p.lon, lat: p.lat }, lineLonLat);
-    if (d <= radiusM) out.push(s);
-  }
-  return out;
 }
 
 function _screenIdOf(s) {
@@ -3449,221 +3121,6 @@ function pickScreensNearPoint(screens, center, radiusMeters) {
   });
 }
 
-// ===== Overpass =====
-const OVERPASS_URLS = [
-  "https://overpass.kumi.systems/api/interpreter",
-  "https://overpass-api.de/api/interpreter",
-  "https://overpass.nchc.org.tw/api/interpreter",
-  "https://overpass.openstreetmap.ru/api/interpreter",
-  "https://overpass.private.coffee/api/interpreter"
-];
-
-const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-async function _fetchOverpass(url, body, timeoutMs = 45000) {
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), timeoutMs);
-  try {
-    return await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
-      body: "data=" + encodeURIComponent(body),
-      signal: ac.signal
-    });
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-async function _runOverpassWithFailover(body, timeoutMs = 45000) {
-  let lastErr = null;
-  let attempt = 0;
-
-  for (const url of OVERPASS_URLS) {
-    attempt++;
-    try {
-      const res = await _fetchOverpass(url, body, timeoutMs);
-      const txt = await res.text();
-
-      if (!res.ok) throw new Error(`Overpass ${res.status} @ ${url} :: ${txt.slice(0, 180)}`);
-
-      let json;
-      try { json = JSON.parse(txt); }
-      catch { throw new Error(`Overpass non-JSON @ ${url} :: ${txt.slice(0, 180)}`); }
-
-      return json;
-    } catch (e) {
-      lastErr = e;
-      console.warn("[poi] overpass fail:", String(e));
-      await _sleep(350 * attempt + Math.floor(Math.random() * 500));
-    }
-  }
-
-  throw lastErr || new Error("Overpass failed (all endpoints)");
-}
-
-function _escapeOverpassString(s) {
-  return String(s || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"').trim();
-}
-
-function _normalizePOIs(json) {
-  const els = Array.isArray(json?.elements) ? json.elements : [];
-  return els.map(el => {
-    const name = el.tags?.name || "";
-    const lat0 = Number(el.lat ?? el.center?.lat);
-    const lon0 = Number(el.lon ?? el.center?.lon);
-    if (!Number.isFinite(lat0) || !Number.isFinite(lon0)) return null;
-    return { id: `${el.type}/${el.id}`, name, lat: lat0, lon: lon0, raw: el };
-  }).filter(Boolean);
-}
-
-function pickScreensNearPOIs(screens, pois, radiusMeters) {
-  const r = Number(radiusMeters || 0);
-  if (!r || !Array.isArray(pois) || !pois.length) return [];
-
-  const dist = window.GeoUtils?.haversineMeters;
-  if (!dist) throw new Error("GeoUtils.haversineMeters is missing");
-
-  const picked = [];
-  for (const s of (screens || [])) {
-    const slat = Number(s.lat), slon = Number(s.lon);
-    if (!Number.isFinite(slat) || !Number.isFinite(slon)) continue;
-
-    let ok = false;
-    for (const p of pois) {
-      if (dist(slat, slon, p.lat, p.lon) <= r) { ok = true; break; }
-    }
-    if (ok) picked.push(s);
-  }
-  return picked;
-}
-
-function _poiQueryWithScope(poiType, scopeExpr) {
-  const raw = POI_QUERIES[poiType];
-  if (!raw) throw new Error("Unknown poi_type: " + poiType);
-  return String(raw).replace(/nwr\s*\(\s*area\.a\s*\)/g, `nwr(${scopeExpr})`);
-}
-
-function _bboxFromScreens(screens) {
-  const pts = (screens || [])
-    .map(s => ({ lat: Number(s.lat), lon: Number(s.lon) }))
-    .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
-
-  if (!pts.length) return null;
-
-  let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
-  for (const p of pts) {
-    if (p.lat < minLat) minLat = p.lat;
-    if (p.lat > maxLat) maxLat = p.lat;
-    if (p.lon < minLon) minLon = p.lon;
-    if (p.lon > maxLon) maxLon = p.lon;
-  }
-
-  const padLat = 0.05;
-  const padLon = 0.08;
-
-  return {
-    minLat: minLat - padLat,
-    minLon: minLon - padLon,
-    maxLat: maxLat + padLat,
-    maxLon: maxLon + padLon
-  };
-}
-
-function _centerFromBbox(bb) {
-  if (!bb) return null;
-  return { lat: (bb.minLat + bb.maxLat) / 2, lon: (bb.minLon + bb.maxLon) / 2 };
-}
-
-function _estimateRadiusFromBbox(bb) {
-  if (!bb) return 25000;
-  const latSpan = Math.abs(bb.maxLat - bb.minLat);
-  const lonSpan = Math.abs(bb.maxLon - bb.minLon);
-  const latKm = latSpan * 111;
-  const midLat = (bb.minLat + bb.maxLat) / 2;
-  const lonKm = lonSpan * 111 * Math.cos((midLat * Math.PI) / 180);
-  const diagKm = Math.sqrt(latKm * latKm + lonKm * lonKm);
-  const r = Math.max(8000, Math.min(120000, (diagKm * 0.6) * 1000));
-  return Math.round(r);
-}
-
-async function fetchPOIsOverpassInRegion(poiType, regionName, screensInRegion, limit = 50) {
-  const t = String(poiType || "").trim();
-  if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
-
-  const region = _escapeOverpassString(regionName);
-  if (!region) throw new Error("Region is empty");
-
-  const safeLimit = Math.max(1, Math.min(50, Number(limit || 50)));
-
-  try {
-    const bodyArea = `
-      [out:json][timeout:40];
-      (
-        area["boundary"="administrative"]["name"="${region}"]["admin_level"~"4|6"];
-        area["boundary"="administrative"]["name:ru"="${region}"]["admin_level"~"4|6"];
-        area["boundary"="administrative"]["name"="${region}"];
-        area["boundary"="administrative"]["name:ru"="${region}"];
-      )->.cand;
-      .cand->.a;
-      (
-        ${POI_QUERIES[t]}
-      );
-      out center ${safeLimit};
-    `;
-    const json = await _runOverpassWithFailover(bodyArea, 55000);
-    const pois = _normalizePOIs(json).slice(0, safeLimit);
-    if (pois.length) return pois;
-  } catch (e) {
-    console.warn("[poi] area attempt failed:", String(e));
-  }
-
-  const bb = _bboxFromScreens(screensInRegion || []);
-  if (bb) {
-    try {
-      const scope = `${bb.minLat},${bb.minLon},${bb.maxLat},${bb.maxLon}`;
-      const q = _poiQueryWithScope(t, scope);
-
-      const bodyBbox = `
-        [out:json][timeout:40];
-        (
-          ${q}
-        );
-        out center ${safeLimit};
-      `;
-      const json2 = await _runOverpassWithFailover(bodyBbox, 55000);
-      const pois2 = _normalizePOIs(json2).slice(0, safeLimit);
-      if (pois2.length) return pois2;
-    } catch (e) {
-      console.warn("[poi] bbox attempt failed:", String(e));
-    }
-  }
-
-  const c = _centerFromBbox(bb);
-  if (c) {
-    try {
-      const r = _estimateRadiusFromBbox(bb);
-      const scope = `around:${r},${c.lat},${c.lon}`;
-      const q = _poiQueryWithScope(t, scope);
-
-      const bodyAround = `
-        [out:json][timeout:40];
-        (
-          ${q}
-        );
-        out center ${safeLimit};
-      `;
-      const json3 = await _runOverpassWithFailover(bodyAround, 55000);
-      const pois3 = _normalizePOIs(json3).slice(0, safeLimit);
-      if (pois3.length) return pois3;
-    } catch (e) {
-      console.warn("[poi] around attempt failed:", String(e));
-    }
-  }
-
-  throw new Error(`POI не найдены: «${POI_LABELS?.[t] || t}» в регионе «${regionName}». Попробуй другой тип или поменяй регион.`);
-}
-
 // ===== MULTI-REGION BUDGET ALLOCATION =====
 function _tierWeight(t) {
   switch (String(t || "").toUpperCase()) {
@@ -4036,13 +3493,7 @@ async function onCalcClick() {
   const _manualGidSet = _isManualMode ? (brief.selection.manual_gids || new Set()) : new Set();
   const _foundGids    = new Set(); // GID-ы, которые реально попали в расчёт
 
-  const isPOI = (brief.selection?.mode === "poi");
   const isNearAddress = (brief.selection?.mode === "near_address");
-
-  if (isPOI && !window.GeoUtils?.haversineMeters) {
-    alert("GeoUtils не найден. Проверь подключение geo.js");
-    return;
-  }
 
   // ===== Pre-geocode addresses (once, before region loop) =====
   let _geocodedPoints = null;
@@ -4171,39 +3622,6 @@ async function onCalcClick() {
       continue;
     }
 
-    // POI mode
-    let pois = [];
-    if (isPOI) {
-      const poiType = String(brief.selection.poi_type || "").trim();
-      const screenRadius = Number(brief.selection.radius_m || 500);
-
-      setStatus(`Ищу POI в регионе «${region}»: ${POI_LABELS?.[poiType] || poiType}…`);
-
-      try {
-        pois = await fetchPOIsOverpassInRegion(poiType, region, pool, 50);
-      } catch (e) {
-        console.error("[poi] error:", e);
-        alert(e?.message || `Ошибка Overpass (OSM) для региона «${region}».`);
-        setStatus("");
-        return;
-      }
-
-      anyPOIs = anyPOIs.concat(pois);
-      window.PLANNER.lastPOIs = anyPOIs;
-
-      try { renderPOIList(anyPOIs); } catch { }
-
-      const before = pool.length;
-      pool = pickScreensNearPOIs(pool, pois, screenRadius);
-
-      if (!pool.length) {
-        perRegionRows.push({ region: regionDisplay, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "нет экранов у POI" });
-        continue;
-      }
-
-      setStatus(`Экраны у POI: ${pool.length} из ${before} (регион: ${region}, POI: ${pois.length})`);
-    }
-
     // Near address mode — поддержка нескольких адресов
     if (isNearAddress) {
       const screenRadius = Number(brief.selection.radius_m || 500);
@@ -4237,91 +3655,6 @@ async function onCalcClick() {
       }
 
       setStatus(`Экраны у ${points.length} адресов: ${pool.length} из ${before} (радиус: ${screenRadius} м)`);
-    }
-
-    // ROUTE mode
-    if (brief.selection?.mode === "route") {
-      const fromTxt = String(brief.selection.route_from || "").trim();
-      const toTxt = String(brief.selection.route_to || "").trim();
-      const screenRadius = Number(brief.selection.radius_m || 300);
-
-      if (!fromTxt || !toTxt) {
-        perRegionRows.push({ region: regionDisplay, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "не задан маршрут" });
-        continue;
-      }
-
-      setStatus(`Маршрут для региона «${region}»: ${fromTxt} → ${toTxt}…`);
-
-      let A = null, B = null, routeLine = null;
-      try {
-        A = await geocodeAddressNominatim(fromTxt, region);
-        B = await geocodeAddressNominatim(toTxt, region);
-      } catch (e) {
-        console.error("[route] geocode error:", e);
-      }
-
-      if (!A || !B || !Number.isFinite(A.lat) || !Number.isFinite(A.lon) || !Number.isFinite(B.lat) || !Number.isFinite(B.lon)) {
-        perRegionRows.push({ region: regionDisplay, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "точки маршрута не найдены" });
-        warnings.push(`⚠️ Регион «${regionDisplay}»: не удалось геокодировать маршрут (${fromTxt} → ${toTxt}).`);
-        continue;
-      }
-
-      try {
-        routeLine = await fetchRouteOSRM(A, B);
-      } catch (e) {
-        console.error("[route] osrm error:", e);
-      }
-
-      if (!Array.isArray(routeLine) || routeLine.length < 2) {
-        routeLine = [[A.lon, A.lat], [B.lon, B.lat]];
-        warnings.push(`⚠️ Регион «${regionDisplay}»: OSRM недоступен, использую прямую линию A–B.`);
-      }
-
-      const before = pool.length;
-      pool = pickScreensNearPolyline(pool, routeLine, screenRadius);
-
-      if (!pool.length) {
-        perRegionRows.push({ region: regionDisplay, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "нет экранов у маршрута" });
-        continue;
-      }
-
-      setStatus(`Экраны у маршрута: ${pool.length} из ${before} (радиус: ${screenRadius}м)`);
-    }
-
-    // HIGHWAY mode
-    if (brief.selection?.mode === "highway") {
-      const hwName = String(brief.selection.highway_name || "").trim();
-      const screenRadius = Number(brief.selection.radius_m || 500);
-
-      if (!hwName) {
-        perRegionRows.push({ region: regionDisplay, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "не задана магистраль" });
-        continue;
-      }
-
-      setStatus(`Ищу дорогу «${hwName}» для региона «${region}»…`);
-
-      let hwLine = null;
-      try {
-        hwLine = await fetchHighwayGeometry(hwName, region);
-      } catch (e) {
-        console.error("[highway] error:", e);
-      }
-
-      if (!Array.isArray(hwLine) || hwLine.length < 2) {
-        perRegionRows.push({ region: regionDisplay, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "дорога не найдена" });
-        warnings.push(`⚠️ Регион «${regionDisplay}»: не удалось найти дорогу «${hwName}» через OpenStreetMap.`);
-        continue;
-      }
-
-      const before = pool.length;
-      pool = pickScreensNearPolyline(pool, hwLine, screenRadius);
-
-      if (!pool.length) {
-        perRegionRows.push({ region: regionDisplay, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "нет экранов у магистрали" });
-        continue;
-      }
-
-      setStatus(`Экраны у «${hwName}»: ${pool.length} из ${before} (радиус: ${screenRadius}м)`);
     }
 
     // Manual GID filter — базовый набор = указанные GID-ы (сохраняются ВСЕГДА).
@@ -5378,12 +4711,10 @@ ${perRegionText}`
   if (el("download-csv")) el("download-csv").disabled = chosenAll.length === 0;
   if (el("download-plan-xlsx")) el("download-plan-xlsx").disabled = chosenAll.length === 0;
 
-  // POI кнопки: включаем при наличии POI или геокодированных адресов
-  const hasPois   = Array.isArray(window.PLANNER?.lastPOIs) && window.PLANNER.lastPOIs.length > 0;
+  // Кнопки выгрузки адресов: включаем, когда есть геокодированные точки
   const hasGeoAddr = Array.isArray(window.PLANNER?.lastGeocodedPoints) && window.PLANNER.lastGeocodedPoints.length > 0;
-  const hasAnyPoi = hasPois || hasGeoAddr;
-  if (el("download-poi-csv"))  el("download-poi-csv").disabled  = !hasAnyPoi;
-  if (el("download-poi-xlsx")) el("download-poi-xlsx").disabled = !hasAnyPoi;
+  if (el("download-poi-csv"))  el("download-poi-csv").disabled  = !hasGeoAddr;
+  if (el("download-poi-xlsx")) el("download-poi-xlsx").disabled = !hasGeoAddr;
 
   // Ненайденные GID (для кнопки скачать)
   const unmatchedGids = _isManualMode
@@ -5965,9 +5296,6 @@ document.querySelectorAll('input[name="weekly_mode"]').forEach(r => {
 
   // POI / адреса — скачать CSV/XLSX
   function getPoisForExport() {
-    if (Array.isArray(window.PLANNER?.lastPOIs) && window.PLANNER.lastPOIs.length) {
-      return window.PLANNER.lastPOIs.map(p => ({ id: p.id, name: p.name, lat: p.lat, lon: p.lon }));
-    }
     if (Array.isArray(window.PLANNER?.lastGeocodedPoints) && window.PLANNER.lastGeocodedPoints.length) {
       return window.PLANNER.lastGeocodedPoints;
     }
@@ -7623,13 +6951,9 @@ Object.assign(window.PLANNER, {
   startPlanner,
   loadCityRegions,
   bootPlanner,
-  fetchPOIsOverpassInRegion,
-  pickScreensNearPOIs,
   downloadXLSX,
   geocodeAddressNominatim,
   pickScreensNearPoint,
-  _fetchOverpass,
-  _runOverpassWithFailover,
   computeScheduleHoursForPeriod,
   getScreensFilteredByOwner,
   renderOwners,
