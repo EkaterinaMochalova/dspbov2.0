@@ -65,18 +65,21 @@ window.FORMAT_LABELS = window.FORMAT_LABELS || FORMAT_LABELS;
 
 // ===== Model =====
 const BID_MULTIPLIER = 1.8;
-const SC_OPT = 30;
+const SC_OPT = 20;
 const SC_MAX = 60;
 
 // Выходов/час на экран для режима «подскажите бюджет» в разрезе выбранного тира.
-// «Оптимальный» — плановая ёмкость SC_OPT, «Максимум» — физический потолок SC_MAX,
-// «Минимум» — те же 0.35 от оптимума, что и в computeRecoBudgetTiers.
-// Без этого выбранный на шаге «Цели» тир молча игнорировался, как только задано
+// «Максимум» = плановая ёмкость формата (30 вых/ч, у медиафасадов 8) — выше неё
+// рекомендовать нельзя, инвентарь столько не отдаст. «Оптимальный» = SC_OPT (20),
+// «Минимум» = 0.35 от оптимума, тот же коэффициент, что в computeRecoBudgetTiers.
+// Это ограничение только для РЕКОМЕНДАЦИИ: вручную (слайдер выходов в час) частоту
+// по-прежнему можно поднять выше 30 — там потолком остаётся физический SC_MAX.
+// Без тира выбранное на шаге «Цели» молча игнорировалось, как только задано
 // количество конструкций: бюджет всегда считался по оптимуму (жалоба «выбрал
 // минимум → после кнопки конструкций посчитало на огромный бюджет»).
-function recoPphForTier(recoTier) {
+function recoPphForTier(recoTier, capacityPph = CAPACITY_PPH_DEFAULT) {
   if (recoTier === "min") return SC_OPT * 0.35;
-  if (recoTier === "max") return SC_MAX;
+  if (recoTier === "max") return capacityPph;
   return SC_OPT;
 }
 // Ручная надбавка к ставке: поверх выбранного режима (мин/реко) клиент может
@@ -194,12 +197,16 @@ function computeCapacity(screens, hoursTotal, bidMode, uplift = 1) {
   };
 }
 
-// "Активный" экран = есть валидная ставка И (нет данных о слотах в сутки ИЛИ их > 0).
-// slotCountPerDay сейчас не всегда приходит от API (см. mapDspInventory) — если его
-// нет, не исключаем экран молча, иначе "только активные" начнёт выбрасывать все
-// экраны на источниках инвентаря без этого поля.
+// "Активный" экран = есть валидная ставка И на нём реально идут запросы.
+// requestHourlyAvg («Запросы/час» в интерфейсе DSP) — тот самый параметр, по которому
+// экран считается живым: 0 запросов в час = крутить нечего. slotCountPerDay оставлен
+// как дополнительная проверка там, где API его отдаёт.
+// Поля может не быть в старом ответе/кэше — тогда NaN трактуем как "неизвестно" и
+// экран не выбрасываем, иначе "только активные" вычистит весь пул на источниках без
+// этого поля (например, при загрузке из CSV).
 function hasActiveInventory(s) {
   if (!Number.isFinite(s?.minBid) || s.minBid <= 0) return false;
+  if (Number.isFinite(s?.requestHourlyAvg) && s.requestHourlyAvg <= 0) return false;
   if (Number.isFinite(s?.slotCountPerDay) && s.slotCountPerDay <= 0) return false;
   return true;
 }
@@ -3042,16 +3049,50 @@ function _extractAddrLines(rows) {
 // Сокращения городов, которые не ловятся ни точным, ни префиксным сравнением.
 // Ключ — уже нормализованное (normalizeGeoName) написание.
 const CITY_ALIASES = {
+  // Москва и Петербург
   "мск": "Москва",
+  "msk": "Москва",
   "moscow": "Москва",
   "спб": "Санкт-Петербург",
   "питер": "Санкт-Петербург",
+  "санкт петербург": "Санкт-Петербург",
+  "petersburg": "Санкт-Петербург",
   "spb": "Санкт-Петербург",
+  // Города-миллионники и крупные центры
+  "нн": "Нижний Новгород",
+  "нижний": "Нижний Новгород",
+  "нижний новгород": "Нижний Новгород",
   "екб": "Екатеринбург",
   "ебург": "Екатеринбург",
+  "екат": "Екатеринбург",
   "нск": "Новосибирск",
-  "нн": "Нижний Новгород",
+  "новосиб": "Новосибирск",
+  "ростов": "Ростов-на-Дону",
   "ростов на дону": "Ростов-на-Дону",
+  "ростов-на-дону": "Ростов-на-Дону",
+  "нч": "Набережные Челны",
+  "челны": "Набережные Челны",
+  "чел": "Челябинск",
+  "кзн": "Казань",
+  "казань": "Казань",
+  "нвс": "Новосибирск",
+  "влг": "Волгоград",
+  "волга": "Волгоград",
+  "крд": "Краснодар",
+  "краснодар": "Краснодар",
+  "уфа": "Уфа",
+  "самара": "Самара",
+  "омск": "Омск",
+  "пермь": "Пермь",
+  "воронеж": "Воронеж",
+  "калининград": "Калининград",
+  "кёниг": "Калининград",
+  "мин воды": "Минеральные Воды",
+  "минводы": "Минеральные Воды",
+  "улан удэ": "Улан-Удэ",
+  "йошкар ола": "Йошкар-Ола",
+  "комсомольск на амуре": "Комсомольск-на-Амуре",
+  "петропавловск камчатский": "Петропавловск-Камчатский",
 };
 
 // «Н.Новгород», «С.-Петербург», «Н.Челны» — обычная запись в клиентских файлах.
@@ -3115,21 +3156,24 @@ function _extractAndMatchCities(rows) {
     // Exact match first
     const exactIdx = allKnownLC.indexOf(rawLC);
     if (exactIdx !== -1) { matched.push(allKnown[exactIdx]); continue; }
-    // Partial: known region starts with raw or raw starts with known region
-    const partial = allKnown.find((r, i) =>
-      allKnownLC[i].startsWith(rawLC) || rawLC.startsWith(allKnownLC[i])
-    );
-    if (partial) { matched.push(partial); continue; }
     // Нормализованное сравнение: снимает «г. »/«город », ё/е и лишние пробелы.
     const rawNorm = normalizeGeoName(raw);
     const normIdx = allKnown.findIndex(r => normalizeGeoName(r) === rawNorm);
     if (normIdx !== -1) { matched.push(allKnown[normIdx]); continue; }
     // Явный алиас («мск», «спб», …) — сверяем, что такой город вообще есть в пуле.
+    // ВАЖНО: до префиксного сравнения. Иначе «Нижний» уйдёт в первый попавшийся
+    // город на «Нижний» (в инвентаре есть и Тагил, и Новгород), а не туда, куда
+    // мы явно решили.
     const alias = CITY_ALIASES[rawNorm];
     if (alias) {
       const aliasIdx = allKnownLC.indexOf(alias.toLowerCase());
       if (aliasIdx !== -1) { matched.push(allKnown[aliasIdx]); continue; }
     }
+    // Partial: known region starts with raw or raw starts with known region
+    const partial = allKnown.find((r, i) =>
+      allKnownLC[i].startsWith(rawLC) || rawLC.startsWith(allKnownLC[i])
+    );
+    if (partial) { matched.push(partial); continue; }
     // Сокращения вида «Н.Новгород» / «С.-Петербург».
     const abbrev = _resolveCityAbbrev(raw, allKnown);
     if (abbrev) { matched.push(abbrev); continue; }
@@ -4226,7 +4270,7 @@ async function onCalcClick() {
       // Частота ограничена плановой ёмкостью формата: «максимум» не должен просить
       // больше показов, чем инвентарь физически способен отдать.
       const _capPph = capacityAll ? capacityAll.avgPph : CAPACITY_PPH_DEFAULT;
-      const _pph = Math.min(recoPphForTier(brief.recoTier), _capPph);
+      const _pph = Math.min(recoPphForTier(brief.recoTier, _capPph), _capPph);
       const totalBudget = Math.round(N * _pph * days * hpdFixed * recoBid);
 
       const alloc = allocateBudgetAcrossRegions(
@@ -4365,32 +4409,6 @@ async function onCalcClick() {
       const allPoolScreens = prepared.flatMap(r => r.pool);
       await dspFetchForecastBids(allPoolScreens, brief);
 
-      // «Только активные»: до этого момента активность проверялась лишь по наличию
-      // ставки и (если API его прислал) slotCountPerDay, а на списке инвентаря этого
-      // поля нет — поэтому экраны без единого аукциона доезжали до плана. Прогноз —
-      // единственный источник, который про это знает: если по экрану не вернулась
-      // статистика, крутить на нём нечего. Фильтруем здесь, а не раньше, потому что
-      // прогноз доступен только после этого запроса.
-      if (brief.onlyActiveBids !== false) {
-        let droppedNoForecast = 0;
-        for (const r of prepared) {
-          const before = r.pool.length;
-          const filtered = r.pool.filter(s => !(Number.isFinite(s._dspId) && s._noForecast));
-          // Не выносим регион в ноль: если прогноза нет вообще ни по одному экрану,
-          // это скорее сбой запроса, чем реально мёртвый инвентарь.
-          if (filtered.length > 0) {
-            r.pool = filtered;
-            droppedNoForecast += before - filtered.length;
-          }
-        }
-        if (droppedNoForecast > 0) {
-          warnings.push(
-            `ℹ️ Исключено ${droppedNoForecast} экр. без данных аукциона за последние 90 дней ` +
-            `(«только активные»).`
-          );
-        }
-      }
-
       // Пересчитываем bidPlus20 по реальным recoBid для каждого региона
       for (const pr of prepared) {
         const recos = pr.pool.map(s => s.recoBid).filter(v => Number.isFinite(v) && v > 0);
@@ -4437,7 +4455,7 @@ async function onCalcClick() {
           const N = brief.constructions.count;
           const overallAvgReco = allRecos.reduce((a, b) => a + b, 0) / allRecos.length;
           const _capPph2 = capacityAll ? capacityAll.avgPph : CAPACITY_PPH_DEFAULT;
-          const _pph2 = Math.min(recoPphForTier(brief.recoTier), _capPph2);
+          const _pph2 = Math.min(recoPphForTier(brief.recoTier, _capPph2), _capPph2);
           const totalBudget = Math.round(N * _pph2 * days * hpdFixed * overallAvgReco);
           const alloc = allocateBudgetAcrossRegions(
             totalBudget,
@@ -4917,13 +4935,34 @@ async function onCalcClick() {
     })
     .join("\n");
 
+  // Если клиент задал бюджет ниже рекомендованного — показываем, сколько нужно,
+  // прямо в сводке, а не оставляем догадываться, почему экранов мало.
+  let budgetAdviceLine = "";
+  if (brief.budget.mode === "fixed") {
+    const _tiers = computeRecoBudgetTiers();
+    const _asked = Number(brief.budget.amount || 0);
+    if (_tiers && _asked > 0 && _asked < _tiers.optimal) {
+      const _m = v => Math.round(v).toLocaleString("ru-RU");
+      budgetAdviceLine =
+        `
+— Рекомендуемый бюджет: минимальный ${_m(_tiers.min)} ₽, оптимальный ${_m(_tiers.optimal)} ₽`;
+      warnings.push(
+        _asked < _tiers.min
+          ? `⚠️ Заданный бюджет ${_m(_asked)} ₽ ниже минимального рекомендованного ` +
+            `${_m(_tiers.min)} ₽ (оптимальный — ${_m(_tiers.optimal)} ₽).`
+          : `ℹ️ Заданный бюджет ${_m(_asked)} ₽ ниже оптимального ${_m(_tiers.optimal)} ₽ ` +
+            `(минимальный — ${_m(_tiers.min)} ₽).`
+      );
+    }
+  }
+
   const summaryText =
     `Бриф:
 — Бюджет: ${totalBudgetFinal.toLocaleString("ru-RU")} ₽ ${
       brief.budget.mode === "fixed"
         ? "(распределён по регионам)"
         : (brief.budget.mode === "goal_ots" ? "(под цель OTS)" : brief.budget.mode === "goal_plays" ? "(под цель показов)" : "(сумма рекомендаций)")
-    }
+    }${budgetAdviceLine}
 — Даты: ${brief.dates.start} → ${brief.dates.end} (дней: ${days})
 — Расписание: ${brief.schedule.type} (часов/день: ${hpd.toFixed(2)})
 — Регион(ы): ${regions.join(", ")}
@@ -5760,8 +5799,6 @@ async function dspFetchForecastBids(screens, brief) {
       // currently selected duration the same way a fresh fetch would (see below).
       s._baseRecoBid = cached.recoBid;
       s.recoBid = cached.recoBid * _durationRatioForScreen(s, state.selectedDurationMs);
-      s._noForecast = false;
-      s._forecastMethod = cached.method ?? null;
     } else {
       toFetch.push(s);
     }
@@ -5802,9 +5839,6 @@ async function dspFetchForecastBids(screens, brief) {
 
   // Записываем в кэш и на экраны
   const idToScreen = new Map(toFetch.map(s => [s._dspId, s]));
-  // По умолчанию считаем, что прогноза нет: снимем флаг на тех, по кому пришла
-  // статистика. Это единственный доступный признак «по экрану не было аукционов».
-  toFetch.forEach(s => { s._noForecast = true; s._forecastMethod = null; });
   for (const res of results) {
     if (res.status !== "fulfilled" || !res.value?.elements) continue;
     for (const [idStr, elem] of Object.entries(res.value.elements)) {
@@ -5818,8 +5852,6 @@ async function dspFetchForecastBids(screens, brief) {
       _recoBidCache.set(dspId, { recoBid: price, ts: now, method });
       const s = idToScreen.get(dspId);
       if (s) {
-        s._noForecast = false;
-        s._forecastMethod = method || null;
         // price is duration-agnostic (this forecast endpoint has no duration concept) —
         // scale it by the currently selected duration's ratio, same as the cache-hit path.
         s._baseRecoBid = price;
@@ -6649,6 +6681,10 @@ function mapDspInventory(inv) {
   // must treat NaN as "unknown" rather than "zero/inactive").
   const slotCountPerDay = Number(inv.inventoryInfo?.slotCountPerDay);
 
+  // Среднее число запросов в час по экрану — «Запросы/час» в интерфейсе DSP.
+  // Главный признак активности: 0 означает, что аукционов по экрану не идёт.
+  const requestHourlyAvg = Number(inv.requestHourlyAvg);
+
   return {
     screen_id:   inv.gid || String(inv.id),
     city:        inv.inventoryTypeAndCity?.cityName
@@ -6671,6 +6707,7 @@ function mapDspInventory(inv) {
     side,
     durationBidInfo,
     slotCountPerDay: Number.isFinite(slotCountPerDay) ? slotCountPerDay : NaN,
+    requestHourlyAvg: Number.isFinite(requestHourlyAvg) ? requestHourlyAvg : NaN,
     _dspId:      inv.id,
   };
 }
@@ -6807,13 +6844,14 @@ const DSP_IDB_NAME   = "dsp_planner";
 const DSP_IDB_STORE  = "inventory";
 const DSP_IDB_VER    = 1;
 
-// v6: bumped because mapDspInventory now attaches durationBidInfo — old cached
-// screen objects (v5 and earlier) don't have it, so they must be re-fetched.
+// v7: mapDspInventory теперь тащит requestHourlyAvg, и без него фильтр «только
+// активные» работать не может — старые записи кэша (v6 и раньше) надо перечитать.
+// (v6 в своё время поднимали ровно так же из-за durationBidInfo.)
 function getDspCacheKey() {
   const agencyId = getDspAgencyId() || "default";
   const emailKey = normalizeKey(getDspUserEmail() || "").replace(/[^a-z0-9._@-]/gi, "_");
-  if (agencyId && agencyId !== "default") return `dsp_inv_v6_agency_${agencyId}`;
-  if (emailKey) return `dsp_inv_v6_email_${emailKey}`;
+  if (agencyId && agencyId !== "default") return `dsp_inv_v7_agency_${agencyId}`;
+  if (emailKey) return `dsp_inv_v7_email_${emailKey}`;
   return null;
 }
 
