@@ -3754,11 +3754,20 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
         const suspStyle = susp
           ? "border:2px solid #e04444; box-shadow:0 0 0 3px rgba(224,68,68,.10);"
           : "border:1px solid rgba(15,23,42,.10);";
+        // Рядом с плашкой показываем саму ставку и медиану, иначе «Низкая ставка»
+        // без цифр — утверждение, которое нечем проверить.
+        const money = (v) => Number.isFinite(v)
+          ? (Math.round(v * 100) / 100).toLocaleString("ru-RU", { maximumFractionDigits: 2 }) + " \u20BD"
+          : "\u2014";
         const suspBadge = susp
-          ? \`<div style="margin-top:6px; display:inline-block; padding:2px 7px; border-radius:6px;
-                 background:#fff1f1; color:#c62828; font-size:10px; font-weight:700;"
-                 title="Ставка ниже 40% медианы по своему формату и городу">
-               Низкая ставка
+          ? \`<div style="margin-top:6px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+               <span style="display:inline-block; padding:2px 7px; border-radius:6px;
+                 background:#fff1f1; color:#c62828; font-size:10px; font-weight:700;">Низкая ставка</span>
+               <span style="font-size:12px; font-weight:700; color:#c62828;"
+                 title="Медиана по своему формату и городу — \${money(s._suspiciousMedian)}">
+                 \${money(s._effectiveBid)}
+               </span>
+               <span style="font-size:11px; color:#9a6b6b;">медиана \${money(s._suspiciousMedian)}</span>
              </div>\`
           : "";
 

@@ -112,7 +112,7 @@ const RECO_HOURS_PER_DAY = 12; // для режима "нужна рекомен
 // своему формату в своём городе (не со средним: одна копеечная ставка утягивает
 // среднее и «прячет» саму себя). Группы меньше MIN_GROUP статистически бессмысленны,
 // поэтому для них берём медиану по формату целиком, а если и её нет — по всему набору.
-const SUSPICIOUS_BID_RATIO = 0.4; // ниже 40 % медианы группы
+const SUSPICIOUS_BID_RATIO = 0.2; // ниже 20 % медианы группы
 const SUSPICIOUS_MIN_GROUP = 5;
 
 function _median(nums) {
@@ -125,7 +125,7 @@ function _median(nums) {
 // Проставляет s._suspiciousBid / s._suspiciousMedian. Возвращает список сомнительных.
 function markSuspiciousScreens(screens, brief) {
   const list = Array.isArray(screens) ? screens : [];
-  list.forEach(s => { s._suspiciousBid = false; s._suspiciousMedian = null; });
+  list.forEach(s => { s._suspiciousBid = false; s._suspiciousMedian = null; s._effectiveBid = NaN; });
   if (list.length < SUSPICIOUS_MIN_GROUP) return [];
 
   const bidOf = s => screenBid(s, brief);
@@ -145,6 +145,8 @@ function markSuspiciousScreens(screens, brief) {
   const suspicious = [];
   for (const s of list) {
     const bid = bidOf(s);
+    // Эффективная ставка (режим + надбавка) — её же показывает карточка экрана.
+    if (Number.isFinite(bid)) s._effectiveBid = bid;
     if (!Number.isFinite(bid) || bid <= 0) continue;
     const fmt = String(s.format || "").trim();
     const city = String(s.city || s.region || "").trim();
