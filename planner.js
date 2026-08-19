@@ -63,84 +63,39 @@ window.PLANNER.ui.photosAllowed = false;
 // (опционально) чтобы проще было обращаться из любого места
 window.FORMAT_LABELS = window.FORMAT_LABELS || FORMAT_LABELS;
 
-// ===== POI =====
-const POI_QUERIES = {
-  fitness: `
-    nwr(area.a)["leisure"="fitness_centre"];
-    nwr(area.a)["amenity"="gym"];
-    nwr(area.a)["sport"="fitness"];
-    nwr(area.a)["leisure"="sports_centre"]["sport"="fitness"];
-  `,
-  pet_store: `
-    nwr(area.a)["shop"="pet"];
-    nwr(area.a)["shop"="pet_grooming"];
-    nwr(area.a)["amenity"="veterinary"];
-  `,
-  supermarket: `
-    nwr(area.a)["shop"="supermarket"];
-    nwr(area.a)["shop"="convenience"];
-    nwr(area.a)["shop"="hypermarket"];
-  `,
-  mall: `
-    nwr(area.a)["shop"="mall"];
-  `,
-  cafe: `
-    nwr(area.a)["amenity"="cafe"];
-    nwr(area.a)["shop"="coffee"];
-  `,
-  restaurant: `
-    nwr(area.a)["amenity"="restaurant"];
-    nwr(area.a)["amenity"="fast_food"];
-    nwr(area.a)["amenity"="food_court"];
-  `,
-  pharmacy: `
-    nwr(area.a)["amenity"="pharmacy"];
-  `,
-  school: `
-    nwr(area.a)["amenity"="school"];
-  `,
-  university: `
-    nwr(area.a)["amenity"="university"];
-    nwr(area.a)["amenity"="college"];
-  `,
-  hospital: `
-    nwr(area.a)["amenity"="hospital"];
-    nwr(area.a)["amenity"="clinic"];
-  `,
-  gas_station: `
-    nwr(area.a)["amenity"="fuel"];
-  `,
-  bank: `
-    nwr(area.a)["amenity"="bank"];
-    nwr(area.a)["amenity"="atm"];
-  `,
-  transport: `
-    nwr(area.a)["public_transport"];
-    nwr(area.a)["railway"="station"];
-    nwr(area.a)["railway"="subway_entrance"];
-  `
-};
-
-const POI_LABELS = {
-  fitness: "Фитнес-клубы",
-  pet_store: "Зоомагазины",
-  supermarket: "Супермаркеты",
-  mall: "Торговые центры",
-  cafe: "Кафе / кофе",
-  restaurant: "Рестораны / фастфуд",
-  pharmacy: "Аптеки",
-  school: "Школы",
-  university: "ВУЗы",
-  hospital: "Больницы / клиники",
-  gas_station: "АЗС",
-  bank: "Банки / банкоматы",
-  transport: "Транспорт (метро/станции)"
-};
-
 // ===== Model =====
 const BID_MULTIPLIER = 1.8;
-const SC_OPT = 30;
+const SC_OPT = 20;
 const SC_MAX = 60;
+
+// Выходов/час на экран для режима «подскажите бюджет» в разрезе выбранного тира.
+// «Максимум» = плановая ёмкость формата (30 вых/ч, у медиафасадов 8) — выше неё
+// рекомендовать нельзя, инвентарь столько не отдаст. «Оптимальный» = SC_OPT (20),
+// «Минимум» = 0.35 от оптимума, тот же коэффициент, что в computeRecoBudgetTiers.
+// Это ограничение только для РЕКОМЕНДАЦИИ: вручную (слайдер выходов в час) частоту
+// по-прежнему можно поднять выше 30 — там потолком остаётся физический SC_MAX.
+// Без тира выбранное на шаге «Цели» молча игнорировалось, как только задано
+// количество конструкций: бюджет всегда считался по оптимуму (жалоба «выбрал
+// минимум → после кнопки конструкций посчитало на огромный бюджет»).
+function recoPphForTier(recoTier, capacityPph = CAPACITY_PPH_DEFAULT) {
+  if (recoTier === "min") return SC_OPT * 0.35;
+  if (recoTier === "max") return capacityPph;
+  return SC_OPT;
+}
+// Ручная надбавка к ставке: поверх выбранного режима (мин/реко) клиент может
+// поднять ставку на X %, чтобы чаще выигрывать аукцион. Множитель, а не третий
+// взаимоисключающий режим — надбавка должна работать и с мин, и с реко.
+function bidUpliftFactor(brief) {
+  const pct = Number(brief?.bidUpliftPct || 0);
+  return (Number.isFinite(pct) && pct > 0) ? 1 + pct / 100 : 1;
+}
+
+// Ставка одного экрана с учётом режима и надбавки.
+function screenBid(s, brief) {
+  const base = brief?.bidMode === "min" ? s?.minBid : (s?.recoBid || s?.minBid);
+  return Number.isFinite(base) ? base * bidUpliftFactor(brief) : base;
+}
+
 const MF_MAX_PPH = 12; // MediaFacade physical cap: max 12 plays/hour
 
 // Per-screen plays-per-hour cap based on format
@@ -151,12 +106,107 @@ function getScreenPphCap(s) {
 }
 const RECO_HOURS_PER_DAY = 12; // для режима "нужна рекомендация"
 
-// "Активный" экран = есть валидная ставка И (нет данных о слотах в сутки ИЛИ их > 0).
-// slotCountPerDay сейчас не всегда приходит от API (см. mapDspInventory) — если его
-// нет, не исключаем экран молча, иначе "только активные" начнёт выбрасывать все
-// экраны на источниках инвентаря без этого поля.
+// ===== Сомнительные экраны =====
+// Единственный признак — аномально низкая ставка: она почти всегда означает, что
+// экран не открутится или в инвентаре мусорные данные. Сравниваем с медианой по
+// своему формату в своём городе (не со средним: одна копеечная ставка утягивает
+// среднее и «прячет» саму себя). Группы меньше MIN_GROUP статистически бессмысленны,
+// поэтому для них берём медиану по формату целиком, а если и её нет — по всему набору.
+const SUSPICIOUS_BID_RATIO = 0.4; // ниже 40 % медианы группы
+const SUSPICIOUS_MIN_GROUP = 5;
+
+function _median(nums) {
+  const a = nums.filter(v => Number.isFinite(v) && v > 0).sort((x, y) => x - y);
+  if (!a.length) return null;
+  const mid = a.length >> 1;
+  return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
+}
+
+// Проставляет s._suspiciousBid / s._suspiciousMedian. Возвращает список сомнительных.
+function markSuspiciousScreens(screens, brief) {
+  const list = Array.isArray(screens) ? screens : [];
+  list.forEach(s => { s._suspiciousBid = false; s._suspiciousMedian = null; });
+  if (list.length < SUSPICIOUS_MIN_GROUP) return [];
+
+  const bidOf = s => screenBid(s, brief);
+  const byFmtCity = new Map();
+  const byFmt = new Map();
+  for (const s of list) {
+    const fmt = String(s.format || "").trim();
+    const city = String(s.city || s.region || "").trim();
+    const k1 = fmt + "\u0000" + city;
+    if (!byFmtCity.has(k1)) byFmtCity.set(k1, []);
+    if (!byFmt.has(fmt)) byFmt.set(fmt, []);
+    byFmtCity.get(k1).push(bidOf(s));
+    byFmt.get(fmt).push(bidOf(s));
+  }
+
+  const medAll = _median(list.map(bidOf));
+  const suspicious = [];
+  for (const s of list) {
+    const bid = bidOf(s);
+    if (!Number.isFinite(bid) || bid <= 0) continue;
+    const fmt = String(s.format || "").trim();
+    const city = String(s.city || s.region || "").trim();
+    const group = byFmtCity.get(fmt + "\u0000" + city) || [];
+    const med = (group.length >= SUSPICIOUS_MIN_GROUP)
+      ? _median(group)
+      : ((byFmt.get(fmt) || []).length >= SUSPICIOUS_MIN_GROUP ? _median(byFmt.get(fmt)) : medAll);
+    if (!Number.isFinite(med) || med <= 0) continue;
+    if (bid < med * SUSPICIOUS_BID_RATIO) {
+      s._suspiciousBid = true;
+      s._suspiciousMedian = med;
+      suspicious.push(s);
+    }
+  }
+  return suspicious;
+}
+
+// ===== Плановая ёмкость =====
+// Ёмкость по показам = часы размещения за период × Σ коэффициента формата.
+// Коэффициенты заданы бизнесом: 8 выходов/час для медиафасадов, 30 для остальных
+// форматов. Это НЕ физический потолок экрана (getScreenPphCap — 12/60), а плановая
+// планка: выше неё нельзя ни рекомендовать «максимальный» бюджет, ни молча принять
+// цель клиента по бюджету/показам/OTS.
+const CAPACITY_PPH_MF = 8;
+const CAPACITY_PPH_DEFAULT = 30;
+
+function capacityPphForScreen(s) {
+  const fmt = String(s?.format || "").toUpperCase();
+  return (fmt === "MEDIAFACADE" || fmt === "MF") ? CAPACITY_PPH_MF : CAPACITY_PPH_DEFAULT;
+}
+
+// hoursTotal — суммарные часы размещения за период (дней × часов/день).
+// Возвращает null, если считать не из чего: вызывающий код тогда просто не проверяет.
+function computeCapacity(screens, hoursTotal, bidMode, uplift = 1) {
+  const list = Array.isArray(screens) ? screens : [];
+  if (!list.length || !Number.isFinite(hoursTotal) || hoursTotal <= 0) return null;
+
+  const pphSum = list.reduce((sum, s) => sum + capacityPphForScreen(s), 0);
+  const plays  = Math.floor(hoursTotal * pphSum);
+  const avgBid = avgEffectiveBid(list, bidMode, 1, uplift);
+  const avgOts = avgNumberNonZero(list.map(s => s.ots));
+
+  return {
+    screens: list.length,
+    hours:   hoursTotal,
+    avgPph:  pphSum / list.length,
+    plays,
+    budget:  (Number.isFinite(avgBid) && avgBid > 0) ? Math.floor(plays * avgBid) : null,
+    ots:     (avgOts != null && avgOts > 0) ? Math.round(plays * avgOts) : null,
+  };
+}
+
+// "Активный" экран = есть валидная ставка И на нём реально идут запросы.
+// requestHourlyAvg («Запросы/час» в интерфейсе DSP) — тот самый параметр, по которому
+// экран считается живым: 0 запросов в час = крутить нечего. slotCountPerDay оставлен
+// как дополнительная проверка там, где API его отдаёт.
+// Поля может не быть в старом ответе/кэше — тогда NaN трактуем как "неизвестно" и
+// экран не выбрасываем, иначе "только активные" вычистит весь пул на источниках без
+// этого поля (например, при загрузке из CSV).
 function hasActiveInventory(s) {
   if (!Number.isFinite(s?.minBid) || s.minBid <= 0) return false;
+  if (Number.isFinite(s?.requestHourlyAvg) && s.requestHourlyAvg <= 0) return false;
   if (Number.isFinite(s?.slotCountPerDay) && s.slotCountPerDay <= 0) return false;
   return true;
 }
@@ -195,6 +245,7 @@ const state = {
   dspInventoryCache: null,
   dspInventoryWarmupPromise: null,
   dspInventoryWarmupDone: false,
+  dspInventoryCachedAt: null,   // когда инвентарь реально приехал из API
   dspRegionToCities: {},
 
   // VK Affinity data: Map<GID, {segmentName: affinityValue}>
@@ -569,26 +620,33 @@ function computeScheduleHoursForPeriod(schedule, startStr, endStr) {
   const globalIntervals = Array.isArray(schedule.globalIntervals) ? schedule.globalIntervals : [];
 
   let totalHours = 0;
+  // Разброс часов по дням: в медиаплане нужен диапазон («5–10»), а не среднее
+  // арифметическое за период. Дни без вещания в диапазон не входят, иначе любой
+  // график с выходным превращался бы в «0–10».
+  let minHpd = null, maxHpd = null;
 
   const start = new Date(startStr + "T00:00:00");
   for (let i = 0; i < days; i++) {
     const dt = new Date(start);
     dt.setDate(start.getDate() + i);
 
-    if (mode === "global") {
-      totalHours += _hoursForWeekdayIntervals(globalIntervals);
-    } else {
-      const key = _weekdayKeyFromDate(dt);
-      totalHours += _hoursForWeekdayIntervals(weekly[key]);
+    const dayHours = (mode === "global")
+      ? _hoursForWeekdayIntervals(globalIntervals)
+      : _hoursForWeekdayIntervals(weekly[_weekdayKeyFromDate(dt)]);
+
+    totalHours += dayHours;
+    if (dayHours > 0) {
+      minHpd = (minHpd == null) ? dayHours : Math.min(minHpd, dayHours);
+      maxHpd = (maxHpd == null) ? dayHours : Math.max(maxHpd, dayHours);
     }
   }
 
   const avgHpd = days ? (totalHours / days) : 0;
-  return { days, totalHours, avgHpd };
+  return { days, totalHours, avgHpd, minHpd: minHpd ?? 0, maxHpd: maxHpd ?? 0 };
 }
 
   const hpd = hoursPerDay(schedule || { type: "all_day" });
-  return { days, totalHours: hpd * days, avgHpd: hpd };
+  return { days, totalHours: hpd * days, avgHpd: hpd, minHpd: hpd, maxHpd: hpd };
 }
 
 function _getByAnyId(...ids) {
@@ -688,14 +746,19 @@ function renderSelectionExtra() {
 
       <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
         <button type="button" id="addr-add-btn" style="
-          flex:1; min-width:120px; padding:8px; border:1.5px dashed #c4b5fd; border-radius:10px;
+          flex:1; min-width:110px; padding:8px; border:1.5px dashed #c4b5fd; border-radius:10px;
           background:#faf8ff; color:#5B3EF5; font-size:13px; cursor:pointer;">
           + Добавить адрес
         </button>
         <button type="button" id="addr-import-btn" style="
-          flex:1; min-width:120px; padding:8px; border:1.5px dashed #c4b5fd; border-radius:10px;
+          flex:1; min-width:110px; padding:8px; border:1.5px dashed #c4b5fd; border-radius:10px;
           background:#faf8ff; color:#5B3EF5; font-size:13px; cursor:pointer;">
           ↓ Импортировать список
+        </button>
+        <button type="button" id="addr-2gis-btn" style="
+          flex:1; min-width:110px; padding:8px; border:1.5px dashed #1DB244; border-radius:10px;
+          background:#f4fdf7; color:#1DB244; font-size:13px; cursor:pointer;">
+          2ГИС: подобрать
         </button>
       </div>
 
@@ -729,31 +792,154 @@ function renderSelectionExtra() {
         </div>
       </div>
 
+      <!-- Панель 2ГИС: подбор адресов по бренду -->
+      <div id="addr-2gis-panel" style="display:none; background:#f4fdf7; border:1px solid #1DB244;
+           border-radius:12px; padding:12px; margin-bottom:8px;">
+        <div style="font-size:12px; font-weight:600; color:#1DB244; margin-bottom:8px;">
+          Нет готового списка? Найдём адреса объектов в выбранных регионах и подставим их сюда.
+        </div>
+        <input type="text" id="addr-2gis-brand" placeholder="Напр.: Пятёрочка, Магнит, McDonald's"
+          style="width:100%; box-sizing:border-box; padding:9px 12px; border:1px solid #b7e3c6;
+                 border-radius:8px; font-size:13px; outline:none;">
+        <div style="display:flex; gap:8px; margin-top:8px; align-items:center; flex-wrap:wrap;">
+          <button type="button" id="addr-2gis-apply" style="
+            padding:8px 18px; background:#1DB244; color:#fff; border:none;
+            border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;">
+            Найти адреса
+          </button>
+          <button type="button" id="addr-2gis-cancel" style="
+            padding:8px 14px; background:#fff; color:#888; border:1px solid #ddd;
+            border-radius:8px; font-size:13px; cursor:pointer;">
+            Отмена
+          </button>
+          <span id="addr-2gis-status" style="font-size:12px; color:#667085;"></span>
+        </div>
+      </div>
+
       <input id="planner-radius" type="number" min="50" value="500" placeholder="Радиус, м"
              style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-top:4px;">
       <div style="font-size:12px; color:#666; margin-top:6px;">
         Геокодируем каждый адрес и берём экраны в радиусе от любого из них.
+        Число справа от адреса — сколько экранов попадает в радиус.
       </div>
     `;
 
-    function addAddressRow(value) {
+    // Кэш координат: адрес → точка. Живёт в state, поэтому onCalcClick не геокодирует
+    // повторно то, что уже посчитано здесь.
+    state.addressPoints = state.addressPoints || new Map();
+
+    const currentRadius = () => Math.max(1, Number(el("planner-radius")?.value || 500));
+
+    // Подсказку региона добавляем ТОЛЬКО если города ещё нет в самом адресе:
+    // геокодер получает запрос вида «регион, адрес», и на «Москва, Тверская 7,
+    // Москва» ничего не находит, хотя без подсказки находит сразу.
+    function regionHintFor(addr) {
+      const region = (Array.isArray(state.selectedRegions) && state.selectedRegions[0]) || "";
+      if (!region) return "";
+      const a = normalizeGeoName(addr);
+      const r = normalizeGeoName(region);
+      return (r && a.includes(r)) ? "" : region;
+    }
+
+    // Пул для подсчёта: экраны выбранных регионов. Если регион не выбран или ничего
+    // не совпало — считаем по всему инвентарю, иначе счётчик молча показывал бы 0.
+    function addrPool() {
+      const all = (Array.isArray(state.screensAll) && state.screensAll.length)
+        ? state.screensAll
+        : (Array.isArray(state.screens) ? state.screens : []);
+      const regions = Array.isArray(state.selectedRegions) ? state.selectedRegions : [];
+      if (!regions.length) return all;
+      const inRegion = all.filter(s => regions.some(r => screenMatchesGeoChoice(s, r)));
+      return inRegion.length ? inRegion : all;
+    }
+
+    function setRowStatus(row, text, color, title) {
+      const st = row.querySelector(".addr-status");
+      if (!st) return;
+      st.textContent = text;
+      st.style.color = color || "#667085";
+      st.title = title || "";
+    }
+
+    // Геокодирует (если координат ещё нет) и считает экраны в радиусе.
+    // countOnly — пересчёт после смены радиуса, без повторного геокодирования.
+    async function resolveRow(row, countOnly) {
+      const inp = row.querySelector(".planner-addr-input");
+      if (!inp) return;
+      const addr = String(inp.value || "").trim();
+      if (!addr) { setRowStatus(row, "", "#667085"); return; }
+
+      const key = normalizeKey(addr);
+      let pt = state.addressPoints.get(key);
+
+      if (!pt && !countOnly) {
+        setRowStatus(row, "⏳", "#8b83c5", "Ищу адрес на карте…");
+        const token = ++row._resolveToken;
+        try {
+          pt = await geocodeAddressNominatim(addr, regionHintFor(addr));
+        } catch (e) {
+          console.warn("[addr] geocode failed:", e.message);
+          pt = null;
+        }
+        // Пока шёл запрос, адрес могли переписать — тогда результат уже не про эту строку.
+        if (token !== row._resolveToken) return;
+        if (pt) state.addressPoints.set(key, pt);
+      }
+
+      if (!pt) { setRowStatus(row, "не найден", "#dc2626", "Уточните город, улицу и дом"); return; }
+
+      const n = pickScreensNearPoint(addrPool(), pt, currentRadius()).length;
+      setRowStatus(row, n ? `${n} экр.` : "0 экр.",
+        n ? "#5b3ef5" : "#dc2626",
+        n ? `Экранов в радиусе ${currentRadius()} м` : "В этом радиусе экранов нет — увеличьте радиус");
+    }
+
+    function scheduleResolve(row) {
+      clearTimeout(row._resolveTimer);
+      row._resolveTimer = setTimeout(() => resolveRow(row, false), 700);
+    }
+
+    function recountAll(countOnly) {
+      document.querySelectorAll("#addr-list .addr-row").forEach(row => resolveRow(row, countOnly));
+    }
+
+    function addAddressRow(value, point) {
       const list = el("addr-list");
       if (!list) return;
       const row = document.createElement("div");
       row.className = "addr-row";
       row.style.cssText = "display:flex; gap:6px; align-items:center;";
+      row._resolveToken = 0;
+
       const inp = document.createElement("input");
       inp.type = "text"; inp.placeholder = "Адрес";
       inp.value = value || "";
-      inp.style.cssText = "flex:1; padding:10px; border:1px solid #ddd; border-radius:10px; font-size:14px;";
+      inp.style.cssText = "flex:1; padding:10px; border:1px solid #ddd; border-radius:10px; font-size:14px; min-width:0;";
       inp.className = "planner-addr-input";
+
+      // Счётчик экранов рядом с адресом: без него непонятно, что даст этот адрес,
+      // пока не нажмёшь «Рассчитать».
+      const status = document.createElement("span");
+      status.className = "addr-status";
+      status.style.cssText = "min-width:62px; text-align:right; font-size:12px; font-weight:600; color:#667085; white-space:nowrap;";
+
       const del = document.createElement("button");
       del.type = "button"; del.textContent = "×";
       del.style.cssText = "background:none; border:none; font-size:20px; color:#aaa; cursor:pointer; line-height:1; padding:0 4px;";
       del.addEventListener("click", () => { row.remove(); });
-      row.appendChild(inp); row.appendChild(del);
+
+      row.appendChild(inp); row.appendChild(status); row.appendChild(del);
       list.appendChild(row);
       attachAddressSuggest(inp);
+
+      inp.addEventListener("input", () => scheduleResolve(row));
+      inp.addEventListener("change", () => scheduleResolve(row));
+
+      // Координаты из 2ГИС известны сразу — геокодировать нечего, только считаем.
+      if (point && Number.isFinite(point.lat) && Number.isFinite(point.lon)) {
+        state.addressPoints.set(normalizeKey(value || ""), { lat: point.lat, lon: point.lon });
+      }
+      if (value) resolveRow(row, false);
       return inp;
     }
 
@@ -779,18 +965,20 @@ function renderSelectionExtra() {
         : `Свернуть список (${rows.length} адресов)`;
     }
 
-    function bulkAddAddresses(lines) {
-      const clean = lines.map(l => String(l || "").trim()).filter(Boolean);
+    // items: строки или { address, lat, lon } — второе приходит из 2ГИС вместе с точкой.
+    function bulkAddAddresses(items) {
+      const clean = (Array.isArray(items) ? items : [])
+        .map(it => (typeof it === "string") ? { address: it } : it)
+        .filter(it => it && String(it.address || "").trim())
+        .map(it => ({ address: String(it.address).trim(), lat: it.lat, lon: it.lon }));
       if (!clean.length) return 0;
-      // Clear empty rows first
+      // Убираем пустые строки, чтобы список не начинался с болтающегося поля
       document.querySelectorAll(".planner-addr-input").forEach(i => {
         if (!i.value.trim()) i.closest(".addr-row")?.remove();
       });
-      clean.forEach(addr => addAddressRow(addr));
-      // Auto-collapse if many addresses
-      if (clean.length > ADDR_COLLAPSE_LIMIT) {
-        addrCollapsed = true;
-      }
+      clean.forEach(it => addAddressRow(it.address,
+        (Number.isFinite(it.lat) && Number.isFinite(it.lon)) ? { lat: it.lat, lon: it.lon } : null));
+      if (clean.length > ADDR_COLLAPSE_LIMIT) addrCollapsed = true;
       updateAddrToggle();
       return clean.length;
     }
@@ -801,6 +989,17 @@ function renderSelectionExtra() {
     });
 
     addAddressRow(); // первый адрес
+
+    // Список адресов пересобирается этой функцией с нуля, поэтому снаружи
+    // (restoreBriefToUI) его не заполнить — отдаём точку входа.
+    window.PLANNER = window.PLANNER || {};
+    window.PLANNER.setAddresses = (list) => bulkAddAddresses(Array.isArray(list) ? list : []);
+
+    // Смена радиуса не требует повторного геокодирования — только пересчёта.
+    el("planner-radius")?.addEventListener("input", () => recountAll(true));
+    // Инвентарь или регионы поменялись — счётчики устарели.
+    window.addEventListener("planner:screens-ready", () => recountAll(true));
+    window.addEventListener("planner:pool-updated", () => recountAll(true));
 
     el("addr-add-btn")?.addEventListener("click", () => {
       const inp = addAddressRow();
@@ -816,6 +1015,59 @@ function renderSelectionExtra() {
     el("addr-import-cancel")?.addEventListener("click", () => {
       const panel = el("addr-import-panel");
       if (panel) panel.style.display = "none";
+    });
+
+    // ---- 2ГИС: подбор адресов по бренду ----
+    el("addr-2gis-btn")?.addEventListener("click", () => {
+      const panel = el("addr-2gis-panel");
+      if (panel) panel.style.display = panel.style.display === "none" ? "block" : "none";
+      el("addr-2gis-brand")?.focus();
+    });
+    el("addr-2gis-cancel")?.addEventListener("click", () => {
+      const panel = el("addr-2gis-panel");
+      if (panel) panel.style.display = "none";
+    });
+
+    el("addr-2gis-apply")?.addEventListener("click", async () => {
+      const btn    = el("addr-2gis-apply");
+      const status = el("addr-2gis-status");
+      const brand  = String(el("addr-2gis-brand")?.value || "").trim();
+      if (!brand) { if (status) { status.textContent = "Введите название бренда."; status.style.color = "#dc2626"; } return; }
+
+      const pool = addrPool();
+      const withCoords = pool.filter(s => Number.isFinite(Number(s.lat)) && Number.isFinite(Number(s.lon)));
+      if (!withCoords.length) {
+        if (status) { status.textContent = "Инвентарь ещё загружается."; status.style.color = "#dc2626"; }
+        return;
+      }
+      // Центр поиска — центроид инвентаря выбранных регионов.
+      const cLat = withCoords.reduce((a, s) => a + Number(s.lat), 0) / withCoords.length;
+      const cLon = withCoords.reduce((a, s) => a + Number(s.lon), 0) / withCoords.length;
+
+      btn.disabled = true;
+      const btnText = btn.textContent;
+      btn.textContent = "Ищу…";
+      if (status) { status.style.color = "#667085"; status.textContent = "Загружаю объекты 2ГИС…"; }
+
+      try {
+        const found = await fetch2gisAddresses(brand, cLat, cLon, (n, total) => {
+          if (status) status.textContent = `Загружаю объекты 2ГИС: ${n}` + (total ? ` из ${total}` : "");
+        });
+        if (!found.length) {
+          if (status) { status.textContent = `2ГИС не нашёл «${brand}» в этих регионах.`; status.style.color = "#dc2626"; }
+        } else {
+          const added = bulkAddAddresses(found);
+          if (status) { status.textContent = `Добавлено адресов: ${added}`; status.style.color = "#1DB244"; }
+          const panel = el("addr-2gis-panel");
+          if (panel) panel.style.display = "none";
+        }
+      } catch (err) {
+        console.error("[2gis]", err);
+        if (status) { status.textContent = "Ошибка: " + err.message; status.style.color = "#dc2626"; }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = btnText;
+      }
     });
 
     // Загрузка файла — авто-добавление без нажатия кнопки
@@ -889,56 +1141,6 @@ function renderSelectionExtra() {
       }
     });
 
-    return;
-  }
-
-  if (mode === "poi") {
-    const keys = Object.keys(POI_QUERIES || {});
-    const options = keys.map(k => `<option value="${k}">${POI_LABELS[k] || k}</option>`).join("");
-
-    extra.innerHTML = `
-      <select id="poi-type"
-              style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-        ${options}
-      </select>
-
-      <input id="planner-radius" type="number" min="50" value="500" placeholder="Радиус вокруг POI, м"
-             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
-
-      <div style="font-size:12px; color:#666; margin-top:6px;">
-        POI-тип берём из OpenStreetMap (Overpass), затем выбираем экраны вокруг POI.
-      </div>
-    `;
-    return;
-  }
-
-  if (mode === "route") {
-    extra.innerHTML = `
-      <input id="route-from" type="text" placeholder="Точка А"
-             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-      <input id="route-to" type="text" placeholder="Точка Б"
-             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-      <input id="planner-radius" type="number" min="50" value="300" placeholder="Радиус от маршрута, м"
-             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
-      <div style="font-size:12px; color:#666; margin-top:6px;">
-        MVP: маршрут сохраняем в бриф (без построения).
-      </div>
-    `;
-    attachAddressSuggest(el("route-from"));
-    attachAddressSuggest(el("route-to"));
-    return;
-  }
-
-  if (mode === "highway") {
-    extra.innerHTML = `
-      <input id="highway-name" type="text" placeholder="Название дороги, например: Рублёвское шоссе"
-             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-bottom:8px;">
-      <input id="planner-radius" type="number" min="50" value="500" placeholder="Радиус от дороги, м"
-             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px;">
-      <div style="font-size:12px; color:#666; margin-top:6px;">
-        Введите название магистрали, шоссе или улицы. Экраны будут подобраны вдоль всей дороги в заданном радиусе.
-      </div>
-    `;
     return;
   }
 
@@ -1425,6 +1627,10 @@ const globalIntervals = (scheduleType === "weekly" && typeof getGlobalScheduleFr
     budget: {
       mode: budgetMode,
       amount: budgetMode === "fixed" ? Number(budgetNet || 0) : null,
+      // amount — за вычетом комиссии (в расчёт идёт именно он), amountGross — то,
+      // что реально введено в поле. Без gross восстановление из истории подставляло
+      // бы в поле сумму без комиссии, и бюджет «худел» на каждый заход.
+      amountGross: budgetMode === "fixed" ? Number(budgetVal || 0) : null,
       currency: "RUB",
       perCity: (() => {
         if (budgetMode !== "fixed" || !document.getElementById("per-city-enabled")?.checked) return null;
@@ -1523,6 +1729,9 @@ const globalIntervals = (scheduleType === "weekly" && typeof getGlobalScheduleFr
     onlyActiveBids: !!el("only-active-bids")?.checked,
     recoTier: document.querySelector('input[name="reco_tier"]:checked')?.value || "optimal",
     bidMode: el("bid-mode-min")?.checked ? "min" : "recommended",
+    bidUpliftPct: (el("bid-uplift-enabled")?.checked)
+      ? Math.max(0, Number(el("bid-uplift-pct")?.value || 0))
+      : 0,
     duration: { ms: Number.isFinite(state.selectedDurationMs) ? state.selectedDurationMs : null },
     reachMode: getReachModeFromUI(),
     goal: {
@@ -1572,19 +1781,6 @@ const globalIntervals = (scheduleType === "weekly" && typeof getGlobalScheduleFr
     brief.selection.address   = addresses[0] || ""; // backward compat
     brief.selection.radius_m  = pickAnyNum(500, "#planner-radius", "#radius");
   }
-  if (selectionMode === "poi") {
-    brief.selection.poi_type = String(qsVal("#poi-type") || "pet_store").trim();
-    brief.selection.radius_m = pickAnyNum(500, "#planner-radius", "#radius");
-  }
-  if (selectionMode === "route") {
-    brief.selection.route_from = pickAnyVal("#route-from");
-    brief.selection.route_to = pickAnyVal("#route-to");
-    brief.selection.radius_m = pickAnyNum(300, "#planner-radius", "#radius");
-  }
-  if (selectionMode === "highway") {
-    brief.selection.highway_name = el("highway-name")?.value || "";
-    brief.selection.radius_m = pickAnyNum(500, "#planner-radius", "#radius");
-  }
   if (selectionMode === "manual_screens") {
     brief.selection.manual_gids = _parseManualGids(el("manual-gids")?.value || "");
   }
@@ -1632,148 +1828,6 @@ function getTierForGeo(name) {
 }
 
 // ===== Helpers =====
-async function fetchRouteOSRM(A, B) {
-  const url =
-    "https://router.project-osrm.org/route/v1/driving/" +
-    `${A.lon},${A.lat};${B.lon},${B.lat}` +
-    "?overview=full&geometries=geojson";
-
-  const r = await fetch(url, { method: "GET" });
-  if (!r.ok) throw new Error("OSRM HTTP " + r.status);
-  const j = await r.json();
-
-  const coords = j?.routes?.[0]?.geometry?.coordinates;
-  if (!Array.isArray(coords) || coords.length < 2) return null;
-
-  return coords; // [ [lon,lat], ... ]
-}
-
-// Yandex geocode of a road name → returns {center, bbox} or null
-async function geocodeRoadYandex(roadName, regionHint) {
-  const key = window.YANDEX_MAPS_KEY;
-  if (!key) return null;
-  const query = regionHint ? `${roadName}, ${regionHint}` : roadName;
-  const url = `https://geocode-maps.yandex.ru/1.x/?apikey=${key}&geocode=${encodeURIComponent(query)}&results=1&format=json&kind=street`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error("Yandex geocode HTTP " + r.status);
-  const j = await r.json();
-  const member = j?.response?.GeoObjectCollection?.featureMember?.[0];
-  if (!member) return null;
-  const gobj = member.GeoObject;
-  const pos = gobj?.Point?.pos?.split(" ");
-  const lower = gobj?.boundedBy?.Envelope?.lowerCorner?.split(" ");
-  const upper = gobj?.boundedBy?.Envelope?.upperCorner?.split(" ");
-  if (!pos || !lower || !upper) return null;
-  return {
-    center: { lon: Number(pos[0]), lat: Number(pos[1]) },
-    bbox: {
-      minLon: Number(lower[0]), minLat: Number(lower[1]),
-      maxLon: Number(upper[0]), maxLat: Number(upper[1]),
-    }
-  };
-}
-
-// Parse Overpass response elements into [[lon,lat], ...] polyline
-function _parseOverpassPolyline(data) {
-  const nodes = {};
-  for (const el of (data.elements || [])) {
-    if (el.type === "node") nodes[el.id] = el;
-  }
-  const allPoints = [];
-  for (const el of (data.elements || [])) {
-    if (el.type === "way" && Array.isArray(el.nodes)) {
-      for (const nid of el.nodes) {
-        const n = nodes[nid];
-        if (n) allPoints.push([n.lon, n.lat]);
-      }
-    }
-  }
-  return allPoints;
-}
-
-async function fetchHighwayGeometry(roadName, regionHint) {
-  const q = String(roadName || "").trim();
-  if (!q) return null;
-
-  const qSafe = q.replace(/"/g, "");
-  const OVERPASS_ENDPOINTS = [
-    "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass.openstreetmap.ru/api/interpreter",
-  ];
-
-  // Step 1: Try Yandex to get the road's bounding box
-  let bbox = null;
-  if (window.YANDEX_MAPS_KEY) {
-    try {
-      const yRes = await geocodeRoadYandex(q, regionHint);
-      if (yRes?.bbox) {
-        bbox = yRes.bbox;
-        console.log(`[highway] Yandex bbox for «${q}»:`, bbox);
-      }
-    } catch(e) {
-      console.warn("[highway] Yandex geocode road failed:", e.message);
-    }
-  }
-
-  // Step 2: Try Overpass with bbox (targeted = faster, less rate-limited)
-  // bbox query: [south,west,north,east]
-  const bboxStr = bbox
-    ? `${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon}`
-    : null;
-
-  // Expand bbox slightly (0.05° ≈ 5 km padding)
-  const bboxExpandedStr = bbox
-    ? `${bbox.minLat - 0.05},${bbox.minLon - 0.05},${bbox.maxLat + 0.05},${bbox.maxLon + 0.05}`
-    : null;
-
-  const makeQuery = (useBbox) => useBbox
-    ? `[out:json][timeout:15];(way["name"~"${qSafe}",i]["highway"](${useBbox});>;);out body;`
-    : `[out:json][timeout:20];(way["name"~"${qSafe}",i]["highway"];>;);out body;`;
-
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    // Try bbox query first (if we have one), then full query
-    const queries = bboxExpandedStr
-      ? [makeQuery(bboxExpandedStr), makeQuery(null)]
-      : [makeQuery(null)];
-
-    for (const overpassQuery of queries) {
-      try {
-        const resp = await fetch(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: "data=" + encodeURIComponent(overpassQuery),
-          signal: AbortSignal.timeout(20000),
-        });
-        if (!resp.ok) {
-          if (resp.status === 429) { console.warn("[highway] Overpass 429 on", endpoint); break; }
-          throw new Error("Overpass HTTP " + resp.status);
-        }
-        const data = await resp.json();
-        const pts = _parseOverpassPolyline(data);
-        if (pts.length >= 2) {
-          console.log(`[highway] got ${pts.length} points from ${endpoint}`);
-          return pts;
-        }
-      } catch(e) {
-        console.warn(`[highway] ${endpoint} failed:`, e.message);
-      }
-    }
-  }
-
-  // Step 3: Fallback — if Yandex gave us a bbox, synthesize a simple diagonal polyline
-  // so screens near the road corridor are still matched
-  if (bbox) {
-    console.warn("[highway] Overpass unavailable, falling back to Yandex bbox diagonal");
-    return [
-      [bbox.minLon, bbox.minLat],
-      [bbox.maxLon, bbox.maxLat],
-    ];
-  }
-
-  return null;
-}
-
 function getLatLon(s) {
   const lat = Number(
     s?.lat ?? s?.LAT ?? s?.latitude ?? s?.Latitude ?? s?.y ?? s?.Y
@@ -1783,55 +1837,6 @@ function getLatLon(s) {
   );
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   return { lat, lon };
-}
-
-function distancePointToPolylineMeters(P, line) {
-  let best = Infinity;
-  for (let i = 0; i < line.length - 1; i++) {
-    const A = { lon: line[i][0], lat: line[i][1] };
-    const B = { lon: line[i + 1][0], lat: line[i + 1][1] };
-    const d = distancePointToSegmentMeters(P, A, B);
-    if (d < best) best = d;
-  }
-  return best;
-}
-
-function distancePointToSegmentMeters(P, A, B) {
-  const R = 6371000;
-  const lat0 = (A.lat + B.lat) * 0.5 * Math.PI / 180;
-
-  const ax = A.lon * Math.PI / 180 * Math.cos(lat0) * R;
-  const ay = A.lat * Math.PI / 180 * R;
-  const bx = B.lon * Math.PI / 180 * Math.cos(lat0) * R;
-  const by = B.lat * Math.PI / 180 * R;
-  const px = P.lon * Math.PI / 180 * Math.cos(lat0) * R;
-  const py = P.lat * Math.PI / 180 * R;
-
-  const abx = bx - ax, aby = by - ay;
-  const apx = px - ax, apy = py - ay;
-  const ab2 = abx * abx + aby * aby;
-
-  let t = (ab2 === 0) ? 0 : (apx * abx + apy * aby) / ab2;
-  t = Math.max(0, Math.min(1, t));
-
-  const cx = ax + t * abx;
-  const cy = ay + t * aby;
-
-  const dx = px - cx;
-  const dy = py - cy;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-function pickScreensNearPolyline(screens, lineLonLat, radiusM) {
-  const out = [];
-  for (const s of screens) {
-    const p = getLatLon(s);
-    if (!p) continue;
-
-    const d = distancePointToPolylineMeters({ lon: p.lon, lat: p.lat }, lineLonLat);
-    if (d <= radiusM) out.push(s);
-  }
-  return out;
 }
 
 function _screenIdOf(s) {
@@ -2137,6 +2142,16 @@ async function buildMediaPlanBlob() {
   const hpdActual = (_schedHours && _schedHours.avgHpd > 0) ? _schedHours.avgHpd : (meta.hpd || 12);
   const hpd = +hpdActual.toFixed(2);
 
+  // «График, ч/сутки»: при разном расписании по дням недели среднее за период
+  // (напр. 8.57 при «будни 10 ч, выходные 5 ч») ничего не говорит клиенту —
+  // выводим диапазон 5–10. Когда часы одинаковы во все дни, остаётся число.
+  const _round2 = v => Math.round(v * 100) / 100;
+  const hpdMin = _schedHours && _schedHours.minHpd > 0 ? _round2(_schedHours.minHpd) : hpd;
+  const hpdMax = _schedHours && _schedHours.maxHpd > 0 ? _round2(_schedHours.maxHpd) : hpd;
+  const hpdIsRange = hpdMax - hpdMin > 0.01;
+  // Диапазон — строка, поэтому числовой формат к нему неприменим.
+  const hpdValue = hpdIsRange ? `${hpdMin}–${hpdMax}` : hpd;
+
   const dateStr   = s => s ? String(s).split("-").reverse().join(".") : "—";
   const periodStr = `${dateStr(brief.dates?.start)} — ${dateStr(brief.dates?.end)}`;
 
@@ -2376,7 +2391,7 @@ async function buildMediaPlanBlob() {
     for (const [fmt_, fmtScr] of Object.entries(rfMap[city] || {})) {
       const w = regCnt > 0 ? fmtScr.length / regCnt : (1 / Object.keys(rfMap[city]).length);
       const bids = fmtScr.map(s => {
-        const b = brief.bidMode === "min" ? s.minBid : (s.recoBid || s.minBid);
+        const b = screenBid(s, brief);
         return Number.isFinite(b) && b > 0 ? b : null;
       }).filter(Boolean);
       const avgBid = bids.length ? bids.reduce((a, b) => a + b, 0) / bids.length : 0;
@@ -2526,14 +2541,14 @@ async function buildMediaPlanBlob() {
     });
 
     // ── base+4: График ч/сутки ────────────────────────────────────
-    const hpdFmt = Number.isInteger(hpd) ? "0" : "0.##";
+    const hpdFmt = hpdIsRange ? undefined : (Number.isInteger(hpd) ? "0" : "0.##");
     sc(ws, base + 4, 1, "График, ч/сутки", { bold: true, fill: C_LIGHT, v: "center" });
-    sc(ws, base + 4, 2, hpd,               { fill: C_GREEN, numFmt: hpdFmt, h: "right", v: "center" });
+    sc(ws, base + 4, 2, hpdValue,          { fill: C_GREEN, numFmt: hpdFmt, h: "right", v: "center" });
     if (schedTxt) sc(ws, base + 4, 3, schedTxt,
       { fill: C_GREEN, size: 9, h: "center", v: "center", wrap: true });
     else ws.getCell(base + 4, 3).border = THIN_B;
     fmts.forEach((_, fi) => {
-      sc(ws, base + 4, 5 + fi, hpd, { fill: C_GREEN, numFmt: hpdFmt, h: "right", v: "center" });
+      sc(ws, base + 4, 5 + fi, hpdValue, { fill: C_GREEN, numFmt: hpdFmt, h: "right", v: "center" });
     });
 
     // ── base+5: Прогноз кол-ва выходов ───────────────────────────
@@ -2764,7 +2779,7 @@ async function buildSberMediaPlanBlob() {
     for (const [fmt_, fmtScr] of Object.entries(rfMap[city] || {})) {
       const w = regCnt > 0 ? fmtScr.length / regCnt : (1 / Object.keys(rfMap[city]).length);
       const bids = fmtScr.map(s => {
-        const b = brief.bidMode === "min" ? s.minBid : (s.recoBid || s.minBid);
+        const b = screenBid(s, brief);
         return Number.isFinite(b) && b > 0 ? b : null;
       }).filter(Boolean);
       const avgBid = bids.length ? bids.reduce((a,b) => a+b, 0) / bids.length : 0;
@@ -2903,7 +2918,7 @@ async function buildSberMediaPlanBlob() {
       wsCity.getCell(r, 7).value  = s.format ?? "";
       wsCity.getCell(r, 8).value  = s.resolution ?? "";
       wsCity.getCell(r, 9).value  = s.aspectRatio ?? "";
-      const bid = brief.bidMode === "min" ? s.minBid : (s.recoBid || s.minBid);
+      const bid = screenBid(s, brief);
       wsCity.getCell(r, 10).value  = Number.isFinite(bid) ? bid : null;
       wsCity.getCell(r, 10).numFmt = "0.00";
       sberHlink(wsCity, r, 11, "Ссылка", `#'${SCHED_SHEET}'!A1`);
@@ -3031,6 +3046,79 @@ function _extractAddrLines(rows) {
  * Auto-detects city/region names from parsed rows and matches them
  * against state.regionsAll. Returns { matched: string[], unmatched: string[] }.
  */
+// Сокращения городов, которые не ловятся ни точным, ни префиксным сравнением.
+// Ключ — уже нормализованное (normalizeGeoName) написание.
+const CITY_ALIASES = {
+  // Москва и Петербург
+  "мск": "Москва",
+  "msk": "Москва",
+  "moscow": "Москва",
+  "спб": "Санкт-Петербург",
+  "питер": "Санкт-Петербург",
+  "санкт петербург": "Санкт-Петербург",
+  "petersburg": "Санкт-Петербург",
+  "spb": "Санкт-Петербург",
+  // Города-миллионники и крупные центры
+  "нн": "Нижний Новгород",
+  "нижний": "Нижний Новгород",
+  "нижний новгород": "Нижний Новгород",
+  "екб": "Екатеринбург",
+  "ебург": "Екатеринбург",
+  "екат": "Екатеринбург",
+  "нск": "Новосибирск",
+  "новосиб": "Новосибирск",
+  "ростов": "Ростов-на-Дону",
+  "ростов на дону": "Ростов-на-Дону",
+  "ростов-на-дону": "Ростов-на-Дону",
+  "нч": "Набережные Челны",
+  "челны": "Набережные Челны",
+  "чел": "Челябинск",
+  "кзн": "Казань",
+  "казань": "Казань",
+  "нвс": "Новосибирск",
+  "влг": "Волгоград",
+  "волга": "Волгоград",
+  "крд": "Краснодар",
+  "краснодар": "Краснодар",
+  "уфа": "Уфа",
+  "самара": "Самара",
+  "омск": "Омск",
+  "пермь": "Пермь",
+  "воронеж": "Воронеж",
+  "калининград": "Калининград",
+  "кёниг": "Калининград",
+  "мин воды": "Минеральные Воды",
+  "минводы": "Минеральные Воды",
+  "улан удэ": "Улан-Удэ",
+  "йошкар ола": "Йошкар-Ола",
+  "комсомольск на амуре": "Комсомольск-на-Амуре",
+  "петропавловск камчатский": "Петропавловск-Камчатский",
+};
+
+// «Н.Новгород», «С.-Петербург», «Н.Челны» — обычная запись в клиентских файлах.
+// Разбиваем имя на слова по точкам/дефисам/пробелам и считаем совпадением случай,
+// когда каждое слово исходника является префиксом соответствующего слова известного
+// города: «н|новгород» → «нижний|новгород», «с|петербург» → «санкт|петербург».
+function _cityWords(s) {
+  return normalizeGeoName(s).split(/[\s.\-‐-―]+/).filter(Boolean);
+}
+
+function _resolveCityAbbrev(raw, allKnown) {
+  const rawWords = _cityWords(raw);
+  // Однословные названия уже покрыты точным/префиксным сравнением — трогать их
+  // здесь опасно (слишком много ложных совпадений).
+  if (rawWords.length < 2) return null;
+
+  const hits = [];
+  for (const known of allKnown) {
+    const kw = _cityWords(known);
+    if (kw.length !== rawWords.length) continue;
+    if (rawWords.every((w, i) => kw[i].startsWith(w))) hits.push(known);
+  }
+  // Неоднозначное сокращение оставляем ненайденным, чтобы не подставить чужой город.
+  return hits.length === 1 ? hits[0] : null;
+}
+
 function _extractAndMatchCities(rows) {
   if (!rows || !rows.length) return { matched: [], unmatched: [] };
   const keys = Object.keys(rows[0]);
@@ -3068,11 +3156,27 @@ function _extractAndMatchCities(rows) {
     // Exact match first
     const exactIdx = allKnownLC.indexOf(rawLC);
     if (exactIdx !== -1) { matched.push(allKnown[exactIdx]); continue; }
+    // Нормализованное сравнение: снимает «г. »/«город », ё/е и лишние пробелы.
+    const rawNorm = normalizeGeoName(raw);
+    const normIdx = allKnown.findIndex(r => normalizeGeoName(r) === rawNorm);
+    if (normIdx !== -1) { matched.push(allKnown[normIdx]); continue; }
+    // Явный алиас («мск», «спб», …) — сверяем, что такой город вообще есть в пуле.
+    // ВАЖНО: до префиксного сравнения. Иначе «Нижний» уйдёт в первый попавшийся
+    // город на «Нижний» (в инвентаре есть и Тагил, и Новгород), а не туда, куда
+    // мы явно решили.
+    const alias = CITY_ALIASES[rawNorm];
+    if (alias) {
+      const aliasIdx = allKnownLC.indexOf(alias.toLowerCase());
+      if (aliasIdx !== -1) { matched.push(allKnown[aliasIdx]); continue; }
+    }
     // Partial: known region starts with raw or raw starts with known region
     const partial = allKnown.find((r, i) =>
       allKnownLC[i].startsWith(rawLC) || rawLC.startsWith(allKnownLC[i])
     );
     if (partial) { matched.push(partial); continue; }
+    // Сокращения вида «Н.Новгород» / «С.-Петербург».
+    const abbrev = _resolveCityAbbrev(raw, allKnown);
+    if (abbrev) { matched.push(abbrev); continue; }
     unmatched.push(raw);
   }
   return { matched: [...new Set(matched)], unmatched };
@@ -3236,6 +3340,54 @@ function attachAddressSuggest(inputEl) {
   inputEl.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDropdown(); });
 }
 
+// Адреса объектов бренда из 2ГИС. Отдаём адрес ВМЕСТЕ с точкой: координата уже
+// известна, и повторно геокодировать её незачем.
+// Ключ и воркер-прокси те же, что использовал прежний блок «Рядом с объектами».
+const GEO2GIS_KEY = "ba3c806e-746b-40b7-a1c8-4fc79c1a9667";
+const GEO2GIS_PROXY = "https://silent-surf-cd5e.mochalova-kathrine-v.workers.dev/2gis";
+
+async function fetch2gisAddresses(query, centerLat, centerLon, onProgress) {
+  const PAGE_SIZE = 50;
+  const CITY_RADIUS = 50000;   // поиск по городу целиком
+  const MAX_PAGES = 40;        // предохранитель: 40 × 50 = 2000 объектов
+  const out = [];
+  const seen = new Set();
+
+  let page = 1, totalPages = 1, total = 0;
+  while (page <= totalPages && page <= MAX_PAGES) {
+    const url = GEO2GIS_PROXY +
+      "?q=" + encodeURIComponent(query) +
+      "&location=" + centerLon + "," + centerLat +
+      "&radius=" + CITY_RADIUS +
+      "&page=" + page +
+      "&page_size=" + PAGE_SIZE +
+      "&fields=" + encodeURIComponent("items.point,items.address_name,items.full_address_name") +
+      "&key=" + GEO2GIS_KEY;
+
+    const data = await fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
+    if (!data?.result) break;
+
+    const items = data.result.items || [];
+    for (const item of items) {
+      const pt = item.point;
+      if (!pt || !Number.isFinite(Number(pt.lat)) || !Number.isFinite(Number(pt.lon))) continue;
+      const address = String(item.full_address_name || item.address_name || item.name || "").trim();
+      if (!address) continue;
+      const key = normalizeKey(address);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ address, lat: Number(pt.lat), lon: Number(pt.lon) });
+    }
+
+    total = data.result.total || 0;
+    totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    if (typeof onProgress === "function") onProgress(out.length, total);
+    page++;
+    if (!items.length) break;
+  }
+  return out;
+}
+
 function pickScreensNearPoint(screens, center, radiusMeters) {
   const r = Number(radiusMeters || 0);
   if (!center || !Number.isFinite(center.lat) || !Number.isFinite(center.lon) || !r) return [];
@@ -3248,221 +3400,6 @@ function pickScreensNearPoint(screens, center, radiusMeters) {
     if (!Number.isFinite(slat) || !Number.isFinite(slon)) return false;
     return dist(slat, slon, center.lat, center.lon) <= r;
   });
-}
-
-// ===== Overpass =====
-const OVERPASS_URLS = [
-  "https://overpass.kumi.systems/api/interpreter",
-  "https://overpass-api.de/api/interpreter",
-  "https://overpass.nchc.org.tw/api/interpreter",
-  "https://overpass.openstreetmap.ru/api/interpreter",
-  "https://overpass.private.coffee/api/interpreter"
-];
-
-const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-async function _fetchOverpass(url, body, timeoutMs = 45000) {
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), timeoutMs);
-  try {
-    return await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
-      body: "data=" + encodeURIComponent(body),
-      signal: ac.signal
-    });
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-async function _runOverpassWithFailover(body, timeoutMs = 45000) {
-  let lastErr = null;
-  let attempt = 0;
-
-  for (const url of OVERPASS_URLS) {
-    attempt++;
-    try {
-      const res = await _fetchOverpass(url, body, timeoutMs);
-      const txt = await res.text();
-
-      if (!res.ok) throw new Error(`Overpass ${res.status} @ ${url} :: ${txt.slice(0, 180)}`);
-
-      let json;
-      try { json = JSON.parse(txt); }
-      catch { throw new Error(`Overpass non-JSON @ ${url} :: ${txt.slice(0, 180)}`); }
-
-      return json;
-    } catch (e) {
-      lastErr = e;
-      console.warn("[poi] overpass fail:", String(e));
-      await _sleep(350 * attempt + Math.floor(Math.random() * 500));
-    }
-  }
-
-  throw lastErr || new Error("Overpass failed (all endpoints)");
-}
-
-function _escapeOverpassString(s) {
-  return String(s || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"').trim();
-}
-
-function _normalizePOIs(json) {
-  const els = Array.isArray(json?.elements) ? json.elements : [];
-  return els.map(el => {
-    const name = el.tags?.name || "";
-    const lat0 = Number(el.lat ?? el.center?.lat);
-    const lon0 = Number(el.lon ?? el.center?.lon);
-    if (!Number.isFinite(lat0) || !Number.isFinite(lon0)) return null;
-    return { id: `${el.type}/${el.id}`, name, lat: lat0, lon: lon0, raw: el };
-  }).filter(Boolean);
-}
-
-function pickScreensNearPOIs(screens, pois, radiusMeters) {
-  const r = Number(radiusMeters || 0);
-  if (!r || !Array.isArray(pois) || !pois.length) return [];
-
-  const dist = window.GeoUtils?.haversineMeters;
-  if (!dist) throw new Error("GeoUtils.haversineMeters is missing");
-
-  const picked = [];
-  for (const s of (screens || [])) {
-    const slat = Number(s.lat), slon = Number(s.lon);
-    if (!Number.isFinite(slat) || !Number.isFinite(slon)) continue;
-
-    let ok = false;
-    for (const p of pois) {
-      if (dist(slat, slon, p.lat, p.lon) <= r) { ok = true; break; }
-    }
-    if (ok) picked.push(s);
-  }
-  return picked;
-}
-
-function _poiQueryWithScope(poiType, scopeExpr) {
-  const raw = POI_QUERIES[poiType];
-  if (!raw) throw new Error("Unknown poi_type: " + poiType);
-  return String(raw).replace(/nwr\s*\(\s*area\.a\s*\)/g, `nwr(${scopeExpr})`);
-}
-
-function _bboxFromScreens(screens) {
-  const pts = (screens || [])
-    .map(s => ({ lat: Number(s.lat), lon: Number(s.lon) }))
-    .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
-
-  if (!pts.length) return null;
-
-  let minLat = 90, maxLat = -90, minLon = 180, maxLon = -180;
-  for (const p of pts) {
-    if (p.lat < minLat) minLat = p.lat;
-    if (p.lat > maxLat) maxLat = p.lat;
-    if (p.lon < minLon) minLon = p.lon;
-    if (p.lon > maxLon) maxLon = p.lon;
-  }
-
-  const padLat = 0.05;
-  const padLon = 0.08;
-
-  return {
-    minLat: minLat - padLat,
-    minLon: minLon - padLon,
-    maxLat: maxLat + padLat,
-    maxLon: maxLon + padLon
-  };
-}
-
-function _centerFromBbox(bb) {
-  if (!bb) return null;
-  return { lat: (bb.minLat + bb.maxLat) / 2, lon: (bb.minLon + bb.maxLon) / 2 };
-}
-
-function _estimateRadiusFromBbox(bb) {
-  if (!bb) return 25000;
-  const latSpan = Math.abs(bb.maxLat - bb.minLat);
-  const lonSpan = Math.abs(bb.maxLon - bb.minLon);
-  const latKm = latSpan * 111;
-  const midLat = (bb.minLat + bb.maxLat) / 2;
-  const lonKm = lonSpan * 111 * Math.cos((midLat * Math.PI) / 180);
-  const diagKm = Math.sqrt(latKm * latKm + lonKm * lonKm);
-  const r = Math.max(8000, Math.min(120000, (diagKm * 0.6) * 1000));
-  return Math.round(r);
-}
-
-async function fetchPOIsOverpassInRegion(poiType, regionName, screensInRegion, limit = 50) {
-  const t = String(poiType || "").trim();
-  if (!t || !POI_QUERIES[t]) throw new Error("Unknown poi_type: " + t);
-
-  const region = _escapeOverpassString(regionName);
-  if (!region) throw new Error("Region is empty");
-
-  const safeLimit = Math.max(1, Math.min(50, Number(limit || 50)));
-
-  try {
-    const bodyArea = `
-      [out:json][timeout:40];
-      (
-        area["boundary"="administrative"]["name"="${region}"]["admin_level"~"4|6"];
-        area["boundary"="administrative"]["name:ru"="${region}"]["admin_level"~"4|6"];
-        area["boundary"="administrative"]["name"="${region}"];
-        area["boundary"="administrative"]["name:ru"="${region}"];
-      )->.cand;
-      .cand->.a;
-      (
-        ${POI_QUERIES[t]}
-      );
-      out center ${safeLimit};
-    `;
-    const json = await _runOverpassWithFailover(bodyArea, 55000);
-    const pois = _normalizePOIs(json).slice(0, safeLimit);
-    if (pois.length) return pois;
-  } catch (e) {
-    console.warn("[poi] area attempt failed:", String(e));
-  }
-
-  const bb = _bboxFromScreens(screensInRegion || []);
-  if (bb) {
-    try {
-      const scope = `${bb.minLat},${bb.minLon},${bb.maxLat},${bb.maxLon}`;
-      const q = _poiQueryWithScope(t, scope);
-
-      const bodyBbox = `
-        [out:json][timeout:40];
-        (
-          ${q}
-        );
-        out center ${safeLimit};
-      `;
-      const json2 = await _runOverpassWithFailover(bodyBbox, 55000);
-      const pois2 = _normalizePOIs(json2).slice(0, safeLimit);
-      if (pois2.length) return pois2;
-    } catch (e) {
-      console.warn("[poi] bbox attempt failed:", String(e));
-    }
-  }
-
-  const c = _centerFromBbox(bb);
-  if (c) {
-    try {
-      const r = _estimateRadiusFromBbox(bb);
-      const scope = `around:${r},${c.lat},${c.lon}`;
-      const q = _poiQueryWithScope(t, scope);
-
-      const bodyAround = `
-        [out:json][timeout:40];
-        (
-          ${q}
-        );
-        out center ${safeLimit};
-      `;
-      const json3 = await _runOverpassWithFailover(bodyAround, 55000);
-      const pois3 = _normalizePOIs(json3).slice(0, safeLimit);
-      if (pois3.length) return pois3;
-    } catch (e) {
-      console.warn("[poi] around attempt failed:", String(e));
-    }
-  }
-
-  throw new Error(`POI не найдены: «${POI_LABELS?.[t] || t}» в регионе «${regionName}». Попробуй другой тип или поменяй регион.`);
 }
 
 // ===== MULTI-REGION BUDGET ALLOCATION =====
@@ -3837,13 +3774,7 @@ async function onCalcClick() {
   const _manualGidSet = _isManualMode ? (brief.selection.manual_gids || new Set()) : new Set();
   const _foundGids    = new Set(); // GID-ы, которые реально попали в расчёт
 
-  const isPOI = (brief.selection?.mode === "poi");
   const isNearAddress = (brief.selection?.mode === "near_address");
-
-  if (isPOI && !window.GeoUtils?.haversineMeters) {
-    alert("GeoUtils не найден. Проверь подключение geo.js");
-    return;
-  }
 
   // ===== Pre-geocode addresses (once, before region loop) =====
   let _geocodedPoints = null;
@@ -3861,11 +3792,18 @@ async function onCalcClick() {
     const GEOCODE_DELAY_MS = 350; // Nominatim rate limit: 1 req/sec
     for (let i = 0; i < addresses.length; i++) {
       const addr = addresses[i];
+      // Список адресов уже геокодировал каждую строку, когда считал экраны рядом —
+      // берём готовую точку и не ходим в геокодер второй раз.
+      const cached = state.addressPoints?.get(normalizeKey(addr));
+      if (cached) { _geocodedPoints.push(cached); continue; }
+
       setStatus(`Геокодирую ${i + 1}/${addresses.length}: «${addr}»…`);
       try {
         const pt = await geocodeAddressNominatim(addr);
-        if (pt) _geocodedPoints.push(pt);
-        else console.warn("[geo] not found:", addr);
+        if (pt) {
+          _geocodedPoints.push(pt);
+          state.addressPoints?.set(normalizeKey(addr), pt);
+        } else console.warn("[geo] not found:", addr);
       } catch (e) {
         console.error("[geo] geocode error:", e);
       }
@@ -3972,39 +3910,6 @@ async function onCalcClick() {
       continue;
     }
 
-    // POI mode
-    let pois = [];
-    if (isPOI) {
-      const poiType = String(brief.selection.poi_type || "").trim();
-      const screenRadius = Number(brief.selection.radius_m || 500);
-
-      setStatus(`Ищу POI в регионе «${region}»: ${POI_LABELS?.[poiType] || poiType}…`);
-
-      try {
-        pois = await fetchPOIsOverpassInRegion(poiType, region, pool, 50);
-      } catch (e) {
-        console.error("[poi] error:", e);
-        alert(e?.message || `Ошибка Overpass (OSM) для региона «${region}».`);
-        setStatus("");
-        return;
-      }
-
-      anyPOIs = anyPOIs.concat(pois);
-      window.PLANNER.lastPOIs = anyPOIs;
-
-      try { renderPOIList(anyPOIs); } catch { }
-
-      const before = pool.length;
-      pool = pickScreensNearPOIs(pool, pois, screenRadius);
-
-      if (!pool.length) {
-        perRegionRows.push({ region: regionDisplay, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "нет экранов у POI" });
-        continue;
-      }
-
-      setStatus(`Экраны у POI: ${pool.length} из ${before} (регион: ${region}, POI: ${pois.length})`);
-    }
-
     // Near address mode — поддержка нескольких адресов
     if (isNearAddress) {
       const screenRadius = Number(brief.selection.radius_m || 500);
@@ -4038,91 +3943,6 @@ async function onCalcClick() {
       }
 
       setStatus(`Экраны у ${points.length} адресов: ${pool.length} из ${before} (радиус: ${screenRadius} м)`);
-    }
-
-    // ROUTE mode
-    if (brief.selection?.mode === "route") {
-      const fromTxt = String(brief.selection.route_from || "").trim();
-      const toTxt = String(brief.selection.route_to || "").trim();
-      const screenRadius = Number(brief.selection.radius_m || 300);
-
-      if (!fromTxt || !toTxt) {
-        perRegionRows.push({ region: regionDisplay, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "не задан маршрут" });
-        continue;
-      }
-
-      setStatus(`Маршрут для региона «${region}»: ${fromTxt} → ${toTxt}…`);
-
-      let A = null, B = null, routeLine = null;
-      try {
-        A = await geocodeAddressNominatim(fromTxt, region);
-        B = await geocodeAddressNominatim(toTxt, region);
-      } catch (e) {
-        console.error("[route] geocode error:", e);
-      }
-
-      if (!A || !B || !Number.isFinite(A.lat) || !Number.isFinite(A.lon) || !Number.isFinite(B.lat) || !Number.isFinite(B.lon)) {
-        perRegionRows.push({ region: regionDisplay, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "точки маршрута не найдены" });
-        warnings.push(`⚠️ Регион «${regionDisplay}»: не удалось геокодировать маршрут (${fromTxt} → ${toTxt}).`);
-        continue;
-      }
-
-      try {
-        routeLine = await fetchRouteOSRM(A, B);
-      } catch (e) {
-        console.error("[route] osrm error:", e);
-      }
-
-      if (!Array.isArray(routeLine) || routeLine.length < 2) {
-        routeLine = [[A.lon, A.lat], [B.lon, B.lat]];
-        warnings.push(`⚠️ Регион «${regionDisplay}»: OSRM недоступен, использую прямую линию A–B.`);
-      }
-
-      const before = pool.length;
-      pool = pickScreensNearPolyline(pool, routeLine, screenRadius);
-
-      if (!pool.length) {
-        perRegionRows.push({ region: regionDisplay, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "нет экранов у маршрута" });
-        continue;
-      }
-
-      setStatus(`Экраны у маршрута: ${pool.length} из ${before} (радиус: ${screenRadius}м)`);
-    }
-
-    // HIGHWAY mode
-    if (brief.selection?.mode === "highway") {
-      const hwName = String(brief.selection.highway_name || "").trim();
-      const screenRadius = Number(brief.selection.radius_m || 500);
-
-      if (!hwName) {
-        perRegionRows.push({ region: regionDisplay, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "не задана магистраль" });
-        continue;
-      }
-
-      setStatus(`Ищу дорогу «${hwName}» для региона «${region}»…`);
-
-      let hwLine = null;
-      try {
-        hwLine = await fetchHighwayGeometry(hwName, region);
-      } catch (e) {
-        console.error("[highway] error:", e);
-      }
-
-      if (!Array.isArray(hwLine) || hwLine.length < 2) {
-        perRegionRows.push({ region: regionDisplay, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "дорога не найдена" });
-        warnings.push(`⚠️ Регион «${regionDisplay}»: не удалось найти дорогу «${hwName}» через OpenStreetMap.`);
-        continue;
-      }
-
-      const before = pool.length;
-      pool = pickScreensNearPolyline(pool, hwLine, screenRadius);
-
-      if (!pool.length) {
-        perRegionRows.push({ region: regionDisplay, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "нет экранов у магистрали" });
-        continue;
-      }
-
-      setStatus(`Экраны у «${hwName}»: ${pool.length} из ${before} (радиус: ${screenRadius}м)`);
     }
 
     // Manual GID filter — базовый набор = указанные GID-ы (сохраняются ВСЕГДА).
@@ -4294,11 +4114,14 @@ async function onCalcClick() {
       warnings.push(`⚠️ Регион «${regionDisplay}»: GRP-фильтр включён, без GRP исключены (без GRP: ${grpDroppedNoValue}).`);
     }
 
-    const avgBid = avgNumber(pool.map(s => s.minBid));
-    if (avgBid == null) {
+    // Надбавка входит и в avgBid/bidPlus20: они кормят потолки ёмкости и распределение
+    // бюджета, иначе «+X %» поднял бы фактическую ставку, но не плановые суммы.
+    const avgMinBid = avgNumber(pool.map(s => s.minBid));
+    if (avgMinBid == null) {
       perRegionRows.push({ region: regionDisplay, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "нет minBid" });
       continue;
     }
+    const avgBid = avgMinBid * bidUpliftFactor(brief);
     const bidPlus20 = avgBid * BID_MULTIPLIER;
 
     // ots = viewers per single play. Use avgNumberNonZero to exclude
@@ -4322,6 +4145,45 @@ async function onCalcClick() {
     alert("Не удалось подобрать экраны: по выбранным условиям не осталось доступных экранов.");
     setStatus("");
     return;
+  }
+
+  // =========================
+  // 1b) ПЛАНОВАЯ ЁМКОСТЬ
+  // =========================
+  // Считаем потолок по показам для всего собранного пула и сверяем с тем, что
+  // запросил клиент. Если запрошенное больше — говорим прямо, что именно упирается
+  // в лимит и какой лимит, а не молча урезаем результат в середине расчёта.
+  const capacityAll = computeCapacity(prepared.flatMap(r => r.pool), days * hpdFixed, brief.bidMode, bidUpliftFactor(brief));
+  if (capacityAll) {
+    const capTxt =
+      `лимит ${capacityAll.plays.toLocaleString("ru-RU")} показов ` +
+      `(${capacityAll.screens.toLocaleString("ru-RU")} поверхностей × ` +
+      `${Math.round(capacityAll.hours).toLocaleString("ru-RU")} ч размещения)`;
+
+    if (brief.budget.mode === "fixed" && capacityAll.budget != null) {
+      const asked = Number(brief.budget.amount || 0);
+      if (asked > capacityAll.budget) {
+        warnings.push(
+          `⚠️ Бюджет ${Math.round(asked).toLocaleString("ru-RU")} ₽ превышает ёмкость инвентаря: ` +
+          `освоить получится не больше ${capacityAll.budget.toLocaleString("ru-RU")} ₽ — ${capTxt}.`
+        );
+      }
+    } else if (brief.budget.mode === "goal_plays") {
+      const asked = Number(brief.goal?.plays || 0);
+      if (asked > capacityAll.plays) {
+        warnings.push(
+          `⚠️ Цель ${Math.round(asked).toLocaleString("ru-RU")} показов превышает ёмкость инвентаря — ${capTxt}.`
+        );
+      }
+    } else if (brief.budget.mode === "goal_ots" && capacityAll.ots != null) {
+      const asked = Number(brief.goal?.ots || 0);
+      if (asked > capacityAll.ots) {
+        warnings.push(
+          `⚠️ Цель ${Math.round(asked).toLocaleString("ru-RU")} OTS превышает ёмкость инвентаря: ` +
+          `максимум ${capacityAll.ots.toLocaleString("ru-RU")} OTS — ${capTxt}.`
+        );
+      }
+    }
   }
 
   // =========================
@@ -4387,7 +4249,7 @@ async function onCalcClick() {
       const capPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * r.pool.length * days);
       const share = totalCapPlays > 0 ? capPlays / totalCapPlays : 1 / prepared.length;
       const regionPlays = Math.floor(totalPlaysGoal * share);
-      const avgBid = avgEffectiveBid(r.pool, brief.bidMode, 1);
+      const avgBid = avgEffectiveBid(r.pool, brief.bidMode, 1, bidUpliftFactor(brief));
       budgets[r.region] = Math.ceil(regionPlays * avgBid);
       // Store planned plays for use in region loop
       if (!goalPlan) goalPlan = {};
@@ -4397,14 +4259,19 @@ async function onCalcClick() {
   } else {
     // Recommendation mode
     if (brief.constructions?.enabled && brief.constructions.count > 0) {
-      // Бюджет = N конструкций × SC_OPT выходов/ч × реальных часов кампании × avg рекомендованная ставка.
-      // Используем SC_OPT (ёмкость), а не pphTarget (стратегия охвата/частоты):
-      // pphTarget определяет кол-во экранов, SC_OPT — реальная ёмкость планирования.
+      // Бюджет = N конструкций × выходов/ч по выбранному тиру × реальных часов
+      // кампании × avg рекомендованная ставка. Берём ёмкость (recoPphForTier), а не
+      // pphTarget (стратегия охвата/частоты): pphTarget определяет кол-во экранов,
+      // ёмкость — реальный объём планирования.
       const N = brief.constructions.count;
       const allPoolScreens0 = prepared.flatMap(r => r.pool);
       // Используем уже загруженный recoBid (если DSP-режим) или minBid×BID_MULTIPLIER
-      const recoBid = avgEffectiveBid(allPoolScreens0, brief.bidMode, 1);
-      const totalBudget = Math.round(N * SC_OPT * days * hpdFixed * recoBid);
+      const recoBid = avgEffectiveBid(allPoolScreens0, brief.bidMode, 1, bidUpliftFactor(brief));
+      // Частота ограничена плановой ёмкостью формата: «максимум» не должен просить
+      // больше показов, чем инвентарь физически способен отдать.
+      const _capPph = capacityAll ? capacityAll.avgPph : CAPACITY_PPH_DEFAULT;
+      const _pph = Math.min(recoPphForTier(brief.recoTier, _capPph), _capPph);
+      const totalBudget = Math.round(N * _pph * days * hpdFixed * recoBid);
 
       const alloc = allocateBudgetAcrossRegions(
         totalBudget,
@@ -4422,7 +4289,7 @@ async function onCalcClick() {
 
       if (_isGidRecoWithPpm) {
         const allGidScreens = prepared.flatMap(r => r.pool);
-        const recoBid = avgEffectiveBid(allGidScreens, brief.bidMode, 1);
+        const recoBid = avgEffectiveBid(allGidScreens, brief.bidMode, 1, bidUpliftFactor(brief));
         const totalBudget = Math.round(allGidScreens.length * _gidPpmGlobal * hpdFixed * days * recoBid);
         const alloc = allocateBudgetAcrossRegions(
           totalBudget,
@@ -4440,9 +4307,11 @@ async function onCalcClick() {
       const MAX_MONTHLY_BY_TIER  = { M: 30_000_000, SP: 15_000_000, A: 5_000_000, B: 2_000_000, C: 1_000_000, D: 300_000 };
 
       for (const r of prepared) {
-        const avgBid   = avgEffectiveBid(r.pool, brief.bidMode, 1);
-        const capPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * r.pool.length * days);
-        const capBudget = Math.floor(capPlays * avgBid);
+        // Потолок — плановая ёмкость на реальных часах расписания (раньше здесь был
+        // SC_MAX × RECO_HOURS_PER_DAY, т.е. 60 вых/ч × условные 12 ч/день, что давало
+        // потолок заметно выше реально осваиваемого объёма).
+        const cap = computeCapacity(r.pool, days * hpdFixed, brief.bidMode, bidUpliftFactor(brief));
+        const capBudget = cap?.budget ?? Infinity;
 
         const optRaw = Math.floor((BASE_MONTHLY_BY_TIER[r.tier] ?? BASE_MONTHLY_BY_TIER.C) * (days / 30));
         const maxRaw = Math.floor((MAX_MONTHLY_BY_TIER[r.tier]  ?? MAX_MONTHLY_BY_TIER.C)  * (days / 30));
@@ -4544,7 +4413,7 @@ async function onCalcClick() {
       for (const pr of prepared) {
         const recos = pr.pool.map(s => s.recoBid).filter(v => Number.isFinite(v) && v > 0);
         if (recos.length > 0) {
-          pr.bidPlus20 = recos.reduce((a, b) => a + b, 0) / recos.length;
+          pr.bidPlus20 = (recos.reduce((a, b) => a + b, 0) / recos.length) * bidUpliftFactor(brief);
           pr.capBudgetAbs = Math.floor(pr.capPlaysAbs * pr.bidPlus20);
         }
       }
@@ -4585,7 +4454,9 @@ async function onCalcClick() {
         if (allRecos.length > 0) {
           const N = brief.constructions.count;
           const overallAvgReco = allRecos.reduce((a, b) => a + b, 0) / allRecos.length;
-          const totalBudget = Math.round(N * SC_OPT * days * hpdFixed * overallAvgReco);
+          const _capPph2 = capacityAll ? capacityAll.avgPph : CAPACITY_PPH_DEFAULT;
+          const _pph2 = Math.min(recoPphForTier(brief.recoTier, _capPph2), _capPph2);
+          const totalBudget = Math.round(N * _pph2 * days * hpdFixed * overallAvgReco);
           const alloc = allocateBudgetAcrossRegions(
             totalBudget,
             prepared.map(r => ({ key: r.region, tier: getTierForGeo(r.region) })),
@@ -4699,7 +4570,7 @@ async function onCalcClick() {
     if (_isGidRegion) {
       chosen = [...pool];
       avgChosenBid = avgNumber(chosen.map(s => s.minBid)) ?? pr.avgBid;
-      effectiveChosenBid = avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER);
+      effectiveChosenBid = avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER, bidUpliftFactor(brief));
     }
 
     for (let attempt = 0; attempt < (_isGidRegion ? 0 : 2); attempt++) {
@@ -4721,7 +4592,7 @@ async function onCalcClick() {
       );
 
       avgChosenBid = avgNumber(chosen.map(s => s.minBid)) ?? pr.avgBid;
-      effectiveChosenBid = avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER);
+      effectiveChosenBid = avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER, bidUpliftFactor(brief));
 
       if (constructionsTarget !== null || !(Number.isFinite(effectiveChosenBid) && effectiveChosenBid > 0)) {
         break;
@@ -4761,7 +4632,7 @@ async function onCalcClick() {
         return fmtCounts[fmt] <= perFormatCap[fmt];
       });
       avgChosenBid = avgNumber(chosen.map(s => s.minBid)) ?? pr.avgBid;
-      effectiveChosenBid = avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER);
+      effectiveChosenBid = avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER, bidUpliftFactor(brief));
     }
 
     // В режиме конструкций:
@@ -4856,7 +4727,7 @@ async function onCalcClick() {
         chosen = [...chosen, ...toAdd];
 
         avgChosenBid = avgNumber(chosen.map(s => s.minBid)) ?? pr.avgBid;
-        effectiveChosenBid = avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER);
+        effectiveChosenBid = avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER, bidUpliftFactor(brief));
 
         capPlaysByChosen = Math.floor(chosen.reduce((sum, s) => sum + getScreenPphCap(s), 0) * days * hpd);
         const budgetCap = (effectiveChosenBid > 0) ? Math.floor(budget / effectiveChosenBid) : Infinity;
@@ -4890,13 +4761,15 @@ async function onCalcClick() {
 
     if (brief.budget.mode !== "goal_ots" && brief.budget.mode !== "goal_plays") {
       const playsPerHourPerScreen = (totalPlaysEffective / days / hpd) / Math.max(1, chosen.length);
-      if (playsPerHourPerScreen > pphTarget && playsPerHourPerScreen <= SC_MAX) {
-        warnings.push(`⚠️ Регион «${regionDisplay}»: в среднем ${playsPerHourPerScreen.toFixed(1)} выходов/час на экран (выше выбранной стратегии ${pphTarget}).`);
-      }
-      // In GID+budget mode frequency is a calculated output, not a target — suppress warning.
-      const desiredPph = (_isGidRegion && hasBudget) ? null : (ppmManual > 0 ? ppmManual : (_isGidRegion ? null : pphTarget));
+      // Частоту сравниваем ТОЛЬКО с явно запрошенной: ppm-слайдер конструкций или
+      // per-region override. «Стратегия подбора» задаёт количество экранов, а не
+      // частоту, и её дефолт (max_reach → 5 вых/ч) почти всегда ниже фактической —
+      // из-за этого предупреждения «выше/ниже выбранной стратегии» вылезали
+      // практически на каждом расчёте, хотя стратегию пользователь не выбирал.
+      // В GID-режиме с бюджетом частота — результат (бюджет ÷ ставка), не цель.
+      const desiredPph = (_isGidRegion && hasBudget) ? null : (ppmManual > 0 ? ppmManual : null);
       if (desiredPph != null && playsPerHourPerScreen < desiredPph - 0.4) {
-        warnings.push(`⚠️ Бюджет позволяет ${playsPerHourPerScreen.toFixed(1)} вых/час на экран (запрошено ${desiredPph}). Увеличьте бюджет для полной частоты.`);
+        warnings.push(`⚠️ Регион «${regionDisplay}»: бюджет позволяет ${playsPerHourPerScreen.toFixed(1)} вых/час на экран (запрошено ${desiredPph}). Увеличьте бюджет для полной частоты.`);
       }
     }
 
@@ -4976,6 +4849,19 @@ async function onCalcClick() {
     }
   }
 
+  // Сомнительные экраны: помечаем перед отдачей в UI, чтобы карусель могла их
+  // подсветить и вынести вперёд. В выгрузку это намеренно не идёт.
+  const suspicious = markSuspiciousScreens(chosenAll, brief);
+  if (suspicious.length) {
+    const shown = suspicious.slice(0, 3).map(s => _screenIdOf(s)).filter(Boolean).join(", ");
+    warnings.push(
+      `⚠️ Подозрительно низкая ставка у ${suspicious.length} экр. ` +
+      `(ниже ${Math.round(SUSPICIOUS_BID_RATIO * 100)}% медианы по своему формату и городу` +
+      `${shown ? `: ${shown}${suspicious.length > 3 ? " и др." : ""}` : ""}). ` +
+      `Подсвечены красным в списке экранов — проверьте или замените.`
+    );
+  }
+
   state.lastChosen = chosenAll;
 
   // Per-format breakdown
@@ -4999,10 +4885,8 @@ async function onCalcClick() {
       formatStats[fmt].otsSum += s.ots;
       formatStats[fmt].otsCnt++;
     }
-    const bidForStat = brief.bidMode === "min"
-      ? (Number.isFinite(s.minBid) && s.minBid > 0 ? s.minBid : null)
-      : (Number.isFinite(s.recoBid) && s.recoBid > 0 ? s.recoBid
-          : (Number.isFinite(s.minBid) && s.minBid > 0 ? s.minBid : null));
+    const _bidRaw = screenBid(s, brief);
+    const bidForStat = (Number.isFinite(_bidRaw) && _bidRaw > 0) ? _bidRaw : null;
     if (bidForStat != null) { formatStats[fmt].bidSum += bidForStat; formatStats[fmt].bidCnt++; }
   }
 
@@ -5051,19 +4935,40 @@ async function onCalcClick() {
     })
     .join("\n");
 
+  // Если клиент задал бюджет ниже рекомендованного — показываем, сколько нужно,
+  // прямо в сводке, а не оставляем догадываться, почему экранов мало.
+  let budgetAdviceLine = "";
+  if (brief.budget.mode === "fixed") {
+    const _tiers = computeRecoBudgetTiers();
+    const _asked = Number(brief.budget.amount || 0);
+    if (_tiers && _asked > 0 && _asked < _tiers.optimal) {
+      const _m = v => Math.round(v).toLocaleString("ru-RU");
+      budgetAdviceLine =
+        `
+— Рекомендуемый бюджет: минимальный ${_m(_tiers.min)} ₽, оптимальный ${_m(_tiers.optimal)} ₽`;
+      warnings.push(
+        _asked < _tiers.min
+          ? `⚠️ Заданный бюджет ${_m(_asked)} ₽ ниже минимального рекомендованного ` +
+            `${_m(_tiers.min)} ₽ (оптимальный — ${_m(_tiers.optimal)} ₽).`
+          : `ℹ️ Заданный бюджет ${_m(_asked)} ₽ ниже оптимального ${_m(_tiers.optimal)} ₽ ` +
+            `(минимальный — ${_m(_tiers.min)} ₽).`
+      );
+    }
+  }
+
   const summaryText =
     `Бриф:
 — Бюджет: ${totalBudgetFinal.toLocaleString("ru-RU")} ₽ ${
       brief.budget.mode === "fixed"
         ? "(распределён по регионам)"
         : (brief.budget.mode === "goal_ots" ? "(под цель OTS)" : brief.budget.mode === "goal_plays" ? "(под цель показов)" : "(сумма рекомендаций)")
-    }
+    }${budgetAdviceLine}
 — Даты: ${brief.dates.start} → ${brief.dates.end} (дней: ${days})
 — Расписание: ${brief.schedule.type} (часов/день: ${hpd.toFixed(2)})
 — Регион(ы): ${regions.join(", ")}
 — Форматы: ${selectedFormatsText}
 — Подбор: ${brief.selection.mode}
-— Режим ставки: ${brief.bidMode === "min" ? "Минимальная (minBid)" : "Рекомендованная"}
+— Режим ставки: ${brief.bidMode === "min" ? "Минимальная (minBid)" : "Рекомендованная"}${brief.bidUpliftPct > 0 ? ` +${brief.bidUpliftPct}%` : ""}
 — GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${brief.grp.max.toFixed(2)}` : "не учитываем"}
 — Аудитория: ${brief.audience?.enabled && brief.audience.segments?.length > 0
     ? `${brief.audience.segments.join(", ")} (топ ${Math.round((brief.audience.topPct ?? 0.10) * 100)}%)`
@@ -5089,12 +4994,10 @@ ${perRegionText}`
   if (el("download-csv")) el("download-csv").disabled = chosenAll.length === 0;
   if (el("download-plan-xlsx")) el("download-plan-xlsx").disabled = chosenAll.length === 0;
 
-  // POI кнопки: включаем при наличии POI или геокодированных адресов
-  const hasPois   = Array.isArray(window.PLANNER?.lastPOIs) && window.PLANNER.lastPOIs.length > 0;
+  // Кнопки выгрузки адресов: включаем, когда есть геокодированные точки
   const hasGeoAddr = Array.isArray(window.PLANNER?.lastGeocodedPoints) && window.PLANNER.lastGeocodedPoints.length > 0;
-  const hasAnyPoi = hasPois || hasGeoAddr;
-  if (el("download-poi-csv"))  el("download-poi-csv").disabled  = !hasAnyPoi;
-  if (el("download-poi-xlsx")) el("download-poi-xlsx").disabled = !hasAnyPoi;
+  if (el("download-poi-csv"))  el("download-poi-csv").disabled  = !hasGeoAddr;
+  if (el("download-poi-xlsx")) el("download-poi-xlsx").disabled = !hasGeoAddr;
 
   // Ненайденные GID (для кнопки скачать)
   const unmatchedGids = _isManualMode
@@ -5676,9 +5579,6 @@ document.querySelectorAll('input[name="weekly_mode"]').forEach(r => {
 
   // POI / адреса — скачать CSV/XLSX
   function getPoisForExport() {
-    if (Array.isArray(window.PLANNER?.lastPOIs) && window.PLANNER.lastPOIs.length) {
-      return window.PLANNER.lastPOIs.map(p => ({ id: p.id, name: p.name, lat: p.lat, lon: p.lon }));
-    }
     if (Array.isArray(window.PLANNER?.lastGeocodedPoints) && window.PLANNER.lastGeocodedPoints.length) {
       return window.PLANNER.lastGeocodedPoints;
     }
@@ -5949,7 +5849,7 @@ async function dspFetchForecastBids(screens, brief) {
       // INVENTORY и FORMAT_CITY — реальные/статистические данные, берём как есть
       const method = elem?.referenceData?.method;
       if (method === "MIN_BID") price = price * BID_MULTIPLIER;
-      _recoBidCache.set(dspId, { recoBid: price, ts: now });
+      _recoBidCache.set(dspId, { recoBid: price, ts: now, method });
       const s = idToScreen.get(dspId);
       if (s) {
         // price is duration-agnostic (this forecast endpoint has no duration concept) —
@@ -5974,14 +5874,14 @@ async function dspFetchForecastBids(screens, brief) {
  * - bidMode "min"  → avg(minBid)
  * - bidMode "recommended" → avg(recoBid) если есть, иначе avg(minBid) × BID_MULTIPLIER
  */
-function avgEffectiveBid(screens, bidMode, fallback) {
+function avgEffectiveBid(screens, bidMode, fallback, uplift = 1) {
   if (bidMode === "min") {
-    return avgNumber(screens.map(s => s.minBid)) ?? fallback;
+    return (avgNumber(screens.map(s => s.minBid)) ?? fallback) * uplift;
   }
   const recos = screens.map(s => s.recoBid).filter(v => Number.isFinite(v) && v > 0);
-  if (recos.length > 0) return recos.reduce((a, b) => a + b, 0) / recos.length;
+  if (recos.length > 0) return (recos.reduce((a, b) => a + b, 0) / recos.length) * uplift;
   const mins = screens.map(s => s.minBid).filter(v => Number.isFinite(v) && v > 0);
-  return mins.length > 0 ? (mins.reduce((a, b) => a + b, 0) / mins.length) * BID_MULTIPLIER : fallback;
+  return (mins.length > 0 ? (mins.reduce((a, b) => a + b, 0) / mins.length) * BID_MULTIPLIER : fallback) * uplift;
 }
 
 // ===== DSP API AUTH + INVENTORY =====
@@ -6034,54 +5934,96 @@ function saveCalcToHistory() {
 function restoreBriefToUI(brief) {
   if (!brief) return;
 
-  // 1. Regions
+  // Программная установка .value не рождает событий, а вся живая логика виджета
+  // (превью НДС, пересчёт пула, показ/скрытие блоков) висит именно на них —
+  // поэтому каждое поле выставляем через _set/_check, а не присваиванием.
+  const _set = (id, val) => {
+    const n = el(id);
+    if (!n || val == null) return;
+    n.value = val;
+    n.dispatchEvent(new Event("input",  { bubbles: true }));
+    n.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  const _check = (id, on) => {
+    const n = el(id);
+    if (!n) return;
+    n.checked = !!on;
+    n.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  const _radio = (name, value) => {
+    const n = document.querySelector(`input[name="${name}"][value="${value}"]`);
+    if (!n) return;
+    n.checked = true;
+    n.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  // Видимый контрол — чип, скрытый чекбокс лишь хранит состояние: без синка
+  // класса чип выглядел выключенным при включённой настройке.
+  const _chip = (id, on) => el(id)?.classList.toggle("active", !!on);
+
+  // 1. Регионы
   state.selectedRegions = Array.isArray(brief.geo?.regions) ? [...brief.geo.regions] : [];
   state.selectedRegion = state.selectedRegions[0] || null;
   renderSelectedRegions();
+  // Форматные карточки и превью пула считаются от выбранных регионов и сами по
+  // себе не пересчитываются — иначе после восстановления города на месте, а
+  // инвентарь показан от прошлого выбора.
+  renderFormats();
+  window.dispatchEvent(new CustomEvent("planner:pool-updated"));
 
-  // 2. Dates
-  if (el("date-start")) el("date-start").value = brief.dates?.start || "";
-  if (el("date-end")) el("date-end").value = brief.dates?.end || "";
+  // 2. Даты
+  _set("date-start", brief.dates?.start || "");
+  _set("date-end",   brief.dates?.end   || "");
 
-  // 3. Schedule
+  // 3. Расписание
   const schType = brief.schedule?.type || "all_day";
   const schChip = document.querySelector(`.sch-chip[data-sch="${schType}"]`);
   if (schChip) {
     schChip.click();
   } else {
-    const schRadio = document.getElementById(`sch-r-${schType}`);
-    if (schRadio) { schRadio.checked = true; schRadio.dispatchEvent(new Event("change", { bubbles: true })); }
+    _check(`sch-r-${schType}`, true);
   }
   if (schType === "custom") {
-    if (el("time-from")) el("time-from").value = brief.schedule?.from || "07:00";
-    if (el("time-to")) el("time-to").value = brief.schedule?.to || "22:00";
+    _set("time-from", brief.schedule?.from || "07:00");
+    _set("time-to",   brief.schedule?.to   || "22:00");
   }
-  if (schType === "weekly" && brief.schedule?.weekly) {
-    const weekly = brief.schedule.weekly;
-    const dows = ["mon","tue","wed","thu","fri","sat","sun"];
-    const timeKey = t => `${t.from}-${t.to}`;
-    const timeToGroup = {};
-    const groups = [];
-    for (const dow of dows) {
-      for (const t of (weekly[dow] || [])) {
-        const k = timeKey(t);
-        if (!timeToGroup[k]) { timeToGroup[k] = { days: {}, times: [{ from: t.from, to: t.to }] }; groups.push(timeToGroup[k]); }
-        timeToGroup[k].days[dow] = true;
+  if (schType === "weekly") {
+    // Режим «общее расписание» (#global-rows) в текущей разметке виджета
+    // отсутствует, поэтому восстанавливаем только по-дневный режим; вызов радио
+    // безвреден и сработает, если блок вернут.
+    _radio("weekly_mode", brief.schedule?.mode || "by_dow");
+    const weekly = brief.schedule?.weekly;
+    if (weekly) {
+      const dows = ["mon","tue","wed","thu","fri","sat","sun"];
+      const timeKey = t => `${t.from}-${t.to}`;
+      const timeToGroup = {};
+      const groups = [];
+      for (const dow of dows) {
+        for (const t of (weekly[dow] || [])) {
+          const k = timeKey(t);
+          if (!timeToGroup[k]) { timeToGroup[k] = { days: {}, times: [{ from: t.from, to: t.to }] }; groups.push(timeToGroup[k]); }
+          timeToGroup[k].days[dow] = true;
+        }
       }
+      if (groups.length) state.weeklyGroups = groups;
+      if (typeof window.renderWeeklyDays === "function") window.renderWeeklyDays();
     }
-    if (groups.length) state.weeklyGroups = groups;
-    if (typeof window.renderWeeklyDays === "function") window.renderWeeklyDays();
   }
 
-  // 4. Budget mode + amount
-  const budgetMode = brief.budget?.mode || "fixed";
-  const bmRadio = document.querySelector(`input[name="budget_mode"][value="${budgetMode}"]`);
-  if (bmRadio) { bmRadio.checked = true; bmRadio.dispatchEvent(new Event("change", { bubbles: true })); }
-  if (el("budget-input") && brief.budget?.amount != null) el("budget-input").value = brief.budget.amount;
-  if (el("goal-ots") && brief.goal?.ots != null) el("goal-ots").value = brief.goal.ots;
-  if (el("goal-plays") && brief.goal?.plays != null) el("goal-plays").value = brief.goal.plays;
+  // 4. Цель и бюджет
+  _radio("budget_mode", brief.budget?.mode || "fixed");
+  // В поле возвращаем введённую сумму (с комиссией), а не очищенную от неё.
+  const budgetForField = brief.budget?.amountGross ?? brief.budget?.amount;
+  if (budgetForField != null) _set("budget-input", budgetForField);
+  if (brief.goal?.ots   != null) _set("goal-ots",   brief.goal.ots);
+  if (brief.goal?.plays != null) _set("goal-plays", brief.goal.plays);
+  _radio("reco_tier", brief.recoTier || "optimal");
+  // Разбивка по городам живёт в widget-init и пересобирается только при смене
+  // набора регионов — заполняем через её собственную точку входа.
+  if (typeof window.PLANNER?.restorePerCityBudget === "function") {
+    window.PLANNER.restorePerCityBudget(brief.budget?.perCity || null);
+  }
 
-  // 5. Formats
+  // 5. Форматы
   const fmtAutoEl = el("formats-auto");
   if (fmtAutoEl) {
     fmtAutoEl.checked = brief.formats?.mode === "auto";
@@ -6093,66 +6035,71 @@ function restoreBriefToUI(brief) {
     if (typeof window.renderFormatsCards === "function") window.renderFormatsCards();
   }
 
-  // 6. Selection mode
+  // 6. Режим подбора
+  const selMode = brief.selection?.mode || "city_even";
   const selEl = el("selection-mode");
-  if (selEl) { selEl.value = brief.selection?.mode || "city_even"; selEl.dispatchEvent(new Event("change", { bubbles: true })); }
-  const selMode = brief.selection?.mode;
+  if (selEl) { selEl.value = selMode; selEl.dispatchEvent(new Event("change", { bubbles: true })); }
+  // Чипы режима подбора — визуальный слой над скрытым <select>, класс сам не встанет.
+  document.querySelectorAll("#selection-mode-chips .sel-chip").forEach(c =>
+    c.classList.toggle("active", c.dataset.mode === selMode));
   if (selMode === "near_address") {
-    const addrInputs = document.querySelectorAll(".planner-addr-input");
-    if (addrInputs.length && brief.selection?.addresses?.length) addrInputs[0].value = brief.selection.addresses[0];
-    const radEl = el("planner-radius") || el("radius");
-    if (radEl) radEl.value = brief.selection?.radius_m ?? 500;
-  }
-  if (selMode === "poi") {
-    const poiEl = el("poi-type"); if (poiEl) poiEl.value = brief.selection?.poi_type || "pet_store";
-    const radEl = el("planner-radius") || el("radius"); if (radEl) radEl.value = brief.selection?.radius_m ?? 500;
-  }
-  if (selMode === "route") {
-    const rfEl = el("route-from"); if (rfEl) rfEl.value = brief.selection?.route_from || "";
-    const rtEl = el("route-to"); if (rtEl) rtEl.value = brief.selection?.route_to || "";
-    const radEl = el("planner-radius") || el("radius"); if (radEl) radEl.value = brief.selection?.radius_m ?? 300;
-  }
-  if (selMode === "highway") {
-    const hnEl = el("highway-name"); if (hnEl) hnEl.value = brief.selection?.highway_name || "";
-    const radEl = el("planner-radius") || el("radius"); if (radEl) radEl.value = brief.selection?.radius_m ?? 500;
+    // Восстанавливаем весь список адресов, а не только первый.
+    const addrs = Array.isArray(brief.selection?.addresses) && brief.selection.addresses.length
+      ? brief.selection.addresses
+      : (brief.selection?.address ? [brief.selection.address] : []);
+    if (addrs.length && typeof window.PLANNER?.setAddresses === "function") {
+      window.PLANNER.setAddresses(addrs);
+    }
+    _set("planner-radius", brief.selection?.radius_m ?? 500);
   }
   if (selMode === "manual_screens") {
-    // Switch step 1 to GID tab
     if (typeof window.setGeoMode === "function") window.setGeoMode("gids");
-    const mgEl = el("manual-gids");
-    if (mgEl) {
-      mgEl.value = (brief.selection?.manual_gids || []).join("\n");
-      mgEl.dispatchEvent(new Event("input", { bubbles: true }));
-    }
+    _set("manual-gids", (brief.selection?.manual_gids || []).join("\n"));
   }
 
   // 7. GRP
-  const grpEl = el("grp-enabled");
-  if (grpEl) { grpEl.checked = !!brief.grp?.enabled; grpEl.dispatchEvent(new Event("change", { bubbles: true })); }
-  if (el("grp-min")) el("grp-min").value = brief.grp?.min ?? 0;
-  if (el("grp-max")) el("grp-max").value = brief.grp?.max ?? 9.98;
+  _check("grp-enabled", brief.grp?.enabled);
+  _set("grp-min", brief.grp?.min ?? 0);
+  _set("grp-max", brief.grp?.max ?? 9.98);
 
-  // 8. Constructions
-  const constrEl = el("constructions-enabled");
-  if (constrEl) { constrEl.checked = !!brief.constructions?.enabled; constrEl.dispatchEvent(new Event("change", { bubbles: true })); }
-  if (el("constructions-count")) el("constructions-count").value = brief.constructions?.count ?? "";
-  if (el("constructions-ppm")) el("constructions-ppm").value = brief.constructions?.playsPerHour ?? 10;
+  // 8. Конструкции
+  _check("constructions-enabled", brief.constructions?.enabled);
+  _chip("constructions-chip", brief.constructions?.enabled);
+  if (brief.constructions?.count) _set("constructions-count", brief.constructions.count);
+  if (brief.constructions?.playsPerHour) _set("constructions-ppm", brief.constructions.playsPerHour);
+  // perRegionCount / perRegionPpm / perFormatCount не восстанавливаем: их поля
+  // рендерятся только при раскрытии соответствующих аккордеонов и на момент
+  // восстановления ещё не существуют в DOM.
 
-  // 9. Audience
-  const audEl = el("audience-enabled");
-  if (audEl) { audEl.checked = !!brief.audience?.enabled; audEl.dispatchEvent(new Event("change", { bubbles: true })); }
+  // 9. Аудитория VK
+  _check("audience-enabled", brief.audience?.enabled);
+  _chip("vk-affinity-card", brief.audience?.enabled);
   if (brief.audience?.segments) {
     document.querySelectorAll('#audience-segment-wrap input[type="checkbox"]').forEach(cb => {
       cb.checked = brief.audience.segments.includes(cb.value);
     });
   }
-  const topPctEl = el("audience-top-pct");
-  if (topPctEl && brief.audience?.topPct != null) topPctEl.value = Math.round(brief.audience.topPct * 100);
+  if (brief.audience?.topPct != null) _set("audience-top-pct", Math.round(brief.audience.topPct * 100));
 
-  // 10. Bid mode
-  const bidId = brief.bidMode === "min" ? "bid-mode-min" : "bid-mode-recommended";
-  const bidRadio = document.getElementById(bidId);
-  if (bidRadio) { bidRadio.checked = true; bidRadio.dispatchEvent(new Event("change", { bubbles: true })); }
+  // 10. Ставка: режим + ручная надбавка
+  _check(brief.bidMode === "min" ? "bid-mode-min" : "bid-mode-recommended", true);
+  const upliftPct = Number(brief.bidUpliftPct || 0);
+  _check("bid-uplift-enabled", upliftPct > 0);
+  _chip("bid-uplift-chip", upliftPct > 0);
+  const upliftWrap = el("bid-uplift-wrap");
+  if (upliftWrap) upliftWrap.style.display = upliftPct > 0 ? "block" : "none";
+  if (upliftPct > 0) _set("bid-uplift-pct", upliftPct);
+
+  // 11. Стратегия подбора и «только активные»
+  if (brief.reachMode) _radio("reach_mode", brief.reachMode);
+  _check("only-active-bids", brief.onlyActiveBids);
+
+  // 12. Длительность ролика
+  const durMs = Number(brief.duration?.ms);
+  if (Number.isFinite(durMs) && durMs > 0) {
+    state.selectedDurationMs = durMs;
+    if (typeof window.renderDurationChips === "function") window.renderDurationChips();
+  }
 
   if (typeof window.renderProgress === "function") window.renderProgress();
   if (typeof window.setStep === "function") window.setStep(1);
@@ -6175,6 +6122,12 @@ function computeRecoBudgetTiers() {
     ? Math.max(1, Math.round((new Date(dates.end) - new Date(dates.start)) / 86400000) + 1)
     : 30;
 
+  // Часы берём из реального расписания — иначе потолок считается по условным
+  // 12 ч/сутки и расходится с тем, что покажет расчёт.
+  const hpd = (dates?.start && dates?.end)
+    ? (computeScheduleHoursForPeriod(brief.schedule, dates.start, dates.end).avgHpd || RECO_HOURS_PER_DAY)
+    : RECO_HOURS_PER_DAY;
+
   const formatsMode = brief.formats?.mode || "auto";
   const manualFormats = new Set(Array.isArray(brief.formats?.selected) ? brief.formats.selected : []);
 
@@ -6190,9 +6143,8 @@ function computeRecoBudgetTiers() {
     if (!pool.length) continue;
 
     const tier = getTierForGeo(regionKey);
-    const avgBid = avgEffectiveBid(pool, brief.bidMode, 1);
-    const capPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * pool.length * days);
-    const capBudget = Math.floor(capPlays * avgBid);
+    // Тот же потолок, что и в onCalcClick: плановая ёмкость, а не SC_MAX × 12 ч.
+    const capBudget = computeCapacity(pool, days * hpd, brief.bidMode, bidUpliftFactor(brief))?.budget ?? Infinity;
 
     const optRaw  = Math.floor((BASE_MONTHLY[tier] ?? BASE_MONTHLY.C) * (days / 30));
     const maxRaw  = Math.floor((MAX_MONTHLY[tier]  ?? MAX_MONTHLY.C)  * (days / 30));
@@ -6239,6 +6191,10 @@ function renderDspUserBar() {
     <span style="display:inline-flex;align-items:center;gap:6px;background:#f0f2f5;border-radius:20px;padding:4px 6px 4px 8px;font-size:12px;line-height:1;">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
       ${emailHtml}
+      <span id="dsp-inv-age" style="color:#888;font-size:11px;white-space:nowrap;"></span>
+      <a href="#" id="dsp-inv-refresh" style="display:inline-flex;align-items:center;gap:3px;margin-left:2px;padding:2px 8px;background:#fff;border:1px solid #ddd;border-radius:12px;color:#666;text-decoration:none;font-size:11px;white-space:nowrap;">
+        Обновить
+      </a>
       <a href="#" id="dsp-logout-btn" style="display:inline-flex;align-items:center;gap:3px;margin-left:2px;padding:2px 8px;background:#fff;border:1px solid #ddd;border-radius:12px;color:#666;text-decoration:none;font-size:11px;white-space:nowrap;">
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         Выйти
@@ -6248,6 +6204,41 @@ function renderDspUserBar() {
     e.preventDefault();
     dspLogout();
   });
+
+  renderDspInventoryAge();
+
+  document.getElementById("dsp-inv-refresh")?.addEventListener("click", async e => {
+    e.preventDefault();
+    const link = e.currentTarget;
+    link.textContent = "Обновляю…";
+    link.style.pointerEvents = "none";
+    try {
+      await dspForceReloadAllInventoriesBlocking();
+      state.dspInventoryCachedAt = Date.now();
+      window.dispatchEvent(new CustomEvent("planner:screens-ready", { detail: { count: state.screensAll?.length || 0 } }));
+    } catch (err) {
+      console.warn("[DSP] manual refresh failed:", err);
+      alert("Не удалось обновить инвентарь: " + err.message);
+    } finally {
+      link.textContent = "Обновить";
+      link.style.pointerEvents = "";
+      renderDspInventoryAge();
+    }
+  });
+}
+
+// Возраст инвентаря в шапке: без него неясно, смотришь ты свежие ставки или
+// вчерашний кэш.
+function renderDspInventoryAge() {
+  const node = document.getElementById("dsp-inv-age");
+  if (!node) return;
+  const ts = state.dspInventoryCachedAt;
+  if (!Number.isFinite(ts)) { node.textContent = ""; return; }
+  const min = Math.round((Date.now() - ts) / 60000);
+  node.textContent = min < 1 ? "данные: только что"
+    : min < 60 ? `данные: ${min} мин назад`
+    : `данные: ${Math.round(min / 60)} ч назад`;
+  node.title = "Время загрузки инвентаря из DSP. Кэш живёт 24 часа, «Обновить» перезагружает принудительно.";
 }
 
 function dspLogout() {
@@ -6690,6 +6681,10 @@ function mapDspInventory(inv) {
   // must treat NaN as "unknown" rather than "zero/inactive").
   const slotCountPerDay = Number(inv.inventoryInfo?.slotCountPerDay);
 
+  // Среднее число запросов в час по экрану — «Запросы/час» в интерфейсе DSP.
+  // Главный признак активности: 0 означает, что аукционов по экрану не идёт.
+  const requestHourlyAvg = Number(inv.requestHourlyAvg);
+
   return {
     screen_id:   inv.gid || String(inv.id),
     city:        inv.inventoryTypeAndCity?.cityName
@@ -6712,6 +6707,7 @@ function mapDspInventory(inv) {
     side,
     durationBidInfo,
     slotCountPerDay: Number.isFinite(slotCountPerDay) ? slotCountPerDay : NaN,
+    requestHourlyAvg: Number.isFinite(requestHourlyAvg) ? requestHourlyAvg : NaN,
     _dspId:      inv.id,
   };
 }
@@ -6840,18 +6836,22 @@ function dspApplyInventories(raw) {
 }
 
 // ---- IndexedDB-кэш инвентаря (нет лимита размера, переживает Shift+R) ----
-const DSP_CACHE_TTL  = 7 * 24 * 60 * 60 * 1000; // 7 дней
+// Ставки и OTS в инвентаре меняются, а кэш жил 7 суток — отсюда жалобы на
+// неактуальные данные. Сутки: старт по-прежнему мгновенный, но данные не
+// «протухают» на неделю. Возраст кэша виден в шапке, рядом — «Обновить».
+const DSP_CACHE_TTL  = 24 * 60 * 60 * 1000; // 24 часа
 const DSP_IDB_NAME   = "dsp_planner";
 const DSP_IDB_STORE  = "inventory";
 const DSP_IDB_VER    = 1;
 
-// v6: bumped because mapDspInventory now attaches durationBidInfo — old cached
-// screen objects (v5 and earlier) don't have it, so they must be re-fetched.
+// v7: mapDspInventory теперь тащит requestHourlyAvg, и без него фильтр «только
+// активные» работать не может — старые записи кэша (v6 и раньше) надо перечитать.
+// (v6 в своё время поднимали ровно так же из-за durationBidInfo.)
 function getDspCacheKey() {
   const agencyId = getDspAgencyId() || "default";
   const emailKey = normalizeKey(getDspUserEmail() || "").replace(/[^a-z0-9._@-]/gi, "_");
-  if (agencyId && agencyId !== "default") return `dsp_inv_v6_agency_${agencyId}`;
-  if (emailKey) return `dsp_inv_v6_email_${emailKey}`;
+  if (agencyId && agencyId !== "default") return `dsp_inv_v7_agency_${agencyId}`;
+  if (emailKey) return `dsp_inv_v7_email_${emailKey}`;
   return null;
 }
 
@@ -6877,6 +6877,7 @@ async function dspSaveInventoryToStorage(cityCache) {
       tx.oncomplete = res; tx.onerror = rej;
     });
     db.close();
+    state.dspInventoryCachedAt = Date.now();
     console.log(`[DSP] inventory saved to IndexedDB (${total} screens), ttl=24h`);
     // Также чистим старые localStorage-кэши
     ["dsp_inv_v2", "dsp_inv_v3_" + (getDspAgencyId() || "default")].forEach(k => {
@@ -6912,6 +6913,7 @@ async function dspLoadInventoryFromStorage() {
     const ageMin = Math.round((Date.now() - rec.ts) / 60000);
     console.log(`[DSP] IDB cache hit: ${total} screens, age=${ageMin}min`);
     if (total === 0) return null;
+    state.dspInventoryCachedAt = rec.ts;
     return rec.d;
   } catch (e) {
     console.warn("[DSP] IDB load failed:", e.message);
@@ -7231,13 +7233,9 @@ Object.assign(window.PLANNER, {
   startPlanner,
   loadCityRegions,
   bootPlanner,
-  fetchPOIsOverpassInRegion,
-  pickScreensNearPOIs,
   downloadXLSX,
   geocodeAddressNominatim,
   pickScreensNearPoint,
-  _fetchOverpass,
-  _runOverpassWithFailover,
   computeScheduleHoursForPeriod,
   getScreensFilteredByOwner,
   renderOwners,

@@ -774,6 +774,21 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
   }
   #planner-widget .reco-tier-btn input{ display:none; }
   #planner-widget .reco-tier-btn:has(input:checked){ background:#5b3ef5;color:#fff;border-color:#5b3ef5; }
+  #planner-widget .reco-tier-btn{ flex-direction:column;align-items:flex-start;gap:1px;padding:7px 12px; }
+  #planner-widget .rtb-label{ font-size:10px;font-weight:500;color:#8b83c5;text-transform:uppercase;letter-spacing:.4px; }
+  #planner-widget .reco-tier-btn:has(input:checked) .rtb-label{ color:#d9d0ff; }
+  #planner-widget .rtb-sum{ font-size:13px;font-weight:700;white-space:nowrap; }
+  /* Скелетон на месте суммы, пока идёт пересчёт по адресной программе */
+  #planner-widget .rtb-sum.rtb-skel{
+    display:inline-block;min-width:78px;height:14px;border-radius:4px;color:transparent;
+    background:linear-gradient(90deg,#e6e0ff 25%,#f4f1ff 50%,#e6e0ff 75%);
+    background-size:200% 100%;animation:rtbShimmer 1.1s ease-in-out infinite;
+  }
+  #planner-widget .reco-tier-btn:has(input:checked) .rtb-sum.rtb-skel{
+    background:linear-gradient(90deg,#7a63f7 25%,#a795fb 50%,#7a63f7 75%);
+    background-size:200% 100%;
+  }
+  @keyframes rtbShimmer{ 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
   #planner-widget .budget-tier-chip{
     display:inline-flex;flex-direction:column;align-items:flex-start;
     gap:1px;padding:7px 12px;border-radius:10px;border:1.5px solid #e0d9fd;
@@ -963,7 +978,7 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
   await loadScript("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js");
   await loadScript("https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js");
   await loadScript("https://rawcdn.githack.com/EkaterinaMochalova/dspbov2.0/e38e8d05a826dc5b94b8eccd28fbc19559bcb9dc/geo.js");
-  await loadScript("https://rawcdn.githack.com/EkaterinaMochalova/dspbov2.0/bcb84354344ead8f8abe04bcdc2738a27e10fcd0/planner.js");
+  await loadScript("https://rawcdn.githack.com/EkaterinaMochalova/dspbov2.0/7a04098796b17f9a06e8ee0156fa98e5244377e2/planner.js");
 
   // 4. Inject HTML markup into planner-root
   root.innerHTML = `<!-- ===================== PLANNER WIDGET (CLEAN, SINGLE-SOURCE, NO DUPLICATES) ===================== -->
@@ -995,9 +1010,9 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
     <div class="planner-sub">Ответь на несколько вопросов — и мы соберём программу.</div>
     <div class="wiz-steps" id="wiz-steps">
       <button type="button" class="wiz-chip active" data-step="1">1. География</button>
-      <button type="button" class="wiz-chip" data-step="2">2. Цели</button>
-      <button type="button" class="wiz-chip" data-step="3">3. Период</button>
-      <button type="button" class="wiz-chip" data-step="4">4. Настройки</button>
+      <button type="button" class="wiz-chip" data-step="2">2. Период</button>
+      <button type="button" class="wiz-chip" data-step="3">3. Настройки</button>
+      <button type="button" class="wiz-chip" data-step="4">4. Цели</button>
     </div>
     <!-- STEP 1 -->
     <div class="wiz-step active" id="wiz-step-1">
@@ -1196,7 +1211,7 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
     </div>
   </div>
   <div class="wiz-nav">
-    <button type="button" class="wiz-btn ghost" id="wiz-back-2">← Цели</button>
+    <button type="button" class="wiz-btn ghost" id="wiz-back-2">← География</button>
     <button type="button" class="wiz-btn" id="wiz-next-2">Настройки →</button>
   </div>
 </div>
@@ -1292,9 +1307,12 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
 <div id="budget-reco-hint" style="margin-top:6px; color:#667085;">
   Планировщик соберёт адреску для адекватного охвата региона.
   <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;" id="reco-tier-btns">
-    <label class="reco-tier-btn"><input type="radio" name="reco_tier" value="min"> Минимум</label>
-    <label class="reco-tier-btn"><input type="radio" name="reco_tier" value="optimal" checked> Оптимальный</label>
-    <label class="reco-tier-btn"><input type="radio" name="reco_tier" value="max"> Максимум</label>
+    <label class="reco-tier-btn"><input type="radio" name="reco_tier" value="min">
+      <span class="rtb-label">Минимум</span><span class="rtb-sum" data-sum="min">—</span></label>
+    <label class="reco-tier-btn"><input type="radio" name="reco_tier" value="optimal" checked>
+      <span class="rtb-label">Оптимальный</span><span class="rtb-sum" data-sum="optimal">—</span></label>
+    <label class="reco-tier-btn"><input type="radio" name="reco_tier" value="max">
+      <span class="rtb-label">Максимум</span><span class="rtb-sum" data-sum="max">—</span></label>
   </div>
 </div>
 
@@ -1337,9 +1355,11 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
 </div>
 
         </div>
-        <div class="wiz-nav">
-          <button type="button" class="wiz-btn ghost" id="wiz-back-3">Назад</button>
-          <button type="button" class="wiz-btn" id="wiz-next-3">Дальше</button>
+        <button id="calc-btn" class="ux-primary" disabled>Рассчитать</button>
+        <div id="calc-blocked-hint" style="display:none; margin-top:8px; font-size:12px; color:#e84444; padding:6px 10px; background:#fff5f5; border-radius:8px;"></div>
+        <div id="status" class="planner-status"></div>
+        <div class="wiz-nav" style="margin-top:12px;">
+          <button type="button" class="wiz-btn ghost" id="wiz-back-3">← Настройки</button>
         </div>
       </div>
       <!-- STEP 4 -->
@@ -1525,6 +1545,25 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
         </div>
       </label>
     </div>
+    <!-- Надбавка — независимый toggle поверх выбранного режима, а не третий
+         взаимоисключающий режим: поднимать можно и минималку, и рекомендованную. -->
+    <div class="cns-chip" id="bid-uplift-chip">
+      <span class="cns-chip-ico">↑</span>
+      <div class="cns-chip-body">
+        <div class="str-chip-title">Надбавка к ставке</div>
+        <div class="str-chip-desc">Поднять выбранную ставку на %</div>
+      </div>
+      <span class="cns-chip-badge" id="bid-uplift-badge"></span>
+    </div>
+    <input type="checkbox" id="bid-uplift-enabled" style="display:none;">
+    <div id="bid-uplift-wrap" style="display:none; margin-top:8px;">
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input type="number" id="bid-uplift-pct" min="0" max="500" step="1" value="10"
+               class="ux-input" placeholder="Надбавка, %" style="flex:1;">
+        <span style="font-weight:700; color:#5b3ef5;">%</span>
+      </div>
+      <div class="planner-note" style="margin-top:6px;" id="bid-uplift-note"></div>
+    </div>
     <div class="planner-note" style="margin-top:8px;" id="bid-mode-hint-recommended">Оптимальная ставка для стабильного открута — предсказуемый результат.</div>
     <div class="planner-note" style="margin-top:8px; display:none;" id="bid-mode-hint-min">Минимальная цена из инвентаря. Больше выходов, но без гарантии полного открута.</div>
   </div>
@@ -1567,48 +1606,6 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
         </div>
       </div>
     </div>
-  <!-- ===== 2ГИС РЯДОМ С ОБЪЕКТАМИ ===== -->
-  <div class="planner-block" id="geo2gis-block">
-    <div class="vk-card" id="geo2gis-card">
-      <div class="vk-card-icon" style="background:#1DB244; font-size:11px; font-weight:800; letter-spacing:-0.5px;">2ГИС</div>
-      <div class="vk-card-body">
-        <div class="vk-card-title">Рядом с объектами</div>
-        <div class="vk-card-desc" id="geo2gis-card-desc">Найти экраны рядом с категорией бизнеса</div>
-      </div>
-      <div class="vk-toggle"></div>
-    </div>
-    <div id="geo2gis-wrap" style="display:none; margin-top:14px;">
-      <div style="margin-bottom:10px;">
-        <div class="planner-label" style="margin-bottom:6px;">Название бренда или объекта</div>
-        <input type="text" id="poi-brand" placeholder="Напр.: Пятёрочка, Магнит, McDonald's"
-          style="width:100%; padding:9px 12px; border:1.5px solid #c4b5fd; border-radius:10px;
-                 font-size:13px; color:#0b1220; background:#fff; outline:none; box-sizing:border-box;">
-      </div>
-      <div style="margin-bottom:14px;">
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
-          <div class="planner-label" style="margin:0;">Радиус поиска</div>
-          <span style="font-weight:700; color:#5b3ef5; font-size:13px;"><span id="poi-radius-val">500</span> м</span>
-        </div>
-        <input type="range" id="poi-radius" min="100" max="2000" step="50" value="500"
-               style="width:100%; accent-color:#5b3ef5;">
-        <div style="display:flex; justify-content:space-between; font-size:11px; color:#aaa; margin-top:2px;">
-          <span>100 м</span><span>500 м</span><span>1 км</span><span>2 км</span>
-        </div>
-      </div>
-      <button id="poi-find-btn" type="button"
-        style="padding:11px 24px; background:#5B3EF5; color:#fff; border:none;
-               border-radius:12px; font-size:14px; font-weight:700; cursor:pointer; width:100%;">
-        🔍 Найти экраны
-      </button>
-      <div id="poi-status" style="font-size:13px; color:#667085; margin-top:10px; min-height:20px;"></div>
-      <div id="poi-progress-wrap" style="display:none; margin-top:8px;">
-        <div style="height:6px; background:rgba(91,62,245,0.12); border-radius:3px; overflow:hidden;">
-          <div id="poi-progress-bar" style="height:100%; width:0%; background:#5B3EF5; border-radius:3px; transition:width 0.2s;"></div>
-        </div>
-        <div id="poi-progress-text" style="font-size:11px; color:#9b8aff; margin-top:4px;"></div>
-      </div>
-    </div>
-  </div>
   <!-- ===== ЯНДЕКС ГЕОАНАЛИТИКА ===== -->
   <div class="planner-block" id="yandex-geo-block">
     <div class="vk-card" id="yandex-geo-card">
@@ -1699,25 +1696,13 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
       <button type="button" class="sel-chip active" data-mode="city_even">
         <span class="sel-chip-ico">⚡</span><span>Равномерно</span>
       </button>
-      <button type="button" class="sel-chip" data-mode="poi">
-        <span class="sel-chip-ico">📍</span><span>Рядом с POI</span>
-      </button>
       <button type="button" class="sel-chip" data-mode="near_address">
         <span class="sel-chip-ico">🏠</span><span>Рядом с адресом</span>
-      </button>
-      <button type="button" class="sel-chip" data-mode="highway">
-        <span class="sel-chip-ico">🛣</span><span>По магистрали</span>
-      </button>
-      <button type="button" class="sel-chip" data-mode="route">
-        <span class="sel-chip-ico">🚗</span><span>Маршрут</span>
       </button>
     </div>
     <select id="selection-mode" style="display:none;">
       <option value="city_even">Равномерно по региону</option>
-      <option value="poi">Рядом с POI</option>
       <option value="near_address">Рядом с адресом</option>
-      <option value="highway">Вдоль магистрали / шоссе</option>
-      <option value="route">Вдоль маршрута</option>
       <option value="manual_screens">По GID-списку</option>
     </select>
     <div id="selection-extra" style="margin-top:10px;"></div>
@@ -1762,11 +1747,9 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
       <div class="planner-note" style="margin-top:6px;">⚠️ Не все экраны передают GRP. При включении фильтра будут предложены только экраны с заполненным GRP.</div>
     </div>
   </div>
-  <button id="calc-btn" class="ux-primary" disabled>Рассчитать</button>
-  <div id="calc-blocked-hint" style="display:none; margin-top:8px; font-size:12px; color:#e84444; padding:6px 10px; background:#fff5f5; border-radius:8px;"></div>
-  <div id="status" class="planner-status"></div>
   <div class="wiz-nav" style="margin-top:12px;">
     <button type="button" class="wiz-btn ghost" id="wiz-back-4">← Период</button>
+    <button type="button" class="wiz-btn" id="wiz-next-4">Цели →</button>
   </div>
 </div>
   </div>
@@ -1965,8 +1948,10 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
 (function(){
   function el(id){ return document.getElementById(id); }
 
-  // Step order: 1=Geography(div1), 2=Goals(div3), 3=Period(div2), 4=Settings(div4)
-  const STEP_TO_DIV = { 1: 1, 2: 3, 3: 2, 4: 4 };
+  // Порядок шагов: 1=География(div1), 2=Период(div2), 3=Настройки(div4), 4=Цели(div3).
+  // Цели идут последними: к этому моменту адресная программа уже собрана, и
+  // рекомендация бюджета считается от реального пула, а не от пустого набора.
+  const STEP_TO_DIV = { 1: 1, 2: 2, 3: 4, 4: 3 };
   function setStep(step){
     // Используем и class, и inline style -- чтобы CSS Tilda не перебивал display
     document.querySelectorAll("#planner-widget .wiz-step").forEach(s => {
@@ -1994,12 +1979,12 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
   // Делаем setStep доступным глобально
   window.setStep = setStep;
 
-  // Отмечаем посещение шага 4 -- чтобы чип не был зелёным до первого визита
+  // Отмечаем посещение «Настроек» -- чтобы чип не был зелёным до первого визита
   const _origSetStep = setStep;
   window.setStep = function(step) {
-    if (step === 4) window._plannerStep4Visited = true; // logical step 4 = Settings (physical div 4)
+    if (step === 3) window._plannerSettingsVisited = true; // логический шаг 3 = Настройки (физический div 4)
     _origSetStep(step);
-    if (step === 4) { // Настройки is logical step 4
+    if (step === 3) { // Настройки
       // В GID-режиме скрываем лишнее -- только кнопка "Рассчитать" + "Назад".
       // «Аудитория VK» (audience-block) НЕ скрывается: фильтр по данным ВК
       // работает и по GID-списку (сужает введённый набор до топ-X% по аффинити).
@@ -2066,21 +2051,20 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
     window.setStep(2);
   });
 
-  // wiz-step-2 (Период, logical step 3) → validate dates → go to Настройки (step 4)
+  // wiz-step-2 (Период, шаг 2) → проверяем даты → Настройки (шаг 3)
   el("wiz-next-2")?.addEventListener("click", () => {
     if(!hasDates()) return alert("Выберите даты начала и окончания.");
     if(window.PLANNER_UI?.validateStep2Schedule && !window.PLANNER_UI.validateStep2Schedule()){
       return alert("Проверьте рваный график: включите хотя бы один день и задайте корректные интервалы времени.");
     }
-    window.setStep(4);
+    window.setStep(3);
   });
 
-  // wiz-step-3 (Цели, logical step 2) → validate budget → go to Период (logical step 3)
-  el("wiz-next-3")?.addEventListener("click", () => window.setStep(3));
+  el("wiz-next-4")?.addEventListener("click", () => window.setStep(4)); // Настройки → Цели
 
-  el("wiz-back-2")?.addEventListener("click", () => window.setStep(2)); // Период back → Цели
-  el("wiz-back-3")?.addEventListener("click", () => window.setStep(1)); // Цели back → Geography
-  el("wiz-back-4")?.addEventListener("click", () => window.setStep(3)); // Настройки back → Период
+  el("wiz-back-2")?.addEventListener("click", () => window.setStep(1)); // Период → География
+  el("wiz-back-3")?.addEventListener("click", () => window.setStep(3)); // Цели → Настройки
+  el("wiz-back-4")?.addEventListener("click", () => window.setStep(2)); // Настройки → Период
 
   window.setStep(1);
 })();
@@ -2343,9 +2327,6 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
     const map = {
       city_even: "Равномерно по региону",
       near_address: "Рядом с адресом",
-      poi: "Рядом с POI",
-      highway: "Вдоль магистрали",
-      route: "Вдоль маршрута",
       manual_screens: "По GID-списку"
     };
     return map[m] || m;
@@ -2426,9 +2407,9 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
 
     // --- Обновляем состояние чипов шагов (done / active) ---
     // Шаг 4 "выполнен" только если пользователь его посещал или уже был расчёт
-    const step4Done = !!(window._plannerStep4Visited || window.PLANNER?.lastCalc);
+    const settingsDone = !!(window._plannerSettingsVisited || window.PLANNER?.lastCalc);
     const _budgetOk = (()=>{ const bm = getBudgetMode(); const bv = Number(el("budget-input")?.value||0); const gv = Number(el("goal-ots")?.value||0); return bm==="recommendation"||(bm==="fixed"&&bv>0)||(bm==="goal_ots"&&gv>0); })();
-    const stepDoneMap = { "1": !!(Array.isArray(window.PLANNER?.state?.selectedRegions) && window.PLANNER.state.selectedRegions.length), "2": p.done >= 2 && _budgetOk, "3": !!(p.dates.start && p.dates.end), "4": step4Done };
+    const stepDoneMap = { "1": !!(Array.isArray(window.PLANNER?.state?.selectedRegions) && window.PLANNER.state.selectedRegions.length), "2": !!(p.dates.start && p.dates.end), "3": settingsDone, "4": p.done >= 2 && _budgetOk };
     document.querySelectorAll("#wiz-steps .wiz-chip").forEach(chip => {
       const s = chip.dataset.step;
       chip.classList.toggle("done", !!stepDoneMap[s]);
@@ -2603,13 +2584,6 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
 
     // -- 2GIS card toggle ---------------------------------------------------
     (function(){
-      const card = el("geo2gis-card");
-      const wrap = el("geo2gis-wrap");
-      if (!card || !wrap) return;
-      card.addEventListener("click", () => {
-        const active = card.classList.toggle("active");
-        wrap.style.display = active ? "" : "none";
-      });
       // radius slider label sync
       const slider = el("poi-radius");
       const valEl  = el("poi-radius-val");
@@ -2769,155 +2743,6 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
       });
     })();
 
-    // -- 2GIS POI screen finder -----------------------------------------------
-    el("poi-find-btn")?.addEventListener("click", async () => {
-      const btn      = el("poi-find-btn");
-      const statusEl = el("poi-status");
-      const progWrap = el("poi-progress-wrap");
-      const progBar  = el("poi-progress-bar");
-      const progText = el("poi-progress-text");
-
-      const searchQuery = (el("poi-brand")?.value || "").trim();
-      if (!searchQuery) {
-        return (statusEl.textContent = "\\u0412\\u0432\\u0435\\u0434\\u0438\\u0442\\u0435 \\u043d\\u0430\\u0437\\u0432\\u0430\\u043d\\u0438\\u0435 \\u0431\\u0440\\u0435\\u043d\\u0434\\u0430.");
-      }
-      const radius = Number(el("poi-radius")?.value || 500);
-
-      const screensAll = window.PLANNER?.state?.screensAll || [];
-      if (!screensAll.length) {
-        return (statusEl.textContent = "Инвентарь ещё загружается, подождите.");
-      }
-
-      // Filter screens by selected regions/cities (same logic as rest of planner)
-      const selectedRegions = window.PLANNER?.state?.selectedRegions || [];
-      let screensPool = screensAll;
-      if (selectedRegions.length) {
-        const rset = new Set(selectedRegions);
-        screensPool = screensAll.filter(s =>
-          rset.has(String(s.region || "").trim()) ||
-          rset.has(String(s.city   || "").trim())
-        );
-        const pst = window.PLANNER?.state;
-        if (!screensPool.length && pst?.dspRegionToCities) {
-          const citySet = new Set(selectedRegions.flatMap(r => pst.dspRegionToCities[r] || []));
-          if (citySet.size) {
-            screensPool = screensAll.filter(s => citySet.has(String(s.city || "").trim()));
-          }
-        }
-        if (!screensPool.length) screensPool = screensAll;
-      }
-
-      btn.disabled = true;
-      btn.textContent = "Ищу экраны\\u2026";
-      statusEl.textContent = "";
-      if (progWrap) progWrap.style.display = "block";
-      if (progBar)  progBar.style.width = "0%";
-
-      try {
-        // Optimised approach: fetch ALL POIs of the given brand across the city/region
-        // using paginated 2GIS search (radius = city-wide ~50 km), then match screens
-        // locally by distance. O(pages) requests instead of O(screens).
-        const GEO2GIS_KEY = "ba3c806e-746b-40b7-a1c8-4fc79c1a9667";
-
-        // Local haversine distance in metres
-        function distM(lat1, lon1, lat2, lon2) {
-          const R = 6371000, toR = Math.PI / 180;
-          const dLat = (lat2 - lat1) * toR, dLon = (lon2 - lon1) * toR;
-          const a = Math.sin(dLat/2)**2 + Math.cos(lat1*toR)*Math.cos(lat2*toR)*Math.sin(dLon/2)**2;
-          return R * 2 * Math.asin(Math.sqrt(a));
-        }
-
-        // Compute centroid of the screen pool to use as city-wide search centre
-        const validScreens = screensPool.filter(s => {
-          const la = Number(s.lat ?? s.latitude), lo = Number(s.lon ?? s.lng ?? s.longitude);
-          return isFinite(la) && isFinite(lo) && la !== 0 && lo !== 0;
-        });
-        if (!validScreens.length) throw new Error("Нет экранов с координатами.");
-
-        const avgLat = validScreens.reduce((a,s) => a + Number(s.lat ?? s.latitude), 0) / validScreens.length;
-        const avgLon = validScreens.reduce((a,s) => a + Number(s.lon ?? s.lng ?? s.longitude), 0) / validScreens.length;
-
-        // Fetch all POI pages (max 50 per page) for the brand in a 50 km city-wide radius
-        const PAGE_SIZE = 50, CITY_RADIUS = 50000;
-        const allPois = []; // [{lat, lon}]
-        let page = 1, totalPages = 1;
-        statusEl.textContent = "Загружаю объекты 2GIS…";
-
-        while (page <= totalPages && page <= 40) { // safety cap: 40 pages × 50 = 2000 POIs
-          const url = "https://silent-surf-cd5e.mochalova-kathrine-v.workers.dev/2gis?q=" +
-            encodeURIComponent(searchQuery) +
-            "&location=" + avgLon + "," + avgLat +
-            "&radius=" + CITY_RADIUS +
-            "&page=" + page +
-            "&page_size=" + PAGE_SIZE +
-            "&fields=items.point" +
-            "&key=" + GEO2GIS_KEY;
-          const data = await fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
-          if (!data?.result) break;
-          const items = data.result.items || [];
-          items.forEach(item => {
-            const pt = item.point;
-            if (pt?.lat && pt?.lon) allPois.push({ lat: Number(pt.lat), lon: Number(pt.lon) });
-          });
-          const total2 = data.result.total || 0;
-          totalPages = Math.ceil(total2 / PAGE_SIZE);
-          if (progBar)  progBar.style.width = Math.round(page / totalPages * 60) + "%";
-          if (progText) progText.textContent = "POI: " + allPois.length + " / " + total2;
-          statusEl.textContent = "Загружаю POI: " + allPois.length + " из " + total2;
-          page++;
-          if (!items.length) break;
-        }
-
-        if (!allPois.length) {
-          if (progWrap) progWrap.style.display = "none";
-          statusEl.textContent = "2GIS не нашёл «" + searchQuery + "» в этом городе.";
-          statusEl.style.color = "#dc2626";
-          btn.disabled = false; btn.textContent = "🔍 Найти экраны";
-          return;
-        }
-
-        // Local match: screen is included if any POI is within radius
-        statusEl.textContent = "Сопоставляю экраны…";
-        const matchingGids = [];
-        const seenIds = new Set();
-        validScreens.forEach(s => {
-          const sLat = Number(s.lat ?? s.latitude), sLon = Number(s.lon ?? s.lng ?? s.longitude);
-          const near = allPois.some(p => distM(sLat, sLon, p.lat, p.lon) <= radius);
-          if (!near) return;
-          const gid = (s.screen_id ?? s.gid ?? s.GID ?? s.id ?? "").toString().trim();
-          if (gid && !seenIds.has(gid)) { seenIds.add(gid); matchingGids.push(gid); }
-        });
-
-        if (progBar)  progBar.style.width = "100%";
-        if (progText) progText.textContent = "Готово";
-
-        if (progWrap) progWrap.style.display = "none";
-
-        if (!matchingGids.length) {
-          statusEl.textContent = "\\u041d\\u0435 \\u043d\\u0430\\u0439\\u0434\\u0435\\u043d\\u043e \\u044d\\u043a\\u0440\\u0430\\u043d\\u043e\\u0432. \\u0423\\u0432\\u0435\\u043b\\u0438\\u0447\\u044c\\u0442\\u0435 \\u0440\\u0430\\u0434\\u0438\\u0443\\u0441.";
-          statusEl.style.color = "#dc2626";
-        } else {
-          const ta = el("manual-gids");
-          if (ta) { ta.value = matchingGids.join("\\n"); ta.dispatchEvent(new Event("input", { bubbles: true })); }
-          const selEl = el("selection-mode");
-          if (selEl) {
-            selEl.value = "manual_screens";
-            selEl.dispatchEvent(new Event("change", { bubbles: true }));
-          }
-          statusEl.textContent = "\\u041d\\u0430\\u0439\\u0434\\u0435\\u043d\\u043e \\u044d\\u043a\\u0440\\u0430\\u043d\\u043e\\u0432: " + matchingGids.length + " \\u2014 \\u043d\\u0430\\u0436\\u043c\\u0438\\u0442\\u0435 \\u00AB\\u0420\\u0430\\u0441\\u0441\\u0447\\u0438\\u0442\\u0430\\u0442\\u044c\\u00BB";
-          statusEl.style.color = "#5b3ef5";
-          renderProgress();
-        }
-      } catch(err) {
-        if (progWrap) progWrap.style.display = "none";
-        statusEl.textContent = "\\u041e\\u0448\\u0438\\u0431\\u043a\\u0430: " + err.message;
-        statusEl.style.color = "#dc2626";
-      }
-
-      btn.disabled = false;
-      btn.textContent = "\\uD83D\\uDD0D \\u041d\\u0430\\u0439\\u0442\\u0438 \\u044d\\u043a\\u0440\\u0430\\u043d\\u044b";
-    });
-
     // Schedule chips
     document.querySelectorAll('#schedule-chips .sch-chip').forEach(chip => {
       chip.addEventListener('click', () => {
@@ -2951,6 +2776,39 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
       if (wrap) wrap.style.display = active ? "block" : "none";
       renderProgress();
     });
+
+    // Bid uplift chip toggle
+    el("bid-uplift-chip")?.addEventListener("click", () => {
+      const chip = el("bid-uplift-chip");
+      const cb   = el("bid-uplift-enabled");
+      const wrap = el("bid-uplift-wrap");
+      const active = chip.classList.toggle("active");
+      if (cb) { cb.checked = active; cb.dispatchEvent(new Event("change", { bubbles: true })); }
+      if (wrap) wrap.style.display = active ? "block" : "none";
+      syncBidUplift();
+      renderProgress();
+    });
+
+    function syncBidUplift() {
+      const on   = !!el("bid-uplift-enabled")?.checked;
+      const pct  = Math.max(0, Number(el("bid-uplift-pct")?.value || 0));
+      const base = el("bid-mode-min")?.checked ? "минимальная" : "рекомендованная";
+      const badge = el("bid-uplift-badge");
+      if (badge) {
+        badge.textContent = (on && pct > 0) ? "+" + pct + "%" : "";
+        badge.dataset.val = (on && pct > 0) ? String(pct) : "";
+      }
+      const note = el("bid-uplift-note");
+      if (note) {
+        note.textContent = pct > 0
+          ? "Ставка = " + base + " + " + pct + "%. Влияет на расчёт, медиаплан и передачу менеджеру."
+          : "Укажите процент надбавки.";
+      }
+    }
+    el("bid-uplift-pct")?.addEventListener("input", () => { syncBidUplift(); renderProgress(); });
+    document.querySelectorAll('input[name="bid_mode"]').forEach(r =>
+      r.addEventListener("change", syncBidUplift));
+    syncBidUplift();
 
     // Sync badge on constructions count input
     el("constructions-count")?.addEventListener("input", () => {
@@ -3006,6 +2864,28 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
 
     el("per-city-mode-abs")?.addEventListener("click", () => setPerCityMode("abs"));
     el("per-city-mode-pct")?.addEventListener("click", () => setPerCityMode("pct"));
+
+    // Восстановление из истории: строки по городам живут внутри этого блока и
+    // пересобираются только при смене набора регионов, поэтому снаружи (из
+    // restoreBriefToUI в planner.js) их не заполнить — отдаём точку входа.
+    window.PLANNER = window.PLANNER || {};
+    window.PLANNER.restorePerCityBudget = function(map) {
+      const cb = el("per-city-enabled");
+      if (!cb) return;
+      const on = !!(map && Object.keys(map).length);
+      cb.checked = on;
+      syncPerCitySlider(on);
+      setPerCityMode("abs");         // в истории лежат абсолютные суммы, не проценты
+      _lastPerCityRegionsSig = "";   // форсируем пересборку строк под восстановленные регионы
+      renderPerCityRows();
+      if (!on) return;
+      document.querySelectorAll("#per-city-rows .per-city-row").forEach(row => {
+        const v = Number(map[row.dataset.region]);
+        const inp = row.querySelector("input");
+        if (inp && Number.isFinite(v) && v > 0) inp.value = Math.floor(v);
+      });
+      syncPerCityTotal();
+    };
     function renderPerCityRows() {
       const regions = window.PLANNER?.state?.selectedRegions || [];
       const wrap = el("per-city-toggle-wrap");
@@ -3859,20 +3739,38 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
     const sectionsHtml = regionsOrdered.map(regionName => {
       const regItems = (byReg.get(regionName) || []);
 
+      // Сомнительные (аномально низкая ставка) — в начало списка: цель в том,
+      // чтобы пользователь их увидел, а не искал в конце горизонтальной прокрутки.
+      // Сортируем массив на месте, а не копию: обработчик клика ниже достаёт экран
+      // по data-idx из byReg.get(region), и копия развалила бы это соответствие.
+      regItems.sort((a, b) => (b._suspiciousBid ? 1 : 0) - (a._suspiciousBid ? 1 : 0));
+
       const cards = regItems.map((s, idx) => {
         const url = escapeHtml(getImg(s));
         const gid = escapeHtml(getGid(s));
         const own = escapeHtml(getOwner(s));
         const addr = escapeHtml(getAddr(s));
+        const susp = !!s._suspiciousBid;
+        const suspStyle = susp
+          ? "border:2px solid #e04444; box-shadow:0 0 0 3px rgba(224,68,68,.10);"
+          : "border:1px solid rgba(15,23,42,.10);";
+        const suspBadge = susp
+          ? \`<div style="margin-top:6px; display:inline-block; padding:2px 7px; border-radius:6px;
+                 background:#fff1f1; color:#c62828; font-size:10px; font-weight:700;"
+                 title="Ставка ниже 40% медианы по своему формату и городу">
+               Низкая ставка
+             </div>\`
+          : "";
 
         return \`
           <div class="img-card" data-region="\${escapeHtml(regionName)}" data-idx="\${idx}" data-gid="\${gid}"
-               style="min-width:220px; max-width:220px; border:1px solid rgba(15,23,42,.10); border-radius:14px; overflow:hidden; background:#fff; cursor:pointer;">
+               style="min-width:220px; max-width:220px; \${suspStyle} border-radius:14px; overflow:hidden; background:#fff; cursor:pointer;">
             <div style="height:140px; background:#f2f4f8; display:flex; align-items:center; justify-content:center;">
               <img src="\${url}" alt="\${gid}" loading="lazy" style="width:100%; height:100%; object-fit:cover;">
             </div>
             <div style="padding:10px;">
               <div style="font-weight:800; font-size:13px; line-height:1.2;">\${gid || "\\u2014"}</div>
+              \${suspBadge}
               <div style="font-size:12px; color:#555; margin-top:4px;">\${own || "\\u2014"}</div>
               <div style="font-size:12px; color:#777; margin-top:4px; line-height:1.25; max-height:2.5em; overflow:hidden;">\${addr || ""}</div>
               <div style="display:flex; gap:6px; margin-top:8px;">
@@ -6125,6 +6023,8 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
       ots:            meta.totalOts,
       formats:        formats,
       selection_mode: brief.selection?.mode || "",
+      bid_mode:       brief.bidMode || "",
+      bid_uplift_pct: Number(brief.bidUpliftPct || 0),
       duration_sec:   Number.isFinite(Number(brief.duration?.ms)) && Number(brief.duration?.ms) > 0
                         ? Math.round(Number(brief.duration.ms) / 1000)
                         : null,
@@ -6533,6 +6433,120 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
     a.click();
     URL.revokeObjectURL(url);
   });
+})();
+`);
+
+  // Script block: авто-скролл к сводке после расчёта
+  runScript(`
+(function(){
+  // Кнопка «Рассчитать» стоит внизу левой колонки, а сводка рендерится в правой —
+  // на десктопе к моменту клика она уже уехала вверх за экран, на мобиле лежит
+  // ниже всей формы. После calc-done подтягиваем её в вид.
+  // window.scrollTo, а не scrollIntoView: в Tilda виджет лежит во вложенных
+  // скролл-контейнерах, и scrollIntoView промахивается (см. setStep выше).
+  window.addEventListener("planner:calc-done", () => {
+    const target = document.querySelector("#planner-widget .planner-right");
+    if (!target) return;
+    // Ждём, пока остальные calc-done подписчики дорисуют сводку и графики,
+    // иначе прокручиваем к ещё пустому блоку и промахиваемся по высоте.
+    setTimeout(() => {
+      const top = target.getBoundingClientRect().top + window.scrollY - 20;
+      window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+    }, 80);
+  });
+})();
+`);
+
+  // Script block: живые суммы рекомендованного бюджета
+  runScript(`
+(function(){
+  const el = (id) => document.getElementById(id);
+  const wrap = el("budget-reco-hint");
+  if (!wrap) return;
+  const sums = [...wrap.querySelectorAll("[data-sum]")];
+  if (!sums.length) return;
+
+  let timer = null;
+  let lastSig = "";
+
+  // Блок виден только в режиме «подскажите бюджет» — в остальных считать незачем.
+  const visible = () => wrap.offsetParent !== null;
+
+  // Подпись адресной программы: всё, от чего зависят суммы. Пересчёт дорогой
+  // (фильтрация всего инвентаря по каждому региону), а planner:pool-updated
+  // прилетает почти на каждый ввод, поэтому сверяем подпись и не считаем зря.
+  function apSignature() {
+    const st = window.PLANNER?.state || {};
+    const fmts = st.selectedFormats ? [...st.selectedFormats].sort().join(",") : "";
+    return [
+      (st.selectedRegions || []).join("|"),
+      el("date-start")?.value || "",
+      el("date-end")?.value || "",
+      el("formats-auto")?.checked ? "auto" : fmts,
+      document.querySelector('input[name="bid_mode"]:checked')?.value || "",
+      el("bid-uplift-enabled")?.checked ? (el("bid-uplift-pct")?.value || "") : "",
+      el("only-active-bids")?.checked ? "1" : "0",
+      st.screensAll?.length || 0,
+      st.selectedDurationMs || ""
+    ].join("~");
+  }
+
+  const fmtMoney = (v) => Math.round(v).toLocaleString("ru-RU") + " \u20BD";
+
+  function showSkeleton() {
+    sums.forEach(n => { n.classList.add("rtb-skel"); n.textContent = "0"; });
+  }
+  function showValues(tiers) {
+    sums.forEach(n => {
+      n.classList.remove("rtb-skel");
+      const v = tiers ? Number(tiers[n.dataset.sum]) : NaN;
+      n.textContent = (Number.isFinite(v) && v > 0) ? fmtMoney(v) : "\u2014";
+    });
+  }
+
+  function recompute(force) {
+    if (!visible()) return;
+    const sig = apSignature();
+    if (!force && sig === lastSig) return;
+    lastSig = sig;
+    showSkeleton();
+    // Считаем следующим тиком: computeRecoBudgetTiers синхронно перебирает весь
+    // инвентарь, и без паузы скелетон не успевает отрисоваться.
+    setTimeout(() => {
+      let tiers = null;
+      try { tiers = window.PLANNER?.computeRecoBudgetTiers?.() || null; }
+      catch (e) { console.warn("[reco-tiers]", e); }
+      showValues(tiers);
+    }, 30);
+  }
+
+  function schedule() {
+    if (!visible()) return;
+    clearTimeout(timer);
+    timer = setTimeout(() => recompute(false), 300);
+  }
+
+  ["planner:pool-updated", "planner:filters-changed", "planner:screens-ready"]
+    .forEach(ev => window.addEventListener(ev, schedule));
+
+  // Плюс прямая подписка на поля, от которых зависит адресная программа:
+  // события выше приходят как побочный эффект чужих обработчиков, полагаться
+  // только на них — значит молча отставать, если тот обработчик не отработал.
+  ["date-start", "date-end", "formats-auto", "only-active-bids",
+   "bid-uplift-enabled", "bid-uplift-pct"].forEach(id => {
+    const n = el(id);
+    if (!n) return;
+    n.addEventListener("input", schedule);
+    n.addEventListener("change", schedule);
+  });
+  document.querySelectorAll('input[name="bid_mode"]').forEach(r =>
+    r.addEventListener("change", schedule));
+
+  // Смена режима бюджета показывает/прячет блок — считаем сразу, без дебаунса.
+  document.querySelectorAll('input[name="budget_mode"]').forEach(r =>
+    r.addEventListener("change", () => setTimeout(() => recompute(true), 0)));
+
+  recompute(true);
 })();
 `);
 
