@@ -153,6 +153,20 @@ function recoPphForTier(recoTier) {
   if (recoTier === "max") return SC_MAX;
   return SC_OPT;
 }
+// Ручная надбавка к ставке: поверх выбранного режима (мин/реко) клиент может
+// поднять ставку на X %, чтобы чаще выигрывать аукцион. Множитель, а не третий
+// взаимоисключающий режим — надбавка должна работать и с мин, и с реко.
+function bidUpliftFactor(brief) {
+  const pct = Number(brief?.bidUpliftPct || 0);
+  return (Number.isFinite(pct) && pct > 0) ? 1 + pct / 100 : 1;
+}
+
+// Ставка одного экрана с учётом режима и надбавки.
+function screenBid(s, brief) {
+  const base = brief?.bidMode === "min" ? s?.minBid : (s?.recoBid || s?.minBid);
+  return Number.isFinite(base) ? base * bidUpliftFactor(brief) : base;
+}
+
 const MF_MAX_PPH = 12; // MediaFacade physical cap: max 12 plays/hour
 
 // Per-screen plays-per-hour cap based on format
@@ -179,13 +193,13 @@ function capacityPphForScreen(s) {
 
 // hoursTotal — суммарные часы размещения за период (дней × часов/день).
 // Возвращает null, если считать не из чего: вызывающий код тогда просто не проверяет.
-function computeCapacity(screens, hoursTotal, bidMode) {
+function computeCapacity(screens, hoursTotal, bidMode, uplift = 1) {
   const list = Array.isArray(screens) ? screens : [];
   if (!list.length || !Number.isFinite(hoursTotal) || hoursTotal <= 0) return null;
 
   const pphSum = list.reduce((sum, s) => sum + capacityPphForScreen(s), 0);
   const plays  = Math.floor(hoursTotal * pphSum);
-  const avgBid = avgEffectiveBid(list, bidMode, 1);
+  const avgBid = avgEffectiveBid(list, bidMode, 1, uplift);
   const avgOts = avgNumberNonZero(list.map(s => s.ots));
 
   return {
@@ -616,26 +630,33 @@ function computeScheduleHoursForPeriod(schedule, startStr, endStr) {
   const globalIntervals = Array.isArray(schedule.globalIntervals) ? schedule.globalIntervals : [];
 
   let totalHours = 0;
+  // Разброс часов по дням: в медиаплане нужен диапазон («5–10»), а не среднее
+  // арифметическое за период. Дни без вещания в диапазон не входят, иначе любой
+  // график с выходным превращался бы в «0–10».
+  let minHpd = null, maxHpd = null;
 
   const start = new Date(startStr + "T00:00:00");
   for (let i = 0; i < days; i++) {
     const dt = new Date(start);
     dt.setDate(start.getDate() + i);
 
-    if (mode === "global") {
-      totalHours += _hoursForWeekdayIntervals(globalIntervals);
-    } else {
-      const key = _weekdayKeyFromDate(dt);
-      totalHours += _hoursForWeekdayIntervals(weekly[key]);
+    const dayHours = (mode === "global")
+      ? _hoursForWeekdayIntervals(globalIntervals)
+      : _hoursForWeekdayIntervals(weekly[_weekdayKeyFromDate(dt)]);
+
+    totalHours += dayHours;
+    if (dayHours > 0) {
+      minHpd = (minHpd == null) ? dayHours : Math.min(minHpd, dayHours);
+      maxHpd = (maxHpd == null) ? dayHours : Math.max(maxHpd, dayHours);
     }
   }
 
   const avgHpd = days ? (totalHours / days) : 0;
-  return { days, totalHours, avgHpd };
+  return { days, totalHours, avgHpd, minHpd: minHpd ?? 0, maxHpd: maxHpd ?? 0 };
 }
 
   const hpd = hoursPerDay(schedule || { type: "all_day" });
-  return { days, totalHours: hpd * days, avgHpd: hpd };
+  return { days, totalHours: hpd * days, avgHpd: hpd, minHpd: hpd, maxHpd: hpd };
 }
 
 function _getByAnyId(...ids) {
@@ -848,6 +869,11 @@ function renderSelectionExtra() {
     });
 
     addAddressRow(); // первый адрес
+
+    // Список адресов пересобирается этой функцией с нуля, поэтому снаружи
+    // (restoreBriefToUI) его не заполнить — отдаём точку входа.
+    window.PLANNER = window.PLANNER || {};
+    window.PLANNER.setAddresses = (list) => bulkAddAddresses(Array.isArray(list) ? list : []);
 
     el("addr-add-btn")?.addEventListener("click", () => {
       const inp = addAddressRow();
@@ -1472,6 +1498,10 @@ const globalIntervals = (scheduleType === "weekly" && typeof getGlobalScheduleFr
     budget: {
       mode: budgetMode,
       amount: budgetMode === "fixed" ? Number(budgetNet || 0) : null,
+      // amount — за вычетом комиссии (в расчёт идёт именно он), amountGross — то,
+      // что реально введено в поле. Без gross восстановление из истории подставляло
+      // бы в поле сумму без комиссии, и бюджет «худел» на каждый заход.
+      amountGross: budgetMode === "fixed" ? Number(budgetVal || 0) : null,
       currency: "RUB",
       perCity: (() => {
         if (budgetMode !== "fixed" || !document.getElementById("per-city-enabled")?.checked) return null;
@@ -1570,6 +1600,9 @@ const globalIntervals = (scheduleType === "weekly" && typeof getGlobalScheduleFr
     onlyActiveBids: !!el("only-active-bids")?.checked,
     recoTier: document.querySelector('input[name="reco_tier"]:checked')?.value || "optimal",
     bidMode: el("bid-mode-min")?.checked ? "min" : "recommended",
+    bidUpliftPct: (el("bid-uplift-enabled")?.checked)
+      ? Math.max(0, Number(el("bid-uplift-pct")?.value || 0))
+      : 0,
     duration: { ms: Number.isFinite(state.selectedDurationMs) ? state.selectedDurationMs : null },
     reachMode: getReachModeFromUI(),
     goal: {
@@ -2184,6 +2217,16 @@ async function buildMediaPlanBlob() {
   const hpdActual = (_schedHours && _schedHours.avgHpd > 0) ? _schedHours.avgHpd : (meta.hpd || 12);
   const hpd = +hpdActual.toFixed(2);
 
+  // «График, ч/сутки»: при разном расписании по дням недели среднее за период
+  // (напр. 8.57 при «будни 10 ч, выходные 5 ч») ничего не говорит клиенту —
+  // выводим диапазон 5–10. Когда часы одинаковы во все дни, остаётся число.
+  const _round2 = v => Math.round(v * 100) / 100;
+  const hpdMin = _schedHours && _schedHours.minHpd > 0 ? _round2(_schedHours.minHpd) : hpd;
+  const hpdMax = _schedHours && _schedHours.maxHpd > 0 ? _round2(_schedHours.maxHpd) : hpd;
+  const hpdIsRange = hpdMax - hpdMin > 0.01;
+  // Диапазон — строка, поэтому числовой формат к нему неприменим.
+  const hpdValue = hpdIsRange ? `${hpdMin}–${hpdMax}` : hpd;
+
   const dateStr   = s => s ? String(s).split("-").reverse().join(".") : "—";
   const periodStr = `${dateStr(brief.dates?.start)} — ${dateStr(brief.dates?.end)}`;
 
@@ -2423,7 +2466,7 @@ async function buildMediaPlanBlob() {
     for (const [fmt_, fmtScr] of Object.entries(rfMap[city] || {})) {
       const w = regCnt > 0 ? fmtScr.length / regCnt : (1 / Object.keys(rfMap[city]).length);
       const bids = fmtScr.map(s => {
-        const b = brief.bidMode === "min" ? s.minBid : (s.recoBid || s.minBid);
+        const b = screenBid(s, brief);
         return Number.isFinite(b) && b > 0 ? b : null;
       }).filter(Boolean);
       const avgBid = bids.length ? bids.reduce((a, b) => a + b, 0) / bids.length : 0;
@@ -2573,14 +2616,14 @@ async function buildMediaPlanBlob() {
     });
 
     // ── base+4: График ч/сутки ────────────────────────────────────
-    const hpdFmt = Number.isInteger(hpd) ? "0" : "0.##";
+    const hpdFmt = hpdIsRange ? undefined : (Number.isInteger(hpd) ? "0" : "0.##");
     sc(ws, base + 4, 1, "График, ч/сутки", { bold: true, fill: C_LIGHT, v: "center" });
-    sc(ws, base + 4, 2, hpd,               { fill: C_GREEN, numFmt: hpdFmt, h: "right", v: "center" });
+    sc(ws, base + 4, 2, hpdValue,          { fill: C_GREEN, numFmt: hpdFmt, h: "right", v: "center" });
     if (schedTxt) sc(ws, base + 4, 3, schedTxt,
       { fill: C_GREEN, size: 9, h: "center", v: "center", wrap: true });
     else ws.getCell(base + 4, 3).border = THIN_B;
     fmts.forEach((_, fi) => {
-      sc(ws, base + 4, 5 + fi, hpd, { fill: C_GREEN, numFmt: hpdFmt, h: "right", v: "center" });
+      sc(ws, base + 4, 5 + fi, hpdValue, { fill: C_GREEN, numFmt: hpdFmt, h: "right", v: "center" });
     });
 
     // ── base+5: Прогноз кол-ва выходов ───────────────────────────
@@ -2811,7 +2854,7 @@ async function buildSberMediaPlanBlob() {
     for (const [fmt_, fmtScr] of Object.entries(rfMap[city] || {})) {
       const w = regCnt > 0 ? fmtScr.length / regCnt : (1 / Object.keys(rfMap[city]).length);
       const bids = fmtScr.map(s => {
-        const b = brief.bidMode === "min" ? s.minBid : (s.recoBid || s.minBid);
+        const b = screenBid(s, brief);
         return Number.isFinite(b) && b > 0 ? b : null;
       }).filter(Boolean);
       const avgBid = bids.length ? bids.reduce((a,b) => a+b, 0) / bids.length : 0;
@@ -2950,7 +2993,7 @@ async function buildSberMediaPlanBlob() {
       wsCity.getCell(r, 7).value  = s.format ?? "";
       wsCity.getCell(r, 8).value  = s.resolution ?? "";
       wsCity.getCell(r, 9).value  = s.aspectRatio ?? "";
-      const bid = brief.bidMode === "min" ? s.minBid : (s.recoBid || s.minBid);
+      const bid = screenBid(s, brief);
       wsCity.getCell(r, 10).value  = Number.isFinite(bid) ? bid : null;
       wsCity.getCell(r, 10).numFmt = "0.00";
       sberHlink(wsCity, r, 11, "Ссылка", `#'${SCHED_SHEET}'!A1`);
@@ -4393,11 +4436,14 @@ async function onCalcClick() {
       warnings.push(`⚠️ Регион «${regionDisplay}»: GRP-фильтр включён, без GRP исключены (без GRP: ${grpDroppedNoValue}).`);
     }
 
-    const avgBid = avgNumber(pool.map(s => s.minBid));
-    if (avgBid == null) {
+    // Надбавка входит и в avgBid/bidPlus20: они кормят потолки ёмкости и распределение
+    // бюджета, иначе «+X %» поднял бы фактическую ставку, но не плановые суммы.
+    const avgMinBid = avgNumber(pool.map(s => s.minBid));
+    if (avgMinBid == null) {
       perRegionRows.push({ region: regionDisplay, tier, budget: 0, screens: 0, plays: 0, ots: null, note: "нет minBid" });
       continue;
     }
+    const avgBid = avgMinBid * bidUpliftFactor(brief);
     const bidPlus20 = avgBid * BID_MULTIPLIER;
 
     // ots = viewers per single play. Use avgNumberNonZero to exclude
@@ -4429,7 +4475,7 @@ async function onCalcClick() {
   // Считаем потолок по показам для всего собранного пула и сверяем с тем, что
   // запросил клиент. Если запрошенное больше — говорим прямо, что именно упирается
   // в лимит и какой лимит, а не молча урезаем результат в середине расчёта.
-  const capacityAll = computeCapacity(prepared.flatMap(r => r.pool), days * hpdFixed, brief.bidMode);
+  const capacityAll = computeCapacity(prepared.flatMap(r => r.pool), days * hpdFixed, brief.bidMode, bidUpliftFactor(brief));
   if (capacityAll) {
     const capTxt =
       `лимит ${capacityAll.plays.toLocaleString("ru-RU")} показов ` +
@@ -4525,7 +4571,7 @@ async function onCalcClick() {
       const capPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * r.pool.length * days);
       const share = totalCapPlays > 0 ? capPlays / totalCapPlays : 1 / prepared.length;
       const regionPlays = Math.floor(totalPlaysGoal * share);
-      const avgBid = avgEffectiveBid(r.pool, brief.bidMode, 1);
+      const avgBid = avgEffectiveBid(r.pool, brief.bidMode, 1, bidUpliftFactor(brief));
       budgets[r.region] = Math.ceil(regionPlays * avgBid);
       // Store planned plays for use in region loop
       if (!goalPlan) goalPlan = {};
@@ -4542,7 +4588,7 @@ async function onCalcClick() {
       const N = brief.constructions.count;
       const allPoolScreens0 = prepared.flatMap(r => r.pool);
       // Используем уже загруженный recoBid (если DSP-режим) или minBid×BID_MULTIPLIER
-      const recoBid = avgEffectiveBid(allPoolScreens0, brief.bidMode, 1);
+      const recoBid = avgEffectiveBid(allPoolScreens0, brief.bidMode, 1, bidUpliftFactor(brief));
       // Частота ограничена плановой ёмкостью формата: «максимум» не должен просить
       // больше показов, чем инвентарь физически способен отдать.
       const _capPph = capacityAll ? capacityAll.avgPph : CAPACITY_PPH_DEFAULT;
@@ -4565,7 +4611,7 @@ async function onCalcClick() {
 
       if (_isGidRecoWithPpm) {
         const allGidScreens = prepared.flatMap(r => r.pool);
-        const recoBid = avgEffectiveBid(allGidScreens, brief.bidMode, 1);
+        const recoBid = avgEffectiveBid(allGidScreens, brief.bidMode, 1, bidUpliftFactor(brief));
         const totalBudget = Math.round(allGidScreens.length * _gidPpmGlobal * hpdFixed * days * recoBid);
         const alloc = allocateBudgetAcrossRegions(
           totalBudget,
@@ -4586,7 +4632,7 @@ async function onCalcClick() {
         // Потолок — плановая ёмкость на реальных часах расписания (раньше здесь был
         // SC_MAX × RECO_HOURS_PER_DAY, т.е. 60 вых/ч × условные 12 ч/день, что давало
         // потолок заметно выше реально осваиваемого объёма).
-        const cap = computeCapacity(r.pool, days * hpdFixed, brief.bidMode);
+        const cap = computeCapacity(r.pool, days * hpdFixed, brief.bidMode, bidUpliftFactor(brief));
         const capBudget = cap?.budget ?? Infinity;
 
         const optRaw = Math.floor((BASE_MONTHLY_BY_TIER[r.tier] ?? BASE_MONTHLY_BY_TIER.C) * (days / 30));
@@ -4689,7 +4735,7 @@ async function onCalcClick() {
       for (const pr of prepared) {
         const recos = pr.pool.map(s => s.recoBid).filter(v => Number.isFinite(v) && v > 0);
         if (recos.length > 0) {
-          pr.bidPlus20 = recos.reduce((a, b) => a + b, 0) / recos.length;
+          pr.bidPlus20 = (recos.reduce((a, b) => a + b, 0) / recos.length) * bidUpliftFactor(brief);
           pr.capBudgetAbs = Math.floor(pr.capPlaysAbs * pr.bidPlus20);
         }
       }
@@ -4846,7 +4892,7 @@ async function onCalcClick() {
     if (_isGidRegion) {
       chosen = [...pool];
       avgChosenBid = avgNumber(chosen.map(s => s.minBid)) ?? pr.avgBid;
-      effectiveChosenBid = avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER);
+      effectiveChosenBid = avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER, bidUpliftFactor(brief));
     }
 
     for (let attempt = 0; attempt < (_isGidRegion ? 0 : 2); attempt++) {
@@ -4868,7 +4914,7 @@ async function onCalcClick() {
       );
 
       avgChosenBid = avgNumber(chosen.map(s => s.minBid)) ?? pr.avgBid;
-      effectiveChosenBid = avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER);
+      effectiveChosenBid = avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER, bidUpliftFactor(brief));
 
       if (constructionsTarget !== null || !(Number.isFinite(effectiveChosenBid) && effectiveChosenBid > 0)) {
         break;
@@ -4908,7 +4954,7 @@ async function onCalcClick() {
         return fmtCounts[fmt] <= perFormatCap[fmt];
       });
       avgChosenBid = avgNumber(chosen.map(s => s.minBid)) ?? pr.avgBid;
-      effectiveChosenBid = avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER);
+      effectiveChosenBid = avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER, bidUpliftFactor(brief));
     }
 
     // В режиме конструкций:
@@ -5003,7 +5049,7 @@ async function onCalcClick() {
         chosen = [...chosen, ...toAdd];
 
         avgChosenBid = avgNumber(chosen.map(s => s.minBid)) ?? pr.avgBid;
-        effectiveChosenBid = avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER);
+        effectiveChosenBid = avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER, bidUpliftFactor(brief));
 
         capPlaysByChosen = Math.floor(chosen.reduce((sum, s) => sum + getScreenPphCap(s), 0) * days * hpd);
         const budgetCap = (effectiveChosenBid > 0) ? Math.floor(budget / effectiveChosenBid) : Infinity;
@@ -5148,10 +5194,8 @@ async function onCalcClick() {
       formatStats[fmt].otsSum += s.ots;
       formatStats[fmt].otsCnt++;
     }
-    const bidForStat = brief.bidMode === "min"
-      ? (Number.isFinite(s.minBid) && s.minBid > 0 ? s.minBid : null)
-      : (Number.isFinite(s.recoBid) && s.recoBid > 0 ? s.recoBid
-          : (Number.isFinite(s.minBid) && s.minBid > 0 ? s.minBid : null));
+    const _bidRaw = screenBid(s, brief);
+    const bidForStat = (Number.isFinite(_bidRaw) && _bidRaw > 0) ? _bidRaw : null;
     if (bidForStat != null) { formatStats[fmt].bidSum += bidForStat; formatStats[fmt].bidCnt++; }
   }
 
@@ -5212,7 +5256,7 @@ async function onCalcClick() {
 — Регион(ы): ${regions.join(", ")}
 — Форматы: ${selectedFormatsText}
 — Подбор: ${brief.selection.mode}
-— Режим ставки: ${brief.bidMode === "min" ? "Минимальная (minBid)" : "Рекомендованная"}
+— Режим ставки: ${brief.bidMode === "min" ? "Минимальная (minBid)" : "Рекомендованная"}${brief.bidUpliftPct > 0 ? ` +${brief.bidUpliftPct}%` : ""}
 — GRP: ${brief.grp.enabled ? `${brief.grp.min.toFixed(2)}–${brief.grp.max.toFixed(2)}` : "не учитываем"}
 — Аудитория: ${brief.audience?.enabled && brief.audience.segments?.length > 0
     ? `${brief.audience.segments.join(", ")} (топ ${Math.round((brief.audience.topPct ?? 0.10) * 100)}%)`
@@ -6123,14 +6167,14 @@ async function dspFetchForecastBids(screens, brief) {
  * - bidMode "min"  → avg(minBid)
  * - bidMode "recommended" → avg(recoBid) если есть, иначе avg(minBid) × BID_MULTIPLIER
  */
-function avgEffectiveBid(screens, bidMode, fallback) {
+function avgEffectiveBid(screens, bidMode, fallback, uplift = 1) {
   if (bidMode === "min") {
-    return avgNumber(screens.map(s => s.minBid)) ?? fallback;
+    return (avgNumber(screens.map(s => s.minBid)) ?? fallback) * uplift;
   }
   const recos = screens.map(s => s.recoBid).filter(v => Number.isFinite(v) && v > 0);
-  if (recos.length > 0) return recos.reduce((a, b) => a + b, 0) / recos.length;
+  if (recos.length > 0) return (recos.reduce((a, b) => a + b, 0) / recos.length) * uplift;
   const mins = screens.map(s => s.minBid).filter(v => Number.isFinite(v) && v > 0);
-  return mins.length > 0 ? (mins.reduce((a, b) => a + b, 0) / mins.length) * BID_MULTIPLIER : fallback;
+  return (mins.length > 0 ? (mins.reduce((a, b) => a + b, 0) / mins.length) * BID_MULTIPLIER : fallback) * uplift;
 }
 
 // ===== DSP API AUTH + INVENTORY =====
@@ -6183,54 +6227,96 @@ function saveCalcToHistory() {
 function restoreBriefToUI(brief) {
   if (!brief) return;
 
-  // 1. Regions
+  // Программная установка .value не рождает событий, а вся живая логика виджета
+  // (превью НДС, пересчёт пула, показ/скрытие блоков) висит именно на них —
+  // поэтому каждое поле выставляем через _set/_check, а не присваиванием.
+  const _set = (id, val) => {
+    const n = el(id);
+    if (!n || val == null) return;
+    n.value = val;
+    n.dispatchEvent(new Event("input",  { bubbles: true }));
+    n.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  const _check = (id, on) => {
+    const n = el(id);
+    if (!n) return;
+    n.checked = !!on;
+    n.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  const _radio = (name, value) => {
+    const n = document.querySelector(`input[name="${name}"][value="${value}"]`);
+    if (!n) return;
+    n.checked = true;
+    n.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  // Видимый контрол — чип, скрытый чекбокс лишь хранит состояние: без синка
+  // класса чип выглядел выключенным при включённой настройке.
+  const _chip = (id, on) => el(id)?.classList.toggle("active", !!on);
+
+  // 1. Регионы
   state.selectedRegions = Array.isArray(brief.geo?.regions) ? [...brief.geo.regions] : [];
   state.selectedRegion = state.selectedRegions[0] || null;
   renderSelectedRegions();
+  // Форматные карточки и превью пула считаются от выбранных регионов и сами по
+  // себе не пересчитываются — иначе после восстановления города на месте, а
+  // инвентарь показан от прошлого выбора.
+  renderFormats();
+  window.dispatchEvent(new CustomEvent("planner:pool-updated"));
 
-  // 2. Dates
-  if (el("date-start")) el("date-start").value = brief.dates?.start || "";
-  if (el("date-end")) el("date-end").value = brief.dates?.end || "";
+  // 2. Даты
+  _set("date-start", brief.dates?.start || "");
+  _set("date-end",   brief.dates?.end   || "");
 
-  // 3. Schedule
+  // 3. Расписание
   const schType = brief.schedule?.type || "all_day";
   const schChip = document.querySelector(`.sch-chip[data-sch="${schType}"]`);
   if (schChip) {
     schChip.click();
   } else {
-    const schRadio = document.getElementById(`sch-r-${schType}`);
-    if (schRadio) { schRadio.checked = true; schRadio.dispatchEvent(new Event("change", { bubbles: true })); }
+    _check(`sch-r-${schType}`, true);
   }
   if (schType === "custom") {
-    if (el("time-from")) el("time-from").value = brief.schedule?.from || "07:00";
-    if (el("time-to")) el("time-to").value = brief.schedule?.to || "22:00";
+    _set("time-from", brief.schedule?.from || "07:00");
+    _set("time-to",   brief.schedule?.to   || "22:00");
   }
-  if (schType === "weekly" && brief.schedule?.weekly) {
-    const weekly = brief.schedule.weekly;
-    const dows = ["mon","tue","wed","thu","fri","sat","sun"];
-    const timeKey = t => `${t.from}-${t.to}`;
-    const timeToGroup = {};
-    const groups = [];
-    for (const dow of dows) {
-      for (const t of (weekly[dow] || [])) {
-        const k = timeKey(t);
-        if (!timeToGroup[k]) { timeToGroup[k] = { days: {}, times: [{ from: t.from, to: t.to }] }; groups.push(timeToGroup[k]); }
-        timeToGroup[k].days[dow] = true;
+  if (schType === "weekly") {
+    // Режим «общее расписание» (#global-rows) в текущей разметке виджета
+    // отсутствует, поэтому восстанавливаем только по-дневный режим; вызов радио
+    // безвреден и сработает, если блок вернут.
+    _radio("weekly_mode", brief.schedule?.mode || "by_dow");
+    const weekly = brief.schedule?.weekly;
+    if (weekly) {
+      const dows = ["mon","tue","wed","thu","fri","sat","sun"];
+      const timeKey = t => `${t.from}-${t.to}`;
+      const timeToGroup = {};
+      const groups = [];
+      for (const dow of dows) {
+        for (const t of (weekly[dow] || [])) {
+          const k = timeKey(t);
+          if (!timeToGroup[k]) { timeToGroup[k] = { days: {}, times: [{ from: t.from, to: t.to }] }; groups.push(timeToGroup[k]); }
+          timeToGroup[k].days[dow] = true;
+        }
       }
+      if (groups.length) state.weeklyGroups = groups;
+      if (typeof window.renderWeeklyDays === "function") window.renderWeeklyDays();
     }
-    if (groups.length) state.weeklyGroups = groups;
-    if (typeof window.renderWeeklyDays === "function") window.renderWeeklyDays();
   }
 
-  // 4. Budget mode + amount
-  const budgetMode = brief.budget?.mode || "fixed";
-  const bmRadio = document.querySelector(`input[name="budget_mode"][value="${budgetMode}"]`);
-  if (bmRadio) { bmRadio.checked = true; bmRadio.dispatchEvent(new Event("change", { bubbles: true })); }
-  if (el("budget-input") && brief.budget?.amount != null) el("budget-input").value = brief.budget.amount;
-  if (el("goal-ots") && brief.goal?.ots != null) el("goal-ots").value = brief.goal.ots;
-  if (el("goal-plays") && brief.goal?.plays != null) el("goal-plays").value = brief.goal.plays;
+  // 4. Цель и бюджет
+  _radio("budget_mode", brief.budget?.mode || "fixed");
+  // В поле возвращаем введённую сумму (с комиссией), а не очищенную от неё.
+  const budgetForField = brief.budget?.amountGross ?? brief.budget?.amount;
+  if (budgetForField != null) _set("budget-input", budgetForField);
+  if (brief.goal?.ots   != null) _set("goal-ots",   brief.goal.ots);
+  if (brief.goal?.plays != null) _set("goal-plays", brief.goal.plays);
+  _radio("reco_tier", brief.recoTier || "optimal");
+  // Разбивка по городам живёт в widget-init и пересобирается только при смене
+  // набора регионов — заполняем через её собственную точку входа.
+  if (typeof window.PLANNER?.restorePerCityBudget === "function") {
+    window.PLANNER.restorePerCityBudget(brief.budget?.perCity || null);
+  }
 
-  // 5. Formats
+  // 5. Форматы
   const fmtAutoEl = el("formats-auto");
   if (fmtAutoEl) {
     fmtAutoEl.checked = brief.formats?.mode === "auto";
@@ -6242,66 +6328,71 @@ function restoreBriefToUI(brief) {
     if (typeof window.renderFormatsCards === "function") window.renderFormatsCards();
   }
 
-  // 6. Selection mode
+  // 6. Режим подбора
+  const selMode = brief.selection?.mode || "city_even";
   const selEl = el("selection-mode");
-  if (selEl) { selEl.value = brief.selection?.mode || "city_even"; selEl.dispatchEvent(new Event("change", { bubbles: true })); }
-  const selMode = brief.selection?.mode;
+  if (selEl) { selEl.value = selMode; selEl.dispatchEvent(new Event("change", { bubbles: true })); }
+  // Чипы режима подбора — визуальный слой над скрытым <select>, класс сам не встанет.
+  document.querySelectorAll("#selection-mode-chips .sel-chip").forEach(c =>
+    c.classList.toggle("active", c.dataset.mode === selMode));
   if (selMode === "near_address") {
-    const addrInputs = document.querySelectorAll(".planner-addr-input");
-    if (addrInputs.length && brief.selection?.addresses?.length) addrInputs[0].value = brief.selection.addresses[0];
-    const radEl = el("planner-radius") || el("radius");
-    if (radEl) radEl.value = brief.selection?.radius_m ?? 500;
-  }
-  if (selMode === "poi") {
-    const poiEl = el("poi-type"); if (poiEl) poiEl.value = brief.selection?.poi_type || "pet_store";
-    const radEl = el("planner-radius") || el("radius"); if (radEl) radEl.value = brief.selection?.radius_m ?? 500;
-  }
-  if (selMode === "route") {
-    const rfEl = el("route-from"); if (rfEl) rfEl.value = brief.selection?.route_from || "";
-    const rtEl = el("route-to"); if (rtEl) rtEl.value = brief.selection?.route_to || "";
-    const radEl = el("planner-radius") || el("radius"); if (radEl) radEl.value = brief.selection?.radius_m ?? 300;
-  }
-  if (selMode === "highway") {
-    const hnEl = el("highway-name"); if (hnEl) hnEl.value = brief.selection?.highway_name || "";
-    const radEl = el("planner-radius") || el("radius"); if (radEl) radEl.value = brief.selection?.radius_m ?? 500;
+    // Восстанавливаем весь список адресов, а не только первый.
+    const addrs = Array.isArray(brief.selection?.addresses) && brief.selection.addresses.length
+      ? brief.selection.addresses
+      : (brief.selection?.address ? [brief.selection.address] : []);
+    if (addrs.length && typeof window.PLANNER?.setAddresses === "function") {
+      window.PLANNER.setAddresses(addrs);
+    }
+    _set("planner-radius", brief.selection?.radius_m ?? 500);
   }
   if (selMode === "manual_screens") {
-    // Switch step 1 to GID tab
     if (typeof window.setGeoMode === "function") window.setGeoMode("gids");
-    const mgEl = el("manual-gids");
-    if (mgEl) {
-      mgEl.value = (brief.selection?.manual_gids || []).join("\n");
-      mgEl.dispatchEvent(new Event("input", { bubbles: true }));
-    }
+    _set("manual-gids", (brief.selection?.manual_gids || []).join("\n"));
   }
 
   // 7. GRP
-  const grpEl = el("grp-enabled");
-  if (grpEl) { grpEl.checked = !!brief.grp?.enabled; grpEl.dispatchEvent(new Event("change", { bubbles: true })); }
-  if (el("grp-min")) el("grp-min").value = brief.grp?.min ?? 0;
-  if (el("grp-max")) el("grp-max").value = brief.grp?.max ?? 9.98;
+  _check("grp-enabled", brief.grp?.enabled);
+  _set("grp-min", brief.grp?.min ?? 0);
+  _set("grp-max", brief.grp?.max ?? 9.98);
 
-  // 8. Constructions
-  const constrEl = el("constructions-enabled");
-  if (constrEl) { constrEl.checked = !!brief.constructions?.enabled; constrEl.dispatchEvent(new Event("change", { bubbles: true })); }
-  if (el("constructions-count")) el("constructions-count").value = brief.constructions?.count ?? "";
-  if (el("constructions-ppm")) el("constructions-ppm").value = brief.constructions?.playsPerHour ?? 10;
+  // 8. Конструкции
+  _check("constructions-enabled", brief.constructions?.enabled);
+  _chip("constructions-chip", brief.constructions?.enabled);
+  if (brief.constructions?.count) _set("constructions-count", brief.constructions.count);
+  if (brief.constructions?.playsPerHour) _set("constructions-ppm", brief.constructions.playsPerHour);
+  // perRegionCount / perRegionPpm / perFormatCount не восстанавливаем: их поля
+  // рендерятся только при раскрытии соответствующих аккордеонов и на момент
+  // восстановления ещё не существуют в DOM.
 
-  // 9. Audience
-  const audEl = el("audience-enabled");
-  if (audEl) { audEl.checked = !!brief.audience?.enabled; audEl.dispatchEvent(new Event("change", { bubbles: true })); }
+  // 9. Аудитория VK
+  _check("audience-enabled", brief.audience?.enabled);
+  _chip("vk-affinity-card", brief.audience?.enabled);
   if (brief.audience?.segments) {
     document.querySelectorAll('#audience-segment-wrap input[type="checkbox"]').forEach(cb => {
       cb.checked = brief.audience.segments.includes(cb.value);
     });
   }
-  const topPctEl = el("audience-top-pct");
-  if (topPctEl && brief.audience?.topPct != null) topPctEl.value = Math.round(brief.audience.topPct * 100);
+  if (brief.audience?.topPct != null) _set("audience-top-pct", Math.round(brief.audience.topPct * 100));
 
-  // 10. Bid mode
-  const bidId = brief.bidMode === "min" ? "bid-mode-min" : "bid-mode-recommended";
-  const bidRadio = document.getElementById(bidId);
-  if (bidRadio) { bidRadio.checked = true; bidRadio.dispatchEvent(new Event("change", { bubbles: true })); }
+  // 10. Ставка: режим + ручная надбавка
+  _check(brief.bidMode === "min" ? "bid-mode-min" : "bid-mode-recommended", true);
+  const upliftPct = Number(brief.bidUpliftPct || 0);
+  _check("bid-uplift-enabled", upliftPct > 0);
+  _chip("bid-uplift-chip", upliftPct > 0);
+  const upliftWrap = el("bid-uplift-wrap");
+  if (upliftWrap) upliftWrap.style.display = upliftPct > 0 ? "block" : "none";
+  if (upliftPct > 0) _set("bid-uplift-pct", upliftPct);
+
+  // 11. Стратегия подбора и «только активные»
+  if (brief.reachMode) _radio("reach_mode", brief.reachMode);
+  _check("only-active-bids", brief.onlyActiveBids);
+
+  // 12. Длительность ролика
+  const durMs = Number(brief.duration?.ms);
+  if (Number.isFinite(durMs) && durMs > 0) {
+    state.selectedDurationMs = durMs;
+    if (typeof window.renderDurationChips === "function") window.renderDurationChips();
+  }
 
   if (typeof window.renderProgress === "function") window.renderProgress();
   if (typeof window.setStep === "function") window.setStep(1);
@@ -6339,7 +6430,7 @@ function computeRecoBudgetTiers() {
     if (!pool.length) continue;
 
     const tier = getTierForGeo(regionKey);
-    const avgBid = avgEffectiveBid(pool, brief.bidMode, 1);
+    const avgBid = avgEffectiveBid(pool, brief.bidMode, 1, bidUpliftFactor(brief));
     const capPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * pool.length * days);
     const capBudget = Math.floor(capPlays * avgBid);
 

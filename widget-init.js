@@ -1525,6 +1525,25 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
         </div>
       </label>
     </div>
+    <!-- Надбавка — независимый toggle поверх выбранного режима, а не третий
+         взаимоисключающий режим: поднимать можно и минималку, и рекомендованную. -->
+    <div class="cns-chip" id="bid-uplift-chip">
+      <span class="cns-chip-ico">↑</span>
+      <div class="cns-chip-body">
+        <div class="str-chip-title">Надбавка к ставке</div>
+        <div class="str-chip-desc">Поднять выбранную ставку на %</div>
+      </div>
+      <span class="cns-chip-badge" id="bid-uplift-badge"></span>
+    </div>
+    <input type="checkbox" id="bid-uplift-enabled" style="display:none;">
+    <div id="bid-uplift-wrap" style="display:none; margin-top:8px;">
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input type="number" id="bid-uplift-pct" min="0" max="500" step="1" value="10"
+               class="ux-input" placeholder="Надбавка, %" style="flex:1;">
+        <span style="font-weight:700; color:#5b3ef5;">%</span>
+      </div>
+      <div class="planner-note" style="margin-top:6px;" id="bid-uplift-note"></div>
+    </div>
     <div class="planner-note" style="margin-top:8px;" id="bid-mode-hint-recommended">Оптимальная ставка для стабильного открута — предсказуемый результат.</div>
     <div class="planner-note" style="margin-top:8px; display:none;" id="bid-mode-hint-min">Минимальная цена из инвентаря. Больше выходов, но без гарантии полного открута.</div>
   </div>
@@ -2952,6 +2971,39 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
       renderProgress();
     });
 
+    // Bid uplift chip toggle
+    el("bid-uplift-chip")?.addEventListener("click", () => {
+      const chip = el("bid-uplift-chip");
+      const cb   = el("bid-uplift-enabled");
+      const wrap = el("bid-uplift-wrap");
+      const active = chip.classList.toggle("active");
+      if (cb) { cb.checked = active; cb.dispatchEvent(new Event("change", { bubbles: true })); }
+      if (wrap) wrap.style.display = active ? "block" : "none";
+      syncBidUplift();
+      renderProgress();
+    });
+
+    function syncBidUplift() {
+      const on   = !!el("bid-uplift-enabled")?.checked;
+      const pct  = Math.max(0, Number(el("bid-uplift-pct")?.value || 0));
+      const base = el("bid-mode-min")?.checked ? "минимальной" : "рекомендованной";
+      const badge = el("bid-uplift-badge");
+      if (badge) {
+        badge.textContent = (on && pct > 0) ? "+" + pct + "%" : "";
+        badge.dataset.val = (on && pct > 0) ? String(pct) : "";
+      }
+      const note = el("bid-uplift-note");
+      if (note) {
+        note.textContent = pct > 0
+          ? "Ставка = " + base + " + " + pct + "%. Влияет на расчёт, медиаплан и передачу менеджеру."
+          : "Укажите процент надбавки.";
+      }
+    }
+    el("bid-uplift-pct")?.addEventListener("input", () => { syncBidUplift(); renderProgress(); });
+    document.querySelectorAll('input[name="bid_mode"]').forEach(r =>
+      r.addEventListener("change", syncBidUplift));
+    syncBidUplift();
+
     // Sync badge on constructions count input
     el("constructions-count")?.addEventListener("input", () => {
       const badge = el("cns-chip-badge");
@@ -3006,6 +3058,28 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
 
     el("per-city-mode-abs")?.addEventListener("click", () => setPerCityMode("abs"));
     el("per-city-mode-pct")?.addEventListener("click", () => setPerCityMode("pct"));
+
+    // Восстановление из истории: строки по городам живут внутри этого блока и
+    // пересобираются только при смене набора регионов, поэтому снаружи (из
+    // restoreBriefToUI в planner.js) их не заполнить — отдаём точку входа.
+    window.PLANNER = window.PLANNER || {};
+    window.PLANNER.restorePerCityBudget = function(map) {
+      const cb = el("per-city-enabled");
+      if (!cb) return;
+      const on = !!(map && Object.keys(map).length);
+      cb.checked = on;
+      syncPerCitySlider(on);
+      setPerCityMode("abs");         // в истории лежат абсолютные суммы, не проценты
+      _lastPerCityRegionsSig = "";   // форсируем пересборку строк под восстановленные регионы
+      renderPerCityRows();
+      if (!on) return;
+      document.querySelectorAll("#per-city-rows .per-city-row").forEach(row => {
+        const v = Number(map[row.dataset.region]);
+        const inp = row.querySelector("input");
+        if (inp && Number.isFinite(v) && v > 0) inp.value = Math.floor(v);
+      });
+      syncPerCityTotal();
+    };
     function renderPerCityRows() {
       const regions = window.PLANNER?.state?.selectedRegions || [];
       const wrap = el("per-city-toggle-wrap");
@@ -6125,6 +6199,8 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
       ots:            meta.totalOts,
       formats:        formats,
       selection_mode: brief.selection?.mode || "",
+      bid_mode:       brief.bidMode || "",
+      bid_uplift_pct: Number(brief.bidUpliftPct || 0),
       duration_sec:   Number.isFinite(Number(brief.duration?.ms)) && Number(brief.duration?.ms) > 0
                         ? Math.round(Number(brief.duration.ms) / 1000)
                         : null,
