@@ -774,6 +774,21 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
   }
   #planner-widget .reco-tier-btn input{ display:none; }
   #planner-widget .reco-tier-btn:has(input:checked){ background:#5b3ef5;color:#fff;border-color:#5b3ef5; }
+  #planner-widget .reco-tier-btn{ flex-direction:column;align-items:flex-start;gap:1px;padding:7px 12px; }
+  #planner-widget .rtb-label{ font-size:10px;font-weight:500;color:#8b83c5;text-transform:uppercase;letter-spacing:.4px; }
+  #planner-widget .reco-tier-btn:has(input:checked) .rtb-label{ color:#d9d0ff; }
+  #planner-widget .rtb-sum{ font-size:13px;font-weight:700;white-space:nowrap; }
+  /* Скелетон на месте суммы, пока идёт пересчёт по адресной программе */
+  #planner-widget .rtb-sum.rtb-skel{
+    display:inline-block;min-width:78px;height:14px;border-radius:4px;color:transparent;
+    background:linear-gradient(90deg,#e6e0ff 25%,#f4f1ff 50%,#e6e0ff 75%);
+    background-size:200% 100%;animation:rtbShimmer 1.1s ease-in-out infinite;
+  }
+  #planner-widget .reco-tier-btn:has(input:checked) .rtb-sum.rtb-skel{
+    background:linear-gradient(90deg,#7a63f7 25%,#a795fb 50%,#7a63f7 75%);
+    background-size:200% 100%;
+  }
+  @keyframes rtbShimmer{ 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
   #planner-widget .budget-tier-chip{
     display:inline-flex;flex-direction:column;align-items:flex-start;
     gap:1px;padding:7px 12px;border-radius:10px;border:1.5px solid #e0d9fd;
@@ -1292,9 +1307,12 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
 <div id="budget-reco-hint" style="margin-top:6px; color:#667085;">
   Планировщик соберёт адреску для адекватного охвата региона.
   <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;" id="reco-tier-btns">
-    <label class="reco-tier-btn"><input type="radio" name="reco_tier" value="min"> Минимум</label>
-    <label class="reco-tier-btn"><input type="radio" name="reco_tier" value="optimal" checked> Оптимальный</label>
-    <label class="reco-tier-btn"><input type="radio" name="reco_tier" value="max"> Максимум</label>
+    <label class="reco-tier-btn"><input type="radio" name="reco_tier" value="min">
+      <span class="rtb-label">Минимум</span><span class="rtb-sum" data-sum="min">—</span></label>
+    <label class="reco-tier-btn"><input type="radio" name="reco_tier" value="optimal" checked>
+      <span class="rtb-label">Оптимальный</span><span class="rtb-sum" data-sum="optimal">—</span></label>
+    <label class="reco-tier-btn"><input type="radio" name="reco_tier" value="max">
+      <span class="rtb-label">Максимум</span><span class="rtb-sum" data-sum="max">—</span></label>
   </div>
 </div>
 
@@ -6631,6 +6649,99 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
       window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
     }, 80);
   });
+})();
+`);
+
+  // Script block: живые суммы рекомендованного бюджета
+  runScript(`
+(function(){
+  const el = (id) => document.getElementById(id);
+  const wrap = el("budget-reco-hint");
+  if (!wrap) return;
+  const sums = [...wrap.querySelectorAll("[data-sum]")];
+  if (!sums.length) return;
+
+  let timer = null;
+  let lastSig = "";
+
+  // Блок виден только в режиме «подскажите бюджет» — в остальных считать незачем.
+  const visible = () => wrap.offsetParent !== null;
+
+  // Подпись адресной программы: всё, от чего зависят суммы. Пересчёт дорогой
+  // (фильтрация всего инвентаря по каждому региону), а planner:pool-updated
+  // прилетает почти на каждый ввод, поэтому сверяем подпись и не считаем зря.
+  function apSignature() {
+    const st = window.PLANNER?.state || {};
+    const fmts = st.selectedFormats ? [...st.selectedFormats].sort().join(",") : "";
+    return [
+      (st.selectedRegions || []).join("|"),
+      el("date-start")?.value || "",
+      el("date-end")?.value || "",
+      el("formats-auto")?.checked ? "auto" : fmts,
+      document.querySelector('input[name="bid_mode"]:checked')?.value || "",
+      el("bid-uplift-enabled")?.checked ? (el("bid-uplift-pct")?.value || "") : "",
+      el("only-active-bids")?.checked ? "1" : "0",
+      st.screensAll?.length || 0,
+      st.selectedDurationMs || ""
+    ].join("~");
+  }
+
+  const fmtMoney = (v) => Math.round(v).toLocaleString("ru-RU") + " \u20BD";
+
+  function showSkeleton() {
+    sums.forEach(n => { n.classList.add("rtb-skel"); n.textContent = "0"; });
+  }
+  function showValues(tiers) {
+    sums.forEach(n => {
+      n.classList.remove("rtb-skel");
+      const v = tiers ? Number(tiers[n.dataset.sum]) : NaN;
+      n.textContent = (Number.isFinite(v) && v > 0) ? fmtMoney(v) : "\u2014";
+    });
+  }
+
+  function recompute(force) {
+    if (!visible()) return;
+    const sig = apSignature();
+    if (!force && sig === lastSig) return;
+    lastSig = sig;
+    showSkeleton();
+    // Считаем следующим тиком: computeRecoBudgetTiers синхронно перебирает весь
+    // инвентарь, и без паузы скелетон не успевает отрисоваться.
+    setTimeout(() => {
+      let tiers = null;
+      try { tiers = window.PLANNER?.computeRecoBudgetTiers?.() || null; }
+      catch (e) { console.warn("[reco-tiers]", e); }
+      showValues(tiers);
+    }, 30);
+  }
+
+  function schedule() {
+    if (!visible()) return;
+    clearTimeout(timer);
+    timer = setTimeout(() => recompute(false), 300);
+  }
+
+  ["planner:pool-updated", "planner:filters-changed", "planner:screens-ready"]
+    .forEach(ev => window.addEventListener(ev, schedule));
+
+  // Плюс прямая подписка на поля, от которых зависит адресная программа:
+  // события выше приходят как побочный эффект чужих обработчиков, полагаться
+  // только на них — значит молча отставать, если тот обработчик не отработал.
+  ["date-start", "date-end", "formats-auto", "only-active-bids",
+   "bid-uplift-enabled", "bid-uplift-pct"].forEach(id => {
+    const n = el(id);
+    if (!n) return;
+    n.addEventListener("input", schedule);
+    n.addEventListener("change", schedule);
+  });
+  document.querySelectorAll('input[name="bid_mode"]').forEach(r =>
+    r.addEventListener("change", schedule));
+
+  // Смена режима бюджета показывает/прячет блок — считаем сразу, без дебаунса.
+  document.querySelectorAll('input[name="budget_mode"]').forEach(r =>
+    r.addEventListener("change", () => setTimeout(() => recompute(true), 0)));
+
+  recompute(true);
 })();
 `);
 

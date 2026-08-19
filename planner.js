@@ -6415,6 +6415,12 @@ function computeRecoBudgetTiers() {
     ? Math.max(1, Math.round((new Date(dates.end) - new Date(dates.start)) / 86400000) + 1)
     : 30;
 
+  // Часы берём из реального расписания — иначе потолок считается по условным
+  // 12 ч/сутки и расходится с тем, что покажет расчёт.
+  const hpd = (dates?.start && dates?.end)
+    ? (computeScheduleHoursForPeriod(brief.schedule, dates.start, dates.end).avgHpd || RECO_HOURS_PER_DAY)
+    : RECO_HOURS_PER_DAY;
+
   const formatsMode = brief.formats?.mode || "auto";
   const manualFormats = new Set(Array.isArray(brief.formats?.selected) ? brief.formats.selected : []);
 
@@ -6430,9 +6436,8 @@ function computeRecoBudgetTiers() {
     if (!pool.length) continue;
 
     const tier = getTierForGeo(regionKey);
-    const avgBid = avgEffectiveBid(pool, brief.bidMode, 1, bidUpliftFactor(brief));
-    const capPlays = Math.floor(SC_MAX * RECO_HOURS_PER_DAY * pool.length * days);
-    const capBudget = Math.floor(capPlays * avgBid);
+    // Тот же потолок, что и в onCalcClick: плановая ёмкость, а не SC_MAX × 12 ч.
+    const capBudget = computeCapacity(pool, days * hpd, brief.bidMode, bidUpliftFactor(brief))?.budget ?? Infinity;
 
     const optRaw  = Math.floor((BASE_MONTHLY[tier] ?? BASE_MONTHLY.C) * (days / 30));
     const maxRaw  = Math.floor((MAX_MONTHLY[tier]  ?? MAX_MONTHLY.C)  * (days / 30));
