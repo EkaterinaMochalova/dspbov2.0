@@ -1,4 +1,10 @@
 node_modules/
+.env
 .env.local
 .env.*.local
-.env
+
+# macOS
+.DS_Store
+
+# Claude Code
+.claude/worktrees/

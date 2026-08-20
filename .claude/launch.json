@@ -2,16 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "widget-test",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8765", "--directory", "/tmp"],
+      "name": "planner-widget",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "serve", "--listen", "8765", "."],
       "port": 8765
-    },
-    {
-      "name": "dsp-planner",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 5173
     }
   ]
 }
