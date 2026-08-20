@@ -5492,24 +5492,70 @@ window.PLANNER_ASSET_BASE = (function () {
     block.style.display = "";
 
     var st = window.PLANNER.state;
-    if (!durations.includes(st.selectedDurationMs)) st.selectedDurationMs = durations[0];
+    // Множественный выбор: экран, поддерживающий два выбранных ролика, для
+    // расчёта ставки идёт как два, а в адресной программе остаётся одним.
+    if (!Array.isArray(st.selectedDurationsMs)) st.selectedDurationsMs = [];
+    st.selectedDurationsMs = st.selectedDurationsMs.filter(function(ms){ return durations.includes(ms); });
+    if (!st.selectedDurationsMs.length) st.selectedDurationsMs = [durations[0]];
+
+    function apply(){
+      if (typeof window.PLANNER.applySelectedDurations === "function") {
+        window.PLANNER.applySelectedDurations(st.selectedDurationsMs);
+      }
+    }
 
     wrap.innerHTML = "";
     durations.forEach(function(ms){
       var label = document.createElement("label");
       label.className = "str-chip";
-      var active = ms === st.selectedDurationMs;
-      label.innerHTML = "<input type=\\"radio\\" name=\\"duration_ms\\" value=\\"" + ms + "\\"" + (active ? " checked" : "") + ">" +
+      var active = st.selectedDurationsMs.includes(ms);
+      label.innerHTML = "<input type=\\"checkbox\\" name=\\"duration_ms\\" value=\\"" + ms + "\\"" + (active ? " checked" : "") + ">" +
         "<div class=\\"str-chip-body\\"><div class=\\"str-chip-title\\">" + fmtSec(ms) + "</div></div>";
-      label.querySelector("input").addEventListener("change", function(){
-        st.selectedDurationMs = ms;
-        if (typeof window.PLANNER.applySelectedDuration === "function") window.PLANNER.applySelectedDuration(ms);
+      label.querySelector("input").addEventListener("change", function(e){
+        var on = e.target.checked;
+        var next = st.selectedDurationsMs.filter(function(v){ return v !== ms; });
+        if (on) next.push(ms);
+        // Снять последнюю галку нельзя: без длительности ставку не посчитать.
+        if (!next.length) {
+          e.target.checked = true;
+          window.PLANNER?.toast?.("Нужна хотя бы одна длительность.");
+          return;
+        }
+        next.sort(function(a,b){ return a - b; });
+        st.selectedDurationsMs = next;
+        apply();
+        renderDurationHint();
         window.dispatchEvent(new CustomEvent("planner:filters-changed"));
       });
       wrap.appendChild(label);
     });
     // Применяем выбор сразу — на случай если инвентарь перезагрузился и minBid ещё «база»
-    if (typeof window.PLANNER.applySelectedDuration === "function") window.PLANNER.applySelectedDuration(st.selectedDurationMs);
+    apply();
+    renderDurationHint();
+  }
+
+  // Подпись под чипами: при нескольких роликах правило неочевидно, и его надо
+  // проговорить прямо в интерфейсе, а не оставлять на догадки.
+  function renderDurationHint(){
+    var block = el("duration-block");
+    if (!block) return;
+    var st = window.PLANNER && window.PLANNER.state;
+    var n = (st && Array.isArray(st.selectedDurationsMs)) ? st.selectedDurationsMs.length : 0;
+    var hint = el("duration-multi-hint");
+    if (!hint) {
+      hint = document.createElement("div");
+      hint.id = "duration-multi-hint";
+      hint.className = "planner-note";
+      hint.style.marginTop = "8px";
+      block.appendChild(hint);
+    }
+    if (n > 1) {
+      hint.style.display = "";
+      hint.textContent = "Выбрано роликов: " + n + ". Экран, на котором идут несколько роликов, "
+        + "в расчёте ставки считается за столько же экранов, а в адресной программе остаётся одним.";
+    } else {
+      hint.style.display = "none";
+    }
   }
 
   window.renderDurationChips = renderDurationChips;
@@ -6875,7 +6921,7 @@ window.PLANNER_ASSET_BASE = (function () {
       el("bid-uplift-enabled")?.checked ? (el("bid-uplift-pct")?.value || "") : "",
       el("only-active-bids")?.checked ? "1" : "0",
       st.screensAll?.length || 0,
-      st.selectedDurationMs || ""
+      (Array.isArray(st.selectedDurationsMs) ? st.selectedDurationsMs.join(",") : (st.selectedDurationMs || ""))
     ].join("~");
   }
 

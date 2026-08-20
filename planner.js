@@ -1885,7 +1885,7 @@ const globalIntervals = (scheduleType === "weekly" && typeof getGlobalScheduleFr
     bidUpliftPct: (el("bid-uplift-enabled")?.checked)
       ? Math.max(0, Number(el("bid-uplift-pct")?.value || 0))
       : 0,
-    duration: { ms: Number.isFinite(state.selectedDurationMs) ? state.selectedDurationMs : null },
+    duration: { ms: Number.isFinite(state.selectedDurationMs) ? state.selectedDurationMs : null, msList: Array.isArray(state.selectedDurationsMs) ? [...state.selectedDurationsMs] : [] },
     reachMode: getReachModeFromUI(),
     goal: {
       ots: (() => {
@@ -2547,9 +2547,15 @@ async function buildMediaPlanBlob() {
   // Длительность дописываем к строке "Формат" (а не отдельной строкой), чтобы не
   // сдвигать нумерацию строк ниже — она жёстко привязана к текущему количеству
   // metaRows (см. hdr7 на строке 7, SUMMARY_START=8 и т.д.).
-  const durationMs = Number(brief.duration?.ms);
-  const fmtLabelWithDuration = (sortFormats(allFmts).join(", ") || "—") +
-    (Number.isFinite(durationMs) && durationMs > 0 ? ` (длительность: ${Math.round(durationMs / 1000)} сек)` : "");
+  // Длительностей может быть несколько — перечисляем все, иначе в плане
+  // окажется одна цифра, а посчитано будет по нескольким роликам.
+  const durList = (Array.isArray(brief.duration?.msList) && brief.duration.msList.length)
+    ? brief.duration.msList
+    : (Number(brief.duration?.ms) > 0 ? [Number(brief.duration.ms)] : []);
+  const durTxt = durList.length
+    ? ` (длительность: ${durList.map(ms => Math.round(ms / 1000)).join(", ")} сек)`
+    : "";
+  const fmtLabelWithDuration = (sortFormats(allFmts).join(", ") || "—") + durTxt;
   const metaRows = [
     ["Период размещения",  periodStr],
     ["Город",              cities.join(", ") || "—"],
@@ -4129,7 +4135,7 @@ async function onCalcClick() {
       // raw (base-duration) cached inventory and normally relies on the
       // "planner:screens-ready" listener in widget-init.js to resolve per-duration
       // bids. Don't depend on that cross-file wiring being bound in time — resolve here too.
-      if (state.selectedDurationMs) applySelectedDuration(state.selectedDurationMs);
+      if (state.selectedDurationsMs?.length) applySelectedDurations(state.selectedDurationsMs);
     }
   }
 
@@ -6448,15 +6454,20 @@ async function dspFetchForecastBids(screens, brief) {
 // расчёт брал ставку 12 вместо 8 и занижал выходы на треть. Медиаплан при этом
 // считал по каждому экрану отдельно — отсюда и расхождение между сводкой на
 // экране и выгрузкой, из-за которого «выходы × ставка» не сходилось с бюджетом.
+// Вес экрана — число выбранных длительностей, которые он поддерживает
+// (см. applySelectedDurations): экран под два ролика идёт в среднюю как два.
 function avgEffectiveBid(screens, bidMode, fallback, uplift = 1) {
   const brief = { bidMode, bidUpliftPct: 0 };   // надбавку домножаем ниже, как и раньше
-  const bids = [];
+  let sum = 0, weight = 0;
   for (const s of (screens || [])) {
     const b = screenBid(s, brief);
-    if (Number.isFinite(b) && b > 0) bids.push(b);
+    if (!Number.isFinite(b) || b <= 0) continue;
+    const w = Number.isFinite(s?._durSlots) && s._durSlots > 0 ? s._durSlots : 1;
+    sum += b * w;
+    weight += w;
   }
-  if (!bids.length) return fallback * uplift;
-  return (bids.reduce((a, b) => a + b, 0) / bids.length) * uplift;
+  if (!weight) return fallback * uplift;
+  return (sum / weight) * uplift;
 }
 
 // ===== DSP API AUTH + INVENTORY =====
@@ -6774,10 +6785,13 @@ function restoreBriefToUI(brief) {
   if (brief.reachMode) _radio("reach_mode", brief.reachMode);
   _check("only-active-bids", brief.onlyActiveBids);
 
-  // 12. Длительность ролика
-  const durMs = Number(brief.duration?.ms);
-  if (Number.isFinite(durMs) && durMs > 0) {
-    state.selectedDurationMs = durMs;
+  // 12. Длительность ролика (может быть несколько)
+  const durList = Array.isArray(brief.duration?.msList) && brief.duration.msList.length
+    ? brief.duration.msList
+    : (Number(brief.duration?.ms) > 0 ? [Number(brief.duration.ms)] : []);
+  if (durList.length) {
+    state.selectedDurationsMs = [...durList];
+    state.selectedDurationMs = durList[durList.length - 1];
     if (typeof window.renderDurationChips === "function") window.renderDurationChips();
   }
 
@@ -7431,27 +7445,70 @@ function _durationRatioForScreen(s, durationMs) {
 }
 
 // Перезаписывает .minBid и (если известен) .recoBid у экранов с durationBidInfo под
-// выбранную длительность (мс). durationMs=null → возврат к базовой ставке (кратчайшая
-// длительность). Идемпотентно: всегда читает из исходных durationBidInfo/_baseRecoBid,
-// а не из уже перезаписанных .minBid/.recoBid.
-function applySelectedDuration(durationMs) {
-  state.selectedDurationMs = durationMs || null;
+// выбранные длительности. Идемпотентно: всегда читает из исходных
+// durationBidInfo/_baseRecoBid, а не из уже перезаписанных .minBid/.recoBid.
+//
+// Несколько длительностей. Экран, поддерживающий два выбранных ролика, для
+// расчёта ставки считается за два экрана: его ставка входит в среднюю дважды —
+// по цене каждого ролика. В адресной программе и в «Кол-ве экранов» он при этом
+// остаётся одним экраном. Реализовано так: ставка экрана = среднее по его
+// подходящим длительностям, а вес в средней = число этих длительностей
+// (s._durSlots), который учитывает avgEffectiveBid.
+function applySelectedDurations(durationsMs) {
+  const list = (Array.isArray(durationsMs) ? durationsMs : [durationsMs])
+    .map(Number).filter(v => Number.isFinite(v) && v > 0)
+    .sort((a, b) => a - b);
+
+  state.selectedDurationsMs = list;
+  // Одиночное значение оставляем для мест, которым нужна одна длительность
+  // (подпись в медиаплане, восстановление черновика): берём самую длинную.
+  state.selectedDurationMs = list.length ? list[list.length - 1] : null;
+
   for (const arr of [state.screensAll, state.screens]) {
     if (!Array.isArray(arr)) continue;
     for (const s of arr) {
       if (!Array.isArray(s.durationBidInfo) || !s.durationBidInfo.length) continue;
       if (!Number.isFinite(s._baseMinBid)) s._baseMinBid = s.minBid;
-      const match = _resolveDurationMatch(s, durationMs);
-      s.minBid = (match && Number.isFinite(match.minBid)) ? match.minBid : s._baseMinBid;
+
+      if (!list.length) {
+        s.minBid = s._baseMinBid;
+        if (Number.isFinite(s._baseRecoBid)) s.recoBid = s._baseRecoBid;
+        s._durSlots = 1;
+        continue;
+      }
+
+      // Разные выбранные длительности могут разрешиться в одну и ту же реальную
+      // (nearest-match) — тогда это по-прежнему один слот, а не два.
+      const matched = new Map();
+      for (const ms of list) {
+        const m = _resolveDurationMatch(s, ms);
+        if (m && Number.isFinite(m.minBid) && m.minBid > 0) matched.set(m.duration, m.minBid);
+      }
+      const bids = [...matched.values()];
+      if (!bids.length) {
+        s.minBid = s._baseMinBid;
+        if (Number.isFinite(s._baseRecoBid)) s.recoBid = s._baseRecoBid;
+        s._durSlots = 1;
+        continue;
+      }
+      const avg = bids.reduce((a, b) => a + b, 0) / bids.length;
+      s.minBid = avg;
+      s._durSlots = bids.length;
       if (Number.isFinite(s._baseRecoBid)) {
-        const ratio = _durationRatioForScreen(s, durationMs);
-        s.recoBid = s._baseRecoBid * ratio;
+        const base = Number.isFinite(s._baseMinBid) && s._baseMinBid > 0 ? s._baseMinBid : avg;
+        s.recoBid = s._baseRecoBid * (avg / base);
       }
     }
   }
 }
+
+// Совместимость: старое имя принимает одно значение.
+function applySelectedDuration(durationMs) {
+  applySelectedDurations(durationMs ? [durationMs] : []);
+}
 window.PLANNER = window.PLANNER || {};
-window.PLANNER.applySelectedDuration = applySelectedDuration;
+window.PLANNER.applySelectedDuration  = applySelectedDuration;
+window.PLANNER.applySelectedDurations = applySelectedDurations;
 
 // Канонический список всех доступных длительностей (мс) — не зависит от того,
 // какой инвентарь уже загружен/закэширован (в отличие от union по screensAll,
