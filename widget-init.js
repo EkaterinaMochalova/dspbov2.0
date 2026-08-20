@@ -1534,21 +1534,21 @@ window.PLANNER_ASSET_BASE = (function () {
         <input type="radio" name="reach_mode" value="max_reach" checked>
         <div class="str-chip-body">
           <div class="str-chip-title">↗ Охват</div>
-          <div class="str-chip-desc">Максимум экранов</div>
+          <div class="str-chip-desc">Больше точек, реже показы</div>
         </div>
       </label>
       <label class="str-chip">
         <input type="radio" name="reach_mode" value="balanced">
         <div class="str-chip-body">
           <div class="str-chip-title">⚖ Баланс</div>
-          <div class="str-chip-desc">Охват + частота</div>
+          <div class="str-chip-desc">Середина между тем и другим</div>
         </div>
       </label>
       <label class="str-chip">
         <input type="radio" name="reach_mode" value="max_freq">
         <div class="str-chip-body">
           <div class="str-chip-title">🔁 Частота</div>
-          <div class="str-chip-desc">Меньше экранов</div>
+          <div class="str-chip-desc">Меньше точек, чаще показы</div>
         </div>
       </label>
     </div>

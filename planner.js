@@ -217,10 +217,22 @@ function bidUpliftFactor(brief) {
 }
 
 // Ставка одного экрана с учётом режима и надбавки.
+// В рекомендованном режиме у экрана без recoBid ставка = minBid × BID_MULTIPLIER:
+// это та же оценка «рекомендованной», что используется во всём остальном коде.
+// Раньше здесь для таких экранов бралась голая minBid, и медиаплан их недооценивал.
 function screenBid(s, brief) {
-  const base = brief?.bidMode === "min" ? s?.minBid : (s?.recoBid || s?.minBid);
-  return Number.isFinite(base) ? base * bidUpliftFactor(brief) : base;
+  const uplift = bidUpliftFactor(brief);
+  if (brief?.bidMode === "min") {
+    return Number.isFinite(s?.minBid) ? s.minBid * uplift : s?.minBid;
+  }
+  if (Number.isFinite(s?.recoBid) && s.recoBid > 0) return s.recoBid * uplift;
+  return Number.isFinite(s?.minBid) ? s.minBid * BID_MULTIPLIER * uplift : s?.minBid;
 }
+
+// Наружу — чтобы ставку можно было сверить снаружи теми же правилами,
+// какими её считает расчёт, а не воспроизводить их заново.
+window.PLANNER.screenBid = screenBid;
+window.PLANNER.bidUpliftFactor = bidUpliftFactor;
 
 const MF_MAX_PPH = 12; // MediaFacade physical cap: max 12 plays/hour
 
@@ -521,13 +533,20 @@ function ownerPriority(screen) {
 // Russ Outdoor screens use OTS-based (CPM) pricing instead of per-play
 const isRussScreen = s => String(s.owner ?? s.Owner ?? "").toLowerCase().includes("russ");
 
+// Целевая частота на экран задаёт, на сколько экранов размажется бюджет:
+// экранов ≈ (выходы / дни / часы) / порог. Чем ниже порог, тем шире адресная
+// программа при тех же деньгах.
+//
+// Пороги 5 / 25 / 50 давали «Охвату» слишком плотную открутку — раз в 12 минут
+// на экран, — и на типовом московском брифе он набирал 45 экранов вместо
+// сотни с лишним. Снижено до 2 / 15 / 30:
+//   охват   2 вых/час — выход раз в полчаса, экранов в 2,5 раза больше
+//   баланс 15 вых/час — раз в 4 минуты
+//   частота 30 вых/час — раз в 2 минуты
 function targetPlaysPerHourPerScreen(mode) {
-  // max_reach = больше всего экранов (низкий pph → нужно больше экранов)
-  // balanced   = средне
-  // max_freq   = меньше всего экранов (высокий pph → концентрируем показы)
-  if (mode === "max_reach") return 5;
-  if (mode === "max_freq")  return 50;
-  return 25; // balanced
+  if (mode === "max_reach") return 2;
+  if (mode === "max_freq")  return 30;
+  return 15; // balanced
 }
 
 // ===== Utils =====
@@ -2369,6 +2388,18 @@ async function buildMediaPlanBlob() {
     return cell;
   }
 
+  // Буква колонки по номеру (1 → A, 27 → AA). Нужна для сборки формул.
+  function colLetter(n) {
+    let s = "";
+    while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = (n - m - 1) / 26; }
+    return s;
+  }
+  // Ячейка-формула. result — посчитанное нами значение: без него Excel покажет
+  // число только после пересчёта, а любой просмотрщик — пустоту.
+  function fx(formula, result) {
+    return { formula, result: (Number.isFinite(result) ? result : null) };
+  }
+
   // Round rate: frac ≥ 0.8 → floor + 1.5; frac > 0 → ceil; else x
   function roundRate(x) {
     if (!x || !isFinite(x)) return x;
@@ -2604,14 +2635,16 @@ async function buildMediaPlanBlob() {
       const avgOts = otsArr.length ? otsArr.reduce((a, b) => a + b, 0) / otsArr.length : 0;
       cfStats[city][fmt_] = {
         cnt: fmtScr.length, avgBid, avgOts, _w: w,
-        plays: regPlays * w,
-        ots:   regOts   * w,
-        budget: 0,  // filled in second pass
+        plays: 0,   // заполняется вторым проходом
+        ots:   0,
+        budget: 0,
       };
     }
 
-    // Second pass: split budget proportionally to (screenCount × avgBid) — bid-weighted
-    // This correctly accounts for formats with very different rates (e.g. MF 120 vs SS 15)
+    // Второй проход: делим деньги по ставкам, из них получаем выходы, из выходов — OTS.
+    // Именно в таком порядке: бюджет ÷ ставка = выходы, выходы × OTS экрана = OTS.
+    // Раньше выходы и OTS делились по числу экранов, а бюджет — по ставкам, из-за
+    // чего «выходы × ставка» в выгрузке не давало бюджет и формулы было не поставить.
     const fmtKeys = Object.keys(cfStats[city]);
     const bidWeightSum = fmtKeys.reduce((s, f) => {
       const st = cfStats[city][f];
@@ -2619,33 +2652,62 @@ async function buildMediaPlanBlob() {
     }, 0);
     for (const f of fmtKeys) {
       const st = cfStats[city][f];
-      if (bidWeightSum > 0) {
+      if (bidWeightSum > 0 && st.avgBid > 0) {
         st.budget = regBudget * (st.cnt * st.avgBid) / bidWeightSum;
+        st.plays  = st.budget / st.avgBid;
       } else {
-        // All formats have no bid data — fall back to screen-count split
+        // Ни у одного формата нет ставки — делим поровну по экранам, как раньше.
         st.budget = regBudget * st._w;
+        st.plays  = regPlays  * st._w;
       }
+      // OTS формата = его выходы × средний OTS экрана этого формата. Если по
+      // формату данных ВК/OTS нет (частый случай у мелких форматов), берём долю
+      // городского OTS по числу экранов — иначе колонка молча схлопывается в 0.
+      st.ots = (st.avgOts > 0) ? st.plays * st.avgOts : regOts * st._w;
     }
   }
 
   const r2 = v => Math.round((v || 0) * 100) / 100;
 
+  // ── Итоги по городу — суммы его блока ───────────────────────────
+  // Считаем заранее: и строка города, и «итого» ссылаются формулами именно на
+  // блок, поэтому цифры в сводке обязаны быть суммами блока, а не отдельно
+  // посчитанными значениями, которые могут с ним разъехаться.
+  const citySums = {};
+  for (const city of cities) {
+    const st = cfStats[city] || {};
+    const acc = { cnt: 0, plays: 0, ots: 0, budget: 0 };
+    for (const v of Object.values(st)) {
+      acc.cnt    += v.cnt    || 0;
+      acc.plays  += v.plays  || 0;
+      acc.ots    += v.ots    || 0;
+      acc.budget += v.budget || 0;
+    }
+    citySums[city] = acc;
+  }
+
+  // Номера строк внутри блока города — на них ссылаются формулы сводки
+  const BR = { fmts: 0, cnt: 1, rate: 2, ots: 3, hpd: 4, plays: 5, otsTot: 6, budget: 7 };
+
   // ── City summary rows (rows 8..8+n-1) ───────────────────────────
   for (const city of cities) {
-    const r  = citySumRow[city];
-    const rd = effectivePerReg.find(x => x.region === city) || {};
-    const b  = r2(rd.budget || 0), p = rd.plays || 0, o = rd.ots || 0;
+    const r    = citySumRow[city];
+    const base = blockStarts[city];
+    const s    = citySums[city];
     sc(ws, r, 1, city, { bold: true, fill: C_LIGHT });
-    sc(ws, r, 2, p, { fill: C_LIGHT, numFmt: "#,##0" });
-    sc(ws, r, 3, o, { fill: C_LIGHT, numFmt: "#,##0" });
-    sc(ws, r, 4, b, { fill: C_LIGHT, numFmt: '#,##0.00 "₽"' });
+    sc(ws, r, 2, fx(`B${base + BR.plays}`,  s.plays),  { fill: C_LIGHT, numFmt: "#,##0" });
+    sc(ws, r, 3, fx(`B${base + BR.otsTot}`, s.ots),    { fill: C_LIGHT, numFmt: "#,##0" });
+    sc(ws, r, 4, fx(`B${base + BR.budget}`, r2(s.budget)), { fill: C_LIGHT, numFmt: '#,##0.00 "₽"' });
+    const b = r2(s.budget);
     if (commOn && commRate > 0) {
       const wc = r2(b * (1 + commRate));
-      sc(ws, r, 5, wc, { fill: C_LIGHT, numFmt: '#,##0.00 "₽"' });
-      if (vatOn) sc(ws, r, 6, r2(wc * (1 + vatRate)), { fill: C_LIGHT, numFmt: '#,##0.00 "₽"' });
+      sc(ws, r, 5, fx(`D${r}*${1 + commRate}`, wc), { fill: C_LIGHT, numFmt: '#,##0.00 "₽"' });
+      if (vatOn) sc(ws, r, 6, fx(`E${r}*${1 + vatRate}`, r2(wc * (1 + vatRate))),
+        { fill: C_LIGHT, numFmt: '#,##0.00 "₽"' });
       else ws.getCell(r, 6).border = NO_B;
     } else if (vatOn) {
-      sc(ws, r, 5, r2(b * (1 + vatRate)), { fill: C_LIGHT, numFmt: '#,##0.00 "₽"' });
+      sc(ws, r, 5, fx(`D${r}*${1 + vatRate}`, r2(b * (1 + vatRate))),
+        { fill: C_LIGHT, numFmt: '#,##0.00 "₽"' });
       ws.getCell(r, 6).border = NO_B;
     } else {
       ws.getCell(r, 5).border = NO_B;
@@ -2657,21 +2719,24 @@ async function buildMediaPlanBlob() {
   // Sum only the cities that are displayed (those present in rfMap).
   // perReg may contain duplicate region aliases (e.g. "Сочи" + "городской округ Сочи")
   // that map to the same screens — only one of them survives the rfMap filter in `cities`.
-  const citySet = new Set(cities);
-  const totB = r2(effectivePerReg.filter(r => citySet.has(r.region)).reduce((a, r) => a + (r.budget || 0), 0));
-  const totP = effectivePerReg.filter(r => citySet.has(r.region)).reduce((a, r) => a + (r.plays  || 0), 0);
-  const totO = effectivePerReg.filter(r => citySet.has(r.region)).reduce((a, r) => a + (r.ots    || 0), 0);
+  const totP = cities.reduce((a, c) => a + citySums[c].plays,  0);
+  const totO = cities.reduce((a, c) => a + citySums[c].ots,    0);
+  const totB = r2(cities.reduce((a, c) => a + citySums[c].budget, 0));
+  // Диапазон строк городов: если город один, SUM всё равно корректен.
+  const sumRange = (col) => `SUM(${col}${SUMMARY_START}:${col}${totalRow - 1})`;
   sc(ws, totalRow, 1, "итого", { bold: true, fill: C_HDR, h: "right" });
-  sc(ws, totalRow, 2, totP, { bold: true, fill: C_HDR, numFmt: "#,##0" });
-  sc(ws, totalRow, 3, totO, { bold: true, fill: C_HDR, numFmt: "#,##0" });
-  sc(ws, totalRow, 4, totB, { bold: true, fill: C_HDR, numFmt: '#,##0.00 "₽"' });
+  sc(ws, totalRow, 2, fx(sumRange("B"), totP), { bold: true, fill: C_HDR, numFmt: "#,##0" });
+  sc(ws, totalRow, 3, fx(sumRange("C"), totO), { bold: true, fill: C_HDR, numFmt: "#,##0" });
+  sc(ws, totalRow, 4, fx(sumRange("D"), totB), { bold: true, fill: C_HDR, numFmt: '#,##0.00 "₽"' });
   if (commOn && commRate > 0) {
     const twc = r2(totB * (1 + commRate));
-    sc(ws, totalRow, 5, twc, { bold: true, fill: C_HDR, numFmt: '#,##0.00 "₽"' });
-    if (vatOn) sc(ws, totalRow, 6, r2(twc * (1 + vatRate)), { bold: true, fill: C_HDR, numFmt: '#,##0.00 "₽"' });
+    sc(ws, totalRow, 5, fx(sumRange("E"), twc), { bold: true, fill: C_HDR, numFmt: '#,##0.00 "₽"' });
+    if (vatOn) sc(ws, totalRow, 6, fx(sumRange("F"), r2(twc * (1 + vatRate))),
+      { bold: true, fill: C_HDR, numFmt: '#,##0.00 "₽"' });
     else ws.getCell(totalRow, 6).border = NO_B;
   } else if (vatOn) {
-    sc(ws, totalRow, 5, r2(totB * (1 + vatRate)), { bold: true, fill: C_HDR, numFmt: '#,##0.00 "₽"' });
+    sc(ws, totalRow, 5, fx(sumRange("E"), r2(totB * (1 + vatRate))),
+      { bold: true, fill: C_HDR, numFmt: '#,##0.00 "₽"' });
     ws.getCell(totalRow, 6).border = NO_B;
   } else {
     ws.getCell(totalRow, 5).border = NO_B;
@@ -2692,12 +2757,10 @@ async function buildMediaPlanBlob() {
     // Порядок колонок — от меньшего формата к большему, одинаковый во всех городах.
     const fmts      = sortFormats(Object.keys(rfMap[city] || {}));
 
-    // Weighted averages for col B (aggregate column)
+    // Средневзвешенная ставка для колонки B. Средний OTS считается ниже —
+    // по тем же числам, что реально попадут в ячейки строки.
     const wtAvgBid = regCnt > 0
       ? fmts.reduce((a, f) => a + (cfStats[city][f]?.avgBid || 0) * (cfStats[city][f]?.cnt || 0), 0) / regCnt
-      : 0;
-    const wtAvgOts = regCnt > 0
-      ? fmts.reduce((a, f) => a + (cfStats[city][f]?.avgOts || 0) * (cfStats[city][f]?.cnt || 0), 0) / regCnt
       : 0;
 
     // ── Header row: merge A:C = city, D = spacer, E+= format labels ──
@@ -2710,9 +2773,18 @@ async function buildMediaPlanBlob() {
       sc(ws, base, 5 + fi, fmtLabel(fmt_), { bold: true, fill: C_HDR, h: "center", v: "center" });
     });
 
+    // Суммы блока — они же кэшированные значения для формул-итогов.
+    const s0 = citySums[city] || { cnt: 0, plays: 0, ots: 0, budget: 0 };
+    // Диапазон колонок форматов — на нём строятся все формулы блока.
+    const fCol1 = colLetter(5);
+    const fColN = colLetter(5 + Math.max(0, fmts.length - 1));
+    const rng   = (row) => `${fCol1}${row}:${fColN}${row}`;
+    const rCnt  = base + BR.cnt, rRate = base + BR.rate, rOts = base + BR.ots;
+    const rPlay = base + BR.plays;
+
     // ── base+1: Кол-во экранов ────────────────────────────────────
     sc(ws, base + 1, 1, "Кол-во экранов",   { bold: true, fill: C_LIGHT });
-    sc(ws, base + 1, 2, regCnt,             { fill: C_GREEN, numFmt: "#,##0" });
+    sc(ws, base + 1, 2, fx(`SUM(${rng(rCnt)})`, regCnt), { fill: C_GREEN, numFmt: "#,##0" });
     fmts.forEach((fmt_, fi) => {
       sc(ws, base + 1, 5 + fi, cfStats[city][fmt_]?.cnt ?? null, { fill: C_GREEN, numFmt: "#,##0" });
     });
@@ -2724,7 +2796,11 @@ async function buildMediaPlanBlob() {
       ? (rd.avgCpm != null ? +rd.avgCpm.toFixed(2) : null)
       : (wtAvgBid > 0 ? +wtAvgBid.toFixed(2) : null);
     sc(ws, base + 2, 1, rateLabel, { bold: true, fill: C_LIGHT });
-    sc(ws, base + 2, 2, wtRateD,            { fill: C_GREEN, numFmt: "0.00" });
+    // Средневзвешенная по количеству экранов. SUMPRODUCT, а не ручная сумма
+    // произведений: в рукописных планах такую формулу писали под фиксированное
+    // число колонок, и при добавлении формата она молча переставала их учитывать.
+    sc(ws, base + 2, 2, fx(`IFERROR(SUMPRODUCT(${rng(rRate)},${rng(rCnt)})/B${rCnt},0)`, wtRateD),
+      { fill: C_GREEN, numFmt: "0.00" });
     fmts.forEach((fmt_, fi) => {
       const r = isRussCity
         ? (rd.avgCpm != null ? +rd.avgCpm.toFixed(2) : null)
@@ -2733,16 +2809,24 @@ async function buildMediaPlanBlob() {
     });
 
     // ── base+3: Средний OTS* ─────────────────────────────────────
-    const wtOtsD = wtAvgOts > 0 ? +wtAvgOts.toFixed(2) : null;
-    sc(ws, base + 3, 1, "Средний OTS*",     { bold: true, fill: C_LIGHT });
-    sc(ws, base + 3, 2, wtOtsD,             { fill: C_GREEN, numFmt: "0.##" });
-    fmts.forEach((fmt_, fi) => {
+    // Средний OTS одного экрана формата — исходная величина, из которой формулой
+    // считается строка «Прогноз кол-ва OTS». Если по формату данных нет,
+    // подставляем то, что заложил расчёт (ots/plays): иначе колонка молча
+    // схлопнется в 0, хотя город OTS отдаёт.
+    const otsPerFmt = fmts.map(fmt_ => {
       const st = cfStats[city][fmt_];
-      // Prefer the proportionally-distributed city total (st.ots/st.cnt) over
-      // the raw per-screen average (st.avgOts) — a format whose screens simply
-      // lack per-screen OTS data (common for small formats) would otherwise
-      // always show 0 here even though the city clearly has real OTS.
-      const o = st?.cnt > 0 ? st.ots / st.cnt : (st?.avgOts > 0 ? st.avgOts : null);
+      if (st?.avgOts > 0) return st.avgOts;
+      if (st?.plays > 0 && st?.ots > 0) return st.ots / st.plays;
+      return null;
+    });
+    // Итог считаем ровно по тем числам, что легли в ячейки, иначе формула
+    // SUMPRODUCT в файле разойдётся с показанным значением.
+    const _otsNum = otsPerFmt.reduce((a, o, i) => a + (o || 0) * (cfStats[city][fmts[i]]?.cnt || 0), 0);
+    const wtOtsD = regCnt > 0 && _otsNum > 0 ? +(_otsNum / regCnt).toFixed(2) : null;
+    sc(ws, base + 3, 1, "Средний OTS*",     { bold: true, fill: C_LIGHT });
+    sc(ws, base + 3, 2, fx(`IFERROR(SUMPRODUCT(${rng(rOts)},${rng(rCnt)})/B${rCnt},0)`, wtOtsD),
+      { fill: C_GREEN, numFmt: "0.##" });
+    otsPerFmt.forEach((o, fi) => {
       sc(ws, base + 3, 5 + fi, o, { fill: C_GREEN, numFmt: "0.##" });
     });
 
@@ -2758,8 +2842,9 @@ async function buildMediaPlanBlob() {
     });
 
     // ── base+5: Прогноз кол-ва выходов ───────────────────────────
+    // Это исходные данные блока: из них формулами считаются и OTS, и бюджет.
     sc(ws, base + 5, 1, "Прогноз кол-ва выходов", { bold: true, fill: C_LIGHT });
-    sc(ws, base + 5, 2, regPlays, { fill: C_GREEN, numFmt: "#,##0" });
+    sc(ws, base + 5, 2, fx(`SUM(${rng(rPlay)})`, s0.plays), { fill: C_GREEN, numFmt: "#,##0" });
     fmts.forEach((fmt_, fi) => {
       sc(ws, base + 5, 5 + fi, cfStats[city][fmt_]?.plays || 0, { fill: C_GREEN, numFmt: "#,##0" });
     });
@@ -2767,27 +2852,27 @@ async function buildMediaPlanBlob() {
     // ── base+6: Прогноз кол-ва OTS* ──────────────────────────────
     ws.getRow(base + 6).height = 24.75;
     sc(ws, base + 6, 1, "Прогноз кол-ва OTS*", { bold: true, fill: C_LIGHT });
-    // numFmt shows zero as "–" instead of a bare "0" — a format with no OTS data
-    // otherwise reads as "0 OTS" (looks like real, verified zero) rather than
-    // "no data for this format", which is what it actually means here.
+    // Ноль показываем как «–», а не как «0»: у формата просто нет данных OTS,
+    // и голый ноль читался бы как проверенный ноль охвата.
     const OTS_NUMFMT = '#,##0;-#,##0;"–"';
-    sc(ws, base + 6, 2, regOts || null, { fill: C_GREEN, numFmt: OTS_NUMFMT });
+    sc(ws, base + 6, 2, fx(`SUM(${rng(base + BR.otsTot)})`, s0.ots),
+      { fill: C_GREEN, numFmt: OTS_NUMFMT });
     fmts.forEach((fmt_, fi) => {
       const st = cfStats[city][fmt_];
-      // st.ots (regOts * weight) is already the correct proportional split of
-      // the city's real total OTS — using it directly instead of recomputing
-      // from st.avgOts (which is 0 whenever a format's screens lack raw
-      // per-screen OTS data) matches the pattern already used in the Свод
-      // sheet's own per-format OTS column.
-      const o = st?.ots || 0;
-      sc(ws, base + 6, 5 + fi, o, { fill: C_GREEN, numFmt: OTS_NUMFMT });
+      const col = colLetter(5 + fi);
+      // OTS = выходы × средний OTS экрана
+      sc(ws, base + 6, 5 + fi, fx(`${col}${rPlay}*${col}${rOts}`, st?.ots || 0),
+        { fill: C_GREEN, numFmt: OTS_NUMFMT });
     });
 
     // ── base+7: Прогноз бюджета ───────────────────────────────────
     sc(ws, base + 7, 1, "Прогноз бюджета",  { bold: true, fill: C_LIGHT });
-    sc(ws, base + 7, 2, r2(regBudget), { bold: true, fill: C_GREEN, numFmt: '#,##0.00 "₽"' });
+    sc(ws, base + 7, 2, fx(`SUM(${rng(base + BR.budget)})`, r2(s0.budget)),
+      { bold: true, fill: C_GREEN, numFmt: '#,##0.00 "₽"' });
     fmts.forEach((fmt_, fi) => {
-      sc(ws, base + 7, 5 + fi, r2(cfStats[city][fmt_]?.budget || 0),
+      const col = colLetter(5 + fi);
+      // Бюджет = выходы × ставка
+      sc(ws, base + 7, 5 + fi, fx(`${col}${rPlay}*${col}${rRate}`, r2(cfStats[city][fmt_]?.budget || 0)),
         { bold: true, fill: C_GREEN, numFmt: '#,##0.00 "₽"' });
     });
 
@@ -5264,10 +5349,18 @@ async function onCalcClick() {
 
   state.lastChosen = chosenAll;
 
-  // Per-format breakdown
-  // playsPerScreen: равномерное распределение выходов по экранам
-  const playsPerScreen = chosenAll.length > 0 ? totalPlaysEffectiveAll / chosenAll.length : 0;
-
+  // ── Разбивка по форматам ────────────────────────────────────────
+  // Выходы по формату = бюджет формата ÷ его ставка. Раньше выходы делились
+  // поровну по экранам, а бюджет — по ставкам: медиафасад по 400 ₽ получал
+  // столько же выходов на экран, сколько сити-борд по 5 ₽, и при этом в 80 раз
+  // больше денег. Физически так не бывает — при фиксированной ставке дорогой
+  // экран открутит меньше.
+  //
+  // Итоги при этом сходятся точно. Бюджет формата ∝ (кол-во × ставка), значит
+  //   выходы_ф = бюджет × (кол-во_ф × ставка_ф) / Σ(кол-во × ставка) / ставка_ф
+  //            = бюджет × кол-во_ф / Σ(кол-во × ставка)
+  // и в сумме по форматам это бюджет / средняя ставка, то есть ровно тот общий
+  // объём выходов, который посчитан выше.
   const formatStats = {};
   for (const s of chosenAll) {
     const fmt = s.format || "—";
@@ -5275,12 +5368,12 @@ async function onCalcClick() {
       formatStats[fmt] = {
         screens: 0,
         otsSum: 0, otsCnt: 0,  // для avg(s.ots per play)
-        playsEst: 0,            // оценка выходов по формату (равномерно)
+        playsEst: 0,            // выходы по формату (заполняется вторым проходом)
+        budget: 0,              // бюджет формата (заполняется вторым проходом)
         bidSum: 0, bidCnt: 0,  // для средней ставки по формату
       };
     }
     formatStats[fmt].screens++;
-    formatStats[fmt].playsEst += playsPerScreen;
     if (Number.isFinite(s.ots) && s.ots > 0) {
       formatStats[fmt].otsSum += s.ots;
       formatStats[fmt].otsCnt++;
@@ -5296,6 +5389,27 @@ async function onCalcClick() {
     fd.otsPerPlay  = fd.otsCnt > 0 ? Math.round(fd.otsSum / fd.otsCnt) : null;
     fd.avgBid      = fd.bidCnt > 0 ? +(fd.bidSum / fd.bidCnt).toFixed(2) : null;
     fd.costPerPlay = fd.avgBid;   // стоимость выхода = средняя ставка по формату
+  }
+
+  // Второй проход: делим деньги по ставкам, из них получаем выходы.
+  {
+    const fmtKeys = Object.keys(formatStats);
+    const bidWeight = fmtKeys.reduce((s, f) => {
+      const fd = formatStats[f];
+      return s + fd.screens * (fd.avgBid || 0);
+    }, 0);
+    for (const f of fmtKeys) {
+      const fd = formatStats[f];
+      if (bidWeight > 0 && fd.avgBid > 0) {
+        fd.budget   = totalBudgetFinal * (fd.screens * fd.avgBid) / bidWeight;
+        fd.playsEst = fd.budget / fd.avgBid;
+      } else {
+        // Ни у одного формата нет ставки — делим поровну по экранам, как раньше.
+        const share = chosenAll.length > 0 ? fd.screens / chosenAll.length : 0;
+        fd.budget   = totalBudgetFinal * share;
+        fd.playsEst = totalPlaysEffectiveAll * share;
+      }
+    }
   }
 
   window.PLANNER = window.PLANNER || {};
@@ -6326,14 +6440,23 @@ async function dspFetchForecastBids(screens, brief) {
  * - bidMode "min"  → avg(minBid)
  * - bidMode "recommended" → avg(recoBid) если есть, иначе avg(minBid) × BID_MULTIPLIER
  */
+// Средняя ставка по набору экранов — ровно среднее screenBid() по каждому.
+//
+// Раньше в рекомендованном режиме здесь усреднялись ТОЛЬКО экраны с recoBid, а
+// экраны без него в среднее не попадали вовсе. Если recoBid есть у трети набора,
+// средняя выходила по этой трети и применялась ко всем: на наборе 3×12 ₽ + 4×5 ₽
+// расчёт брал ставку 12 вместо 8 и занижал выходы на треть. Медиаплан при этом
+// считал по каждому экрану отдельно — отсюда и расхождение между сводкой на
+// экране и выгрузкой, из-за которого «выходы × ставка» не сходилось с бюджетом.
 function avgEffectiveBid(screens, bidMode, fallback, uplift = 1) {
-  if (bidMode === "min") {
-    return (avgNumber(screens.map(s => s.minBid)) ?? fallback) * uplift;
+  const brief = { bidMode, bidUpliftPct: 0 };   // надбавку домножаем ниже, как и раньше
+  const bids = [];
+  for (const s of (screens || [])) {
+    const b = screenBid(s, brief);
+    if (Number.isFinite(b) && b > 0) bids.push(b);
   }
-  const recos = screens.map(s => s.recoBid).filter(v => Number.isFinite(v) && v > 0);
-  if (recos.length > 0) return (recos.reduce((a, b) => a + b, 0) / recos.length) * uplift;
-  const mins = screens.map(s => s.minBid).filter(v => Number.isFinite(v) && v > 0);
-  return (mins.length > 0 ? (mins.reduce((a, b) => a + b, 0) / mins.length) * BID_MULTIPLIER : fallback) * uplift;
+  if (!bids.length) return fallback * uplift;
+  return (bids.reduce((a, b) => a + b, 0) / bids.length) * uplift;
 }
 
 // ===== DSP API AUTH + INVENTORY =====
