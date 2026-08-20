@@ -1848,7 +1848,7 @@ window.PLANNER_ASSET_BASE = (function () {
 <!-- CHARTS -->
 <div id="charts" style="margin-top:12px;"></div>
 <div class="download-row">
-  <button id="download-csv" class="wiz-btn">Скачать GIDы</button>
+  <button id="download-csv" class="wiz-btn" disabled>Скачать GIDы</button>
   <button id="download-pool-gids" class="wiz-btn ghost" style="display:none;" title="Скачать все экраны пула (до ограничений бюджета)">Скачать все экраны пула</button>
   <div style="position:relative;display:inline-flex;align-items:center;gap:4px;">
     <button id="download-plan-xlsx" class="wiz-btn ghost" disabled>Скачать план</button>

@@ -2453,13 +2453,30 @@ async function buildMediaPlanBlob() {
 
   // Format label for block headers — abbreviate known types, otherwise use as-is
   function fmtLabel(fmt_) {
-    const u = fmt_.toUpperCase();
+    const u = String(fmt_ || "").toUpperCase();
     if (u === "MEDIAFACADE" || u === "MF")                                return "MF";
     if (u === "BILLBOARD"   || u === "BB")                                return "BB";
     if (u === "SUPERSITE"   || u === "SS")                                return "SS";
     if (u === "CITY_BOARD"  || u === "CITYBOARD" || u === "CB")           return "CB";
+    if (u === "CITY_FORMAT" || u === "CITYFORMAT" || u === "CF")          return "CF";
     if (u === "PVZ_SCREEN"  || u === "PVZ")                               return "PVZ";
     return fmt_; // keep original name for everything else
+  }
+
+  // Порядок форматов в медиаплане — от меньшей поверхности к большей:
+  // сначала индор (OTHER, PVZ), затем аутдор от сити-формата к медиафасаду.
+  // Раньше колонки шли в порядке, в котором форматы попались в выборке, поэтому
+  // в соседних городах одного плана они стояли по-разному.
+  const FMT_ORDER = ["OTHER", "PVZ", "CF", "CB", "BB", "SS", "MF"];
+  function fmtRank(fmt_) {
+    const i = FMT_ORDER.indexOf(fmtLabel(fmt_));
+    return i < 0 ? FMT_ORDER.length : i;   // неизвестные — в конец
+  }
+  function sortFormats(list) {
+    return [...list].sort((a, b) => {
+      const d = fmtRank(a) - fmtRank(b);
+      return d !== 0 ? d : String(a).localeCompare(String(b), "ru");
+    });
   }
 
   // Schedule time-range text for col C
@@ -2500,7 +2517,7 @@ async function buildMediaPlanBlob() {
   // сдвигать нумерацию строк ниже — она жёстко привязана к текущему количеству
   // metaRows (см. hdr7 на строке 7, SUMMARY_START=8 и т.д.).
   const durationMs = Number(brief.duration?.ms);
-  const fmtLabelWithDuration = (allFmts.join(", ") || "—") +
+  const fmtLabelWithDuration = (sortFormats(allFmts).join(", ") || "—") +
     (Number.isFinite(durationMs) && durationMs > 0 ? ` (длительность: ${Math.round(durationMs / 1000)} сек)` : "");
   const metaRows = [
     ["Период размещения",  periodStr],
@@ -2536,8 +2553,14 @@ async function buildMediaPlanBlob() {
     hdrE = `Прогноз бюджета + НДС ${vatRatePct}%`;
   }
   const hdr7 = ["Город", "Прогноз кол-ва выходов", "Прогноз кол-ва OTS", "Прогноз бюджета", hdrE, hdrF];
-  hdr7.forEach((h, i) => sc(ws, 7, i + 1, h,
-    { bold: true, fill: C_HDR, h: "center", v: "center", wrap: true }));
+  hdr7.forEach((h, i) => {
+    // Пустой заголовок — это выключенные комиссия/НДС. Раньше sc() всё равно
+    // красил такую ячейку заливкой и рамкой, и в выгрузке оставался пустой
+    // синий прямоугольник справа от «Прогноза бюджета», который приходилось
+    // удалять руками. Теперь просто пропускаем.
+    if (!h) { ws.getCell(7, i + 1).border = NO_B; return; }
+    sc(ws, 7, i + 1, h, { bold: true, fill: C_HDR, h: "center", v: "center", wrap: true });
+  });
 
   // ── Layout: block positions (one block per city) ────────────────
   const SUMMARY_START = 8;
@@ -2666,7 +2689,8 @@ async function buildMediaPlanBlob() {
     // (actual chosen screens per format), rd.screens can be stale after per-format caps.
     const cfSum     = cfStats[city] ? Object.values(cfStats[city]).reduce((a, v) => a + v.cnt, 0) : 0;
     const regCnt    = cfSum > 0 ? cfSum : (rd.screens || 0);
-    const fmts      = Object.keys(rfMap[city] || {});     // format keys for this city
+    // Порядок колонок — от меньшего формата к большему, одинаковый во всех городах.
+    const fmts      = sortFormats(Object.keys(rfMap[city] || {}));
 
     // Weighted averages for col B (aggregate column)
     const wtAvgBid = regCnt > 0
@@ -5961,7 +5985,12 @@ document.querySelectorAll('input[name="weekly_mode"]').forEach(r => {
 
   // ===== Downloads =====
   const downloadBtn = el("download-csv");
-  if (downloadBtn) downloadBtn.addEventListener("click", () => { downloadXLSX(state.lastChosen); logEvent("download_gids"); });
+  if (downloadBtn) {
+    // До первого расчёта скачивать нечего: кнопка была активна и по клику молча
+    // ничего не делала. Включается там же, где и «Скачать план» — после расчёта.
+    downloadBtn.disabled = true;
+    downloadBtn.addEventListener("click", () => { downloadXLSX(state.lastChosen); logEvent("download_gids"); });
+  }
 
   const planBtn = el("download-plan-xlsx");
   if (planBtn) {
