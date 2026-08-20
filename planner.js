@@ -28,6 +28,112 @@ window.PLANNER = window.PLANNER || {};
 
 const REF = "planner";
 
+// ============================================================================
+// ВАЛИДАЦИЯ ПОЛЕЙ
+// ----------------------------------------------------------------------------
+// Раньше каждая непройденная проверка выдавала alert(): модальное окно браузера
+// блокирует вкладку, выглядит чужеродно поверх Тильды, не показывает, какое
+// именно поле не заполнено, и на мобильном печатает адрес сайта. Теперь ошибка
+// живёт рядом с полем: нужный шаг открывается сам, поле подсвечивается и
+// получает фокус, а подпись гаснет, как только пользователь начал править.
+// ============================================================================
+
+// Куда прокручивать: window.scrollTo, а не scrollIntoView — в Тильде виджет
+// лежит во вложенных скролл-контейнерах и scrollIntoView промахивается.
+function _scrollToNode(node) {
+  if (!node) return;
+  const top = node.getBoundingClientRect().top + window.scrollY - 90;
+  window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+}
+
+function clearFieldError(target) {
+  const node = (typeof target === "string") ? document.getElementById(target) : target;
+  if (!node) return;
+  node.classList.remove("fld-invalid", "fld-invalid-box");
+  const holder = node.dataset.fldErrId ? document.getElementById(node.dataset.fldErrId) : null;
+  if (holder) holder.remove();
+  delete node.dataset.fldErrId;
+}
+
+let _fldErrSeq = 0;
+
+/**
+ * Показывает ошибку у поля.
+ * @param {string|Element} target — id элемента или сам элемент
+ * @param {string} message — что не так
+ * @param {{step?: number, box?: boolean, anchor?: string|Element}} [opts]
+ *        step   — на каком шаге визарда лежит поле (переключим туда)
+ *        box    — подсветить рамкой-обводкой (для блоков без своей рамки)
+ *        anchor — после какого элемента вставить подпись, если не после поля
+ * @returns {false} — чтобы можно было писать `return fieldError(...)`
+ */
+function fieldError(target, message, opts) {
+  const o = opts || {};
+  const node = (typeof target === "string") ? document.getElementById(target) : target;
+
+  if (o.step && typeof window.setStep === "function") window.setStep(o.step);
+
+  if (!node) {
+    // Поля нет в DOM — не молчим, но и не роняем поток.
+    console.warn("[validate] нет элемента для ошибки:", target, message);
+    toast(message);
+    return false;
+  }
+
+  clearFieldError(node);
+  node.classList.add(o.box ? "fld-invalid-box" : "fld-invalid");
+
+  const holder = document.createElement("div");
+  holder.className = "fld-err";
+  holder.id = "fld-err-" + (++_fldErrSeq);
+  holder.textContent = message;
+  node.dataset.fldErrId = holder.id;
+
+  const anchorEl = o.anchor
+    ? ((typeof o.anchor === "string") ? document.getElementById(o.anchor) : o.anchor)
+    : node;
+  (anchorEl.parentNode || node.parentNode)?.insertBefore(holder, anchorEl.nextSibling);
+
+  // Гасим подпись, как только пользователь начал править — в том числе когда
+  // правит соседнее поле той же пары (даты, GRP).
+  const off = () => clearFieldError(node);
+  node.addEventListener("input",  off, { once: true });
+  node.addEventListener("change", off, { once: true });
+  node.addEventListener("click",  off, { once: true });
+
+  // Прокрутка после переключения шага: setStep сам скроллит к началу виджета.
+  setTimeout(() => {
+    _scrollToNode(holder);
+    if (typeof node.focus === "function" && !o.box) {
+      try { node.focus({ preventScroll: true }); } catch (e) { node.focus(); }
+    }
+  }, o.step ? 220 : 0);
+
+  return false;
+}
+
+// Короткое сообщение, не привязанное к полю (состояние, а не ошибка ввода).
+let _toastTimer = null;
+function toast(message, ms) {
+  let n = document.getElementById("planner-toast");
+  if (!n) {
+    n = document.createElement("div");
+    n.id = "planner-toast";
+    document.body.appendChild(n);
+  }
+  n.textContent = message;
+  // Форсируем reflow, иначе повторный вызов не переиграет анимацию.
+  void n.offsetWidth;
+  n.classList.add("show");
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => n.classList.remove("show"), ms || 3200);
+  return false;
+}
+
+window.PLANNER.fieldError = fieldError;
+window.PLANNER.clearFieldError = clearFieldError;
+window.PLANNER.toast = toast;
+
 // ===== Библиотеки по требованию =====
 // papaparse / xlsx / exceljs больше не грузятся на старте — их подтягивает
 // PLANNER_ENSURE_LIB() из widget-init.js в момент первого обращения.
@@ -427,9 +533,19 @@ function targetPlaysPerHourPerScreen(mode) {
 // ===== Utils =====
 function el(id) { return document.getElementById(id); }
 
-function setStatus(msg) {
+function setStatus(msg, isError) {
   const s = el("status");
-  if (s) s.textContent = msg || "";
+  if (!s) return;
+  s.textContent = msg || "";
+  // Итог расчёта «ничего не подобралось» раньше приходил через alert. Он читается,
+  // но выбрасывает из контекста; строка под кнопкой остаётся на месте — только
+  // её надо отличать от обычного «Считаю…», иначе теряется.
+  if (isError) {
+    s.style.cssText = "color:#c62828;background:#fff5f5;border:1px solid #f3c2c2;" +
+                      "border-radius:8px;padding:8px 10px;font-size:12px;line-height:1.45;";
+  } else {
+    s.style.cssText = "";
+  }
 }
 
 function escapeHtml(s) {
@@ -2172,7 +2288,7 @@ async function downloadXLSX(rows) {
 // ===== Медиаплан (красивый XLSX через ExcelJS) =====
 async function buildMediaPlanBlob() {
   const calc = window.PLANNER?.lastCalc;
-  if (!calc) { alert("Сначала нажмите «Рассчитать»."); return null; }
+  if (!calc) { toast("Сначала нажмите «Рассчитать»."); return null; }
 
   const ExcelJS = await ensureLib("exceljs");
   if (!ExcelJS) { alert("Не удалось загрузить библиотеку выгрузки. Проверьте соединение и попробуйте ещё раз."); return null; }
@@ -2761,7 +2877,7 @@ function buildSberScheduleGrid(sch) {
 
 async function buildSberMediaPlanBlob() {
   const calc = window.PLANNER?.lastCalc;
-  if (!calc) { alert("Сначала нажмите «Рассчитать»."); return null; }
+  if (!calc) { toast("Сначала нажмите «Рассчитать»."); return null; }
   const ExcelJS = await ensureLib("exceljs");
   if (!ExcelJS) { alert("Не удалось загрузить библиотеку выгрузки. Проверьте соединение и попробуйте ещё раз."); return null; }
 
@@ -3911,10 +4027,8 @@ async function onCalcClick() {
   const brief = buildBrief();
   const pphTarget = targetPlaysPerHourPerScreen(brief.reachMode);
 
-  if (!brief.dates.start || !brief.dates.end) {
-    alert("Выберите даты начала и окончания.");
-    return;
-  }
+  if (!brief.dates.start) return void fieldError("date-start", "Укажите дату начала размещения.", { step: 2 });
+  if (!brief.dates.end)   return void fieldError("date-end",   "Укажите дату окончания размещения.", { step: 2 });
 
   const _selModeForRegions = brief?.selection?.mode;
   let regions = Array.isArray(brief?.geo?.regions) && brief.geo.regions.length
@@ -3926,8 +4040,7 @@ async function onCalcClick() {
       // GID mode without regions: treat all screens as one pool
       regions = ["__gid_mode__"];
     } else {
-      alert("Выберите регион(ы).");
-      return;
+      return void fieldError("city-search", "Выберите хотя бы один регион.", { step: 1 });
     }
   }
 
@@ -3940,31 +4053,24 @@ async function onCalcClick() {
       : (manualFormats.length ? manualFormats.join(", ") : "—");
 
   // ✅ budget validation: fixed / recommendation / goal_ots
-  if (brief.budget.mode === "fixed") {
-    if (!brief.budget.amount || brief.budget.amount <= 0) {
-      alert("Введите бюджет или выберите «нужна рекомендация» / «цель по OTS».");
-      return;
-    }
+  // Шаг «Цели» — логический 4-й (физически div wiz-step-3), см. STEP_TO_DIV.
+  if (brief.budget.mode === "fixed" && (!brief.budget.amount || brief.budget.amount <= 0)) {
+    return void fieldError("budget-input",
+      "Введите сумму бюджета — либо выберите «Подскажите бюджет» или цель по OTS/показам.", { step: 4 });
   }
 
-  if (brief.budget.mode === "goal_ots") {
-    if (!brief.goal?.ots || brief.goal.ots <= 0) {
-      alert("Введите целевой OTS.");
-      return;
-    }
+  if (brief.budget.mode === "goal_ots" && (!brief.goal?.ots || brief.goal.ots <= 0)) {
+    return void fieldError("goal-ots", "Введите целевой OTS.", { step: 4 });
   }
 
-  if (brief.budget.mode === "goal_plays") {
-    if (!brief.goal?.plays || brief.goal.plays <= 0) {
-      alert("Введите целевое количество показов.");
-      return;
-    }
+  if (brief.budget.mode === "goal_plays" && (!brief.goal?.plays || brief.goal.plays <= 0)) {
+    return void fieldError("goal-plays", "Введите целевое количество показов.", { step: 4 });
   }
 
   const days = daysInclusive(brief.dates.start, brief.dates.end);
   if (!Number.isFinite(days) || days <= 0) {
-    alert("Выберите корректные даты начала и окончания.");
-    return;
+    return void fieldError("date-end",
+      "Дата окончания должна быть не раньше даты начала.", { step: 2 });
   }
 
   // ✅ schedule hours/day
@@ -3975,14 +4081,16 @@ async function onCalcClick() {
     hpdFixed = meta.avgHpd;
 
     if (!Number.isFinite(hpdFixed) || hpdFixed <= 0) {
-      alert("В weekly-графике не задано время вещания (0 часов).");
-      return;
+      return void fieldError("schedule-chips",
+        "В своём расписании не задано время вещания: включите хотя бы один день с ненулевым интервалом.",
+        { step: 2, box: true, anchor: "weekly-wrap" });
     }
   }
 
   if (!Number.isFinite(hpdFixed) || hpdFixed <= 0) {
-    alert("Проверь расписание.");
-    return;
+    return void fieldError("schedule-chips",
+      "Проверьте расписание: получилось 0 часов вещания в сутки.",
+      { step: 2, box: true });
   }
 
   const hpd = hpdFixed; // always use actual schedule hours; RECO_HOURS_PER_DAY was causing 12h vs real hours mismatch
@@ -4014,8 +4122,9 @@ async function onCalcClick() {
       : (brief.selection.address ? [brief.selection.address] : []);
 
     if (!addresses.length) {
-      alert("Введите хотя бы один адрес.");
-      setStatus(""); return;
+      setStatus("");
+      return void fieldError(document.querySelector(".planner-addr-input") || el("selection-extra"),
+        "Добавьте хотя бы один адрес — рядом с ними и будем подбирать экраны.", { step: 3 });
     }
 
     _geocodedPoints = [];
@@ -4044,8 +4153,9 @@ async function onCalcClick() {
     }
 
     if (!_geocodedPoints.length) {
-      alert("Ни один адрес не найден. Попробуй уточнить (город, улица, дом).");
-      setStatus(""); return;
+      setStatus("");
+      return void fieldError(document.querySelector(".planner-addr-input") || el("selection-extra"),
+        "Ни один адрес не найден. Уточните: город, улица, дом.", { step: 3 });
     }
     setStatus(`Геокодировано: ${_geocodedPoints.length} из ${addresses.length} адресов`);
     // Сохраняем для возможной выгрузки (как POI)
@@ -4162,8 +4272,9 @@ async function onCalcClick() {
       const points = _geocodedPoints || [];
 
       if (!points.length) {
-        alert("Ни один адрес не найден. Попробуй уточнить (город, улица, дом).");
-        setStatus(""); return;
+        setStatus("");
+        return void fieldError(document.querySelector(".planner-addr-input") || el("selection-extra"),
+          "Ни один адрес не найден. Уточните: город, улица, дом.", { step: 3 });
       }
 
       // Берём экраны в радиусе от ЛЮБОГО из найденных точек
@@ -4409,8 +4520,8 @@ async function onCalcClick() {
   }
 
   if (!prepared.length) {
-    alert("Не удалось подобрать экраны: по выбранным условиям не осталось доступных экранов.");
-    setStatus("");
+    setStatus("Не удалось подобрать экраны: по выбранным условиям не осталось доступных. " +
+              "Ослабьте фильтры — форматы, операторы, GRP, зону на карте — или расширьте географию.", true);
     return;
   }
 
@@ -4482,9 +4593,8 @@ async function onCalcClick() {
   } else if (brief.budget.mode === "goal_ots") {
     const totalOtsGoal = Number(brief.goal?.ots || 0);
     if (!Number.isFinite(totalOtsGoal) || totalOtsGoal <= 0) {
-      alert("Введите корректную цель OTS.");
       setStatus("");
-      return;
+      return void fieldError("goal-ots", "Введите целевой OTS больше нуля.", { step: 4 });
     }
 
     const res = computeGoalOtsPlan(prepared, totalOtsGoal, { minShare: 0.10, maxShare: 0.70 });
@@ -4506,9 +4616,8 @@ async function onCalcClick() {
   } else if (brief.budget.mode === "goal_plays") {
     const totalPlaysGoal = Number(brief.goal?.plays || 0);
     if (!Number.isFinite(totalPlaysGoal) || totalPlaysGoal <= 0) {
-      alert("Введите корректное количество показов.");
       setStatus("");
-      return;
+      return void fieldError("goal-plays", "Введите количество показов больше нуля.", { step: 4 });
     }
     // Distribute plays across regions proportionally to pool capacity
     const totalCapPlays = prepared.reduce((s, r) => s + Math.floor(SC_MAX * RECO_HOURS_PER_DAY * r.pool.length * days), 0);
@@ -5076,8 +5185,8 @@ async function onCalcClick() {
   }
 
   if (!chosenAll.length) {
-    alert("Не удалось подобрать экраны: по выбранным условиям не осталось доступных экранов.");
-    setStatus("");
+    setStatus("Не удалось подобрать экраны: по выбранным условиям не осталось доступных. " +
+              "Ослабьте фильтры — форматы, операторы, GRP, зону на карте — или расширьте географию.", true);
     return;
   }
 
@@ -6211,6 +6320,110 @@ function _calcHistoryKey() {
   const safe = normalizeKey(email).replace(/[^a-z0-9._@-]/gi, "_");
   return `planner_history_${safe}`;
 }
+
+// ============================================================================
+// ЧЕРНОВИК БРИФА
+// ----------------------------------------------------------------------------
+// Сборка брифа занимает десятки минут, а любая перезагрузка страницы стирала
+// всё: регионы, даты, форматы, разбивку бюджета по городам, нарисованную зону.
+// История расчётов страхует только после успешного «Рассчитать» — до него не
+// было ничего. Черновик пишется на каждое изменение (с дебаунсом) и предлагается
+// к восстановлению одной кнопкой, а не подставляется молча: осознанный «начать
+// с чистого листа» тоже сценарий.
+// ============================================================================
+const DRAFT_DEBOUNCE_MS = 800;
+let _draftTimer = null;
+let _draftRestoring = false;
+
+function _draftKey() {
+  const email = getDspUserEmail();
+  const safe = email ? normalizeKey(email).replace(/[^a-z0-9._@-]/gi, "_") : "anon";
+  return `planner_draft_${safe}`;
+}
+
+// В brief не попадают операторы, зона на карте, стороны экрана и форматы по
+// городам — они живут прямо в state. Сохраняем их рядом.
+function _draftExtras() {
+  return {
+    owners:  state.selectedOwners ? [...state.selectedOwners] : [],
+    polygon: state.polygonFilter || null,
+    sides:   state.selectedSides ? [...state.selectedSides] : [],
+    cityFormats: state.cityFormats
+      ? Object.fromEntries(Object.entries(state.cityFormats).map(([k, v]) => [k, [...v]]))
+      : null,
+  };
+}
+
+function saveDraft() {
+  if (_draftRestoring) return;
+  try {
+    const brief = buildBrief();
+    const hasRegions = (brief.geo?.regions || []).length > 0;
+    const hasGids    = (brief.selection?.manual_gids || []).length > 0;
+    // Пустую форму не сохраняем — иначе баннер вылезал бы на ровном месте.
+    if (!hasRegions && !hasGids && !brief.dates?.start) { clearDraft(); return; }
+    localStorage.setItem(_draftKey(), JSON.stringify({
+      v: 1,
+      ts: new Date().toISOString(),
+      brief,
+      extras: _draftExtras(),
+    }));
+  } catch (e) {
+    // Приватный режим или переполненное хранилище — не повод ронять виджет.
+    console.warn("[draft] не удалось сохранить:", e?.message || e);
+  }
+}
+
+function scheduleDraftSave() {
+  clearTimeout(_draftTimer);
+  _draftTimer = setTimeout(saveDraft, DRAFT_DEBOUNCE_MS);
+}
+
+function loadDraft() {
+  try {
+    const raw = localStorage.getItem(_draftKey());
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    return (d && d.v === 1 && d.brief) ? d : null;
+  } catch (e) { return null; }
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(_draftKey()); } catch (e) {}
+}
+
+async function restoreDraft(draft) {
+  if (!draft?.brief) return;
+  _draftRestoring = true;
+  try {
+    // Операторы/зону/стороны выставляем до брифа: renderFormats и превью пула
+    // внутри restoreBriefToUI считаются уже с учётом этих фильтров.
+    const ex = draft.extras || {};
+    if (Array.isArray(ex.owners))  state.selectedOwners = new Set(ex.owners);
+    if (Array.isArray(ex.sides))   state.selectedSides  = new Set(ex.sides);
+    state.polygonFilter = ex.polygon || null;
+    if (ex.cityFormats) {
+      state.cityFormats = {};
+      for (const [k, v] of Object.entries(ex.cityFormats)) state.cityFormats[k] = new Set(v);
+    }
+
+    restoreBriefToUI(draft.brief);
+
+    if (typeof window.renderOwners === "function") window.renderOwners();
+    window.dispatchEvent(new CustomEvent("planner:filters-changed"));
+    window.dispatchEvent(new CustomEvent("planner:polygon-changed"));
+  } finally {
+    // Восстановление рассылает те же события, что и правки пользователя;
+    // снимаем флаг следующим тиком, чтобы они не перезаписали черновик.
+    setTimeout(() => { _draftRestoring = false; }, 0);
+  }
+}
+
+window.PLANNER.saveDraft    = saveDraft;
+window.PLANNER.loadDraft    = loadDraft;
+window.PLANNER.clearDraft   = clearDraft;
+window.PLANNER.restoreDraft = restoreDraft;
+window.PLANNER.scheduleDraftSave = scheduleDraftSave;
 
 function saveCalcToHistory() {
   const key = _calcHistoryKey();
@@ -7529,7 +7742,7 @@ function downloadMapHtml() {
   const calc = window.PLANNER?.lastCalc;
   const screens = state.lastChosen || calc?.chosen || [];
   const pts = screens.filter(s => Number.isFinite(s.lat) && Number.isFinite(s.lon));
-  if (!pts.length) { alert("Нет экранов с координатами"); return; }
+  if (!pts.length) { toast("Ни у одного экрана нет координат — карту не построить."); return; }
 
   const regions = (calc?.brief?.geo?.regions || calc?.brief?.selectedRegions || state.selectedRegions || []);
   const regionLabel = regions.join(", ") || "";

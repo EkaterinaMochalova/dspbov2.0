@@ -994,6 +994,35 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .calc-history-date{ font-size:11px; color:#888; margin-bottom:2px; }
   #planner-widget .calc-history-title{ font-weight:600; color:#0b1220; }
   #planner-widget .calc-history-meta{ font-size:11px; color:#667085; margin-top:2px; }
+
+  /* ===== ВАЛИДАЦИЯ ПОЛЕЙ (вместо alert) ===== */
+  #planner-widget .fld-invalid,
+  #planner-widget .fld-invalid:focus{
+    border-color:#e84444 !important;
+    box-shadow:0 0 0 3px rgba(232,68,68,.12) !important;
+  }
+  /* Подсветка для блоков без собственной рамки (чипы расписания, список регионов) */
+  #planner-widget .fld-invalid-box{
+    border-radius:12px;
+    box-shadow:0 0 0 2px #e84444, 0 0 0 6px rgba(232,68,68,.12);
+  }
+  #planner-widget .fld-err{
+    display:flex; align-items:flex-start; gap:6px;
+    margin-top:6px; font-size:12px; line-height:1.4; color:#c62828;
+  }
+  #planner-widget .fld-err::before{ content:"!"; flex-shrink:0;
+    width:15px; height:15px; border-radius:50%; background:#e84444; color:#fff;
+    font-size:10px; font-weight:700; line-height:15px; text-align:center; }
+
+  /* ===== ТОСТ ===== */
+  #planner-toast{
+    position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(8px);
+    z-index:100000; max-width:min(440px, 92vw);
+    background:#0b1220; color:#fff; padding:11px 18px; border-radius:12px;
+    font-size:13px; line-height:1.45; box-shadow:0 10px 34px rgba(11,18,32,.32);
+    opacity:0; pointer-events:none; transition:opacity .18s, transform .18s;
+  }
+  #planner-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
 `;
   document.head.appendChild(style);
 
@@ -2094,26 +2123,37 @@ window.PLANNER_ASSET_BASE = (function () {
   window.addEventListener("planner:screens-ready", updateNext1Btn);
   setInterval(updateNext1Btn, 1000);
 
+  const _err  = (id, msg, opts) => window.PLANNER?.fieldError?.(id, msg, opts) ?? false;
+  const _note = (msg) => window.PLANNER?.toast?.(msg) ?? false;
+
   el("wiz-next-1")?.addEventListener("click", () => {
     const gidsBlockEl = el("geo-gids-block");
     const isGidMode   = gidsBlockEl && gidsBlockEl.style.display !== "none";
     if (isGidMode) {
-      if (!el("manual-gids")?.value?.trim()) return alert("Введите хотя бы один GID экрана.");
+      if (!el("manual-gids")?.value?.trim()) {
+        return _err("manual-gids", "Вставьте хотя бы один GID экрана — по одному на строку или через запятую.");
+      }
     } else {
       const regions = window.PLANNER_UI.getSelectedRegionsArr();
-      if(!regions.length) return alert("Выберите регион, чтобы продолжить.");
+      if (!regions.length) {
+        return _err("city-search", "Выберите хотя бы один регион — начните вводить название или нажмите «Выбрать все».");
+      }
     }
-    if(window.DSP_AUTH_ENABLED && !window.PLANNER?.state?.dspInventoryWarmupDone){
-      return alert("Инвентарь ещё загружается, подождите немного.");
+    if (window.DSP_AUTH_ENABLED && !window.PLANNER?.state?.dspInventoryWarmupDone) {
+      // Это состояние, а не ошибка ввода: править нечего, надо просто подождать.
+      return _note("Инвентарь ещё загружается — секунду.");
     }
     window.setStep(2);
   });
 
   // wiz-step-2 (Период, шаг 2) → проверяем даты → Настройки (шаг 3)
   el("wiz-next-2")?.addEventListener("click", () => {
-    if(!hasDates()) return alert("Выберите даты начала и окончания.");
-    if(window.PLANNER_UI?.validateStep2Schedule && !window.PLANNER_UI.validateStep2Schedule()){
-      return alert("Проверьте рваный график: включите хотя бы один день и задайте корректные интервалы времени.");
+    if (!el("date-start")?.value) return _err("date-start", "Укажите дату начала размещения.");
+    if (!el("date-end")?.value)   return _err("date-end",   "Укажите дату окончания размещения.");
+    if (window.PLANNER_UI?.validateStep2Schedule && !window.PLANNER_UI.validateStep2Schedule()) {
+      return _err("schedule-chips",
+        "В своём расписании включите хотя бы один день и задайте корректные интервалы времени.",
+        { box: true, anchor: "weekly-wrap" });
     }
     window.setStep(3);
   });
@@ -2480,9 +2520,13 @@ window.PLANNER_ASSET_BASE = (function () {
     const calcBtn = el("calc-btn");
     const hint    = el("calc-blocked-hint");
     if(calcBtn){
+      // Пока идёт расчёт — кнопка заблокирована независимо от валидации.
+      // Это второе место, управляющее кнопкой (первое — renderProgress в
+      // planner.js); без проверки флага оно снимало бы замок на полпути.
+      const busy = !!window.PLANNER?.state?._calcRunning;
       const blocked = (p.done !== 4);
-      calcBtn.disabled = blocked;
-      calcBtn.style.opacity = blocked ? ".55" : "1";
+      calcBtn.disabled = blocked || busy;
+      if (!busy) calcBtn.style.opacity = blocked ? ".55" : "1";
 
       if(hint){
         if(blocked){
@@ -4112,7 +4156,7 @@ window.PLANNER_ASSET_BASE = (function () {
     }
 
     if (!candidates.length) {
-      alert("Нет доступных экранов того же формата для замены.");
+      window.PLANNER?.toast?.("Нет свободных экранов того же формата для замены.");
       return;
     }
 
@@ -4950,7 +4994,8 @@ window.PLANNER_ASSET_BASE = (function () {
   }
 
   function showOwnerInfo(owner, count){
-    alert(\`\${owner}\\nЭкраны в выбранных регионах: \${count.toLocaleString("ru-RU")}\`);
+    // Справка, а не ошибка — модальное окно здесь было явно избыточным.
+    window.PLANNER?.toast?.(\`\${owner} — \${count.toLocaleString("ru-RU")} экр. в выбранных регионах\`);
   }
 
   function renderOwners(){
@@ -6516,7 +6561,7 @@ window.PLANNER_ASSET_BASE = (function () {
       if (filtered.length > 0) pool = filtered;
     }
 
-    if (!pool.length) return alert("\\u041d\\u0435\\u0442 \\u044d\\u043a\\u0440\\u0430\\u043d\\u043e\\u0432 \\u0432 \\u043f\\u0443\\u043b\\u0435.");
+    if (!pool.length) return window.PLANNER?.toast?.("\\u0412 \\u043f\\u0443\\u043b\\u0435 \\u043d\\u0435\\u0442 \\u044d\\u043a\\u0440\\u0430\\u043d\\u043e\\u0432 \\u2014 \\u0441\\u043a\\u0430\\u0447\\u0438\\u0432\\u0430\\u0442\\u044c \\u043d\\u0435\\u0447\\u0435\\u0433\\u043e.");
 
     const lines = ["GID,\\u0413\\u043e\\u0440\\u043e\\u0434,\\u041e\\u043f\\u0435\\u0440\\u0430\\u0442\\u043e\\u0440,\\u0410\\u0434\\u0440\\u0435\\u0441,\\u0424\\u043e\\u0440\\u043c\\u0430\\u0442"];
     pool.forEach(s => {
@@ -6536,6 +6581,101 @@ window.PLANNER_ASSET_BASE = (function () {
     a.click();
     URL.revokeObjectURL(url);
   });
+})();
+`);
+
+  // Script block: черновик брифа (автосохранение + предложение восстановить)
+  runScript(`
+(function(){
+  function el(id){ return document.getElementById(id); }
+  const P = () => window.PLANNER;
+
+  // ---- автосохранение ----
+  // Слушаем всё, что происходит внутри виджета: прямые правки полей плюс
+  // события, которыми обмениваются блоки (форматы, операторы и зона на карте
+  // не рождают input/change на видимых контролах).
+  const widget = el("planner-widget");
+  if (widget) {
+    widget.addEventListener("input",  () => P()?.scheduleDraftSave?.());
+    widget.addEventListener("change", () => P()?.scheduleDraftSave?.());
+  }
+  ["planner:filters-changed", "planner:polygon-changed", "planner:calc-done", "planner:pool-updated"]
+    .forEach(ev => window.addEventListener(ev, () => P()?.scheduleDraftSave?.()));
+
+  // ---- баннер восстановления ----
+  function fmtWhen(iso){
+    const d = new Date(iso);
+    if (isNaN(d)) return "";
+    const now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    if (sameDay) return "сегодня в " + hh + ":" + mm;
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mo = String(d.getMonth() + 1).padStart(2, "0");
+    return dd + "." + mo + " в " + hh + ":" + mm;
+  }
+
+  function describe(brief){
+    const parts = [];
+    const regions = brief?.geo?.regions || [];
+    if (regions.length === 1) parts.push(regions[0]);
+    else if (regions.length > 1) parts.push(regions[0] + " и ещё " + (regions.length - 1));
+    const gids = brief?.selection?.manual_gids || [];
+    if (!regions.length && gids.length) parts.push(gids.length + " GID-ов");
+    if (brief?.dates?.start && brief?.dates?.end) {
+      const f = s => s.split("-").reverse().join(".");
+      parts.push(f(brief.dates.start) + " \\u2014 " + f(brief.dates.end));
+    }
+    return parts.join(", ");
+  }
+
+  let shown = false;
+  function offerRestore(){
+    if (shown) return;
+    const draft = P()?.loadDraft?.();
+    if (!draft) return;
+    // Если пользователь уже что-то выбрал сам, не лезем со старым черновиком.
+    if ((P()?.state?.selectedRegions || []).length) return;
+    shown = true;
+
+    const host = el("wiz-steps");
+    if (!host || !host.parentNode) return;
+
+    const bar = document.createElement("div");
+    bar.id = "planner-draft-bar";
+    bar.style.cssText =
+      "display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;" +
+      "padding:10px 14px;background:#f4f1ff;border:1px solid #d9cfff;border-radius:12px;" +
+      "font-size:13px;color:#3a2bb5;";
+    const what = describe(draft.brief);
+    bar.innerHTML =
+      '<span style="font-size:15px;">\\u21BA</span>' +
+      '<span style="flex:1;min-width:180px;">Есть незавершённый бриф от ' + fmtWhen(draft.ts) +
+        (what ? ' <span style="color:#6b5bd0;">(' + what.replace(/</g, "&lt;") + ')</span>' : '') +
+      '</span>' +
+      '<button type="button" id="draft-restore" style="padding:6px 14px;border:none;border-radius:8px;' +
+        'background:#5b3ef5;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Восстановить</button>' +
+      '<button type="button" id="draft-discard" style="padding:6px 12px;border:1px solid #d9cfff;' +
+        'border-radius:8px;background:#fff;color:#6b5bd0;font-size:12px;cursor:pointer;">Начать заново</button>';
+
+    host.parentNode.insertBefore(bar, host);
+
+    el("draft-restore").addEventListener("click", async () => {
+      const btn = el("draft-restore");
+      btn.disabled = true; btn.textContent = "Восстанавливаю\\u2026";
+      try { await P()?.restoreDraft?.(draft); } catch(e){ console.warn("[draft]", e); }
+      bar.remove();
+    });
+    el("draft-discard").addEventListener("click", () => {
+      P()?.clearDraft?.();
+      bar.remove();
+    });
+  }
+
+  // Показываем, когда инвентарь уже приехал: восстановление дёргает
+  // renderFormats и превью пула, а им нужны загруженные экраны.
+  window.addEventListener("planner:screens-ready", () => setTimeout(offerRestore, 0));
 })();
 `);
 
