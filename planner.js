@@ -27,8 +27,6 @@ console.log("planner.js loaded");
 window.PLANNER = window.PLANNER || {};
 
 const REF = "planner";
-const SCREENS_CSV_URL =
-  PLANNER_CDN_BASE + "inventories_sync.csv";
 
 const TIERS_JSON_URL =
   PLANNER_CDN_BASE + "tiers_v1.json";
@@ -1483,138 +1481,6 @@ function renderRegionSuggestions(q) {
   });
 }
 
-// ===== Data load =====
-async function loadScreens() {
-  setStatus("Загружаю список экранов…");
-  console.log("[screens] url:", SCREENS_CSV_URL);
-
-  const res = await fetch(SCREENS_CSV_URL, { cache: "force-cache" });
-  console.log("[screens] status:", res.status, res.statusText);
-  if (!res.ok) throw new Error("Не удалось загрузить CSV: " + res.status);
-
-  const text = await res.text();
-  const rows = parseCSV(text);
-
-  state.screens = rows.map(r => {
-    const city = String(r.city ?? r.City ?? r.CITY ?? "").trim();
-    const format = String(r.format ?? r.Format ?? r.FORMAT ?? "").trim();
-    const address = String(r.address ?? r.Address ?? r.ADDRESS ?? "").trim();
-
-    const screenId =
-      r.screen_id ?? r.screenId ??
-      r.inventory_id ?? r.inventoryId ??
-      r.id ?? "";
-
-    return {
-      ...r,
-      screen_id: String(screenId).trim(),
-      city,
-      format,
-      address,
-      minBid: toNumber(r.minBid ?? r.min_bid ?? r.MINBID ?? r.minbid),
-      otsBid: toNumber(r.otsBid ?? r.ots_bid ?? r.cpm ?? r.CPM ?? r.ots_cpm),
-      ots: toNumber(r.ots ?? r.OTS),
-      grp: toNumber(r.grp ?? r.GRP),
-      lat: toNumber(r.lat ?? r.Lat ?? r.LAT),
-      lon: toNumber(r.lon ?? r.Lon ?? r.LON ?? r.lng ?? r.Lng ?? r.LNG)
-    };
-  });
-
-  // Interpolate missing OTS (ots=0 or NaN) using average OTS of screens
-  // with the same format. This prevents zero-OTS screens from dragging
-  // down the pool average when some screens simply lack measurement data.
-  // Exception: Магнит screens always keep OTS=0 (their data is unreliable).
-  const isMagnitScreen = s => {
-    const o = String(s.owner ?? "").toLowerCase();
-    return o.includes("магнит") || _ZERO_OTS_OWNERS.some(k => o.includes(k));
-  };
-  const otsByFormat = {};
-  for (const s of state.screens) {
-    if (isMagnitScreen(s)) continue; // exclude from average computation
-    if (Number.isFinite(s.ots) && s.ots > 0 && s.format) {
-      if (!otsByFormat[s.format]) otsByFormat[s.format] = { sum: 0, cnt: 0 };
-      otsByFormat[s.format].sum += s.ots;
-      otsByFormat[s.format].cnt++;
-    }
-  }
-  for (const s of state.screens) {
-    if (isMagnitScreen(s)) { s.ots = 0; s._otsInterpolated = false; continue; } // Магнит: OTS = 0, no interpolation
-    if (!(Number.isFinite(s.ots) && s.ots > 0) && s.format && otsByFormat[s.format]) {
-      s.ots = otsByFormat[s.format].sum / otsByFormat[s.format].cnt;
-      s._otsInterpolated = true; // mark: real measurement may arrive later from forecast API
-    } else {
-      s._otsInterpolated = false; // has real OTS — don't overwrite
-    }
-  }
-
-  // ── OTS cap: убираем аномально высокие значения ──────────────────────────
-  // Данные по выбросам на основе анализа инвентаря (percentile 99 + запас):
-  // BILLBOARD  p99=125  → cap 150   (Russ Outdoor ЮВХ выбросы до 6061)
-  // SUPERSITE  p99=196  → cap 200
-  // OTHER               → cap 100
-  // MEDIAFACADE p99≈1645 → cap 2000  (фасады — высокий OTS норм, но 2224+ лишнее)
-  const OTS_CAPS = {
-    BILLBOARD:   150,
-    SUPERSITE:   200,
-    OTHER:       100,
-    MEDIAFACADE: 2000,
-  };
-  for (const s of state.screens) {
-    const cap = OTS_CAPS[s.format];
-    if (cap && Number.isFinite(s.ots) && s.ots > cap) {
-      s.ots = cap;
-    }
-  }
-
-  state.citiesAll = [...new Set(state.screens.map(s => s.city).filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b, "ru"));
-
-  state.formatsAll = [...new Set(state.screens.map(s => s.format).filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b));
-
-  state.regionsByCity = {};
-  state.regionsAll = [];
-
-  for (const c of state.citiesAll) {
-    const reg = getRegionForCity(c);
-    state.regionsByCity[c] = reg;
-    if (!state.regionsAll.includes(reg)) state.regionsAll.push(reg);
-  }
-
-  state.ownersAll = [...new Set(
-  state.screens
-    .map(s => String(s.owner ?? s.Owner ?? "").trim())
-    .filter(Boolean)
-)].sort((a,b) => a.localeCompare(b, "ru"));
-  state.regionsAll.sort((a, b) => a.localeCompare(b, "ru"));
-
-  // ✅ регионы готовы — снимаем блокировку
-  setRegionsUIReady(true);
-
-  // проставляем region каждому экрану
-  for (const s of state.screens) {
-    s.region = state.regionsByCity[s.city] || "Не назначено";
-  }
-
-  renderFormats();
-  renderSelectedRegions();
-  renderOwners();
-
-  setStatus(
-    `Всего доступно: ` +
-    `Экранов: ${state.screens.length}. ` +
-    `Городов: ${state.citiesAll.length}. ` +
-    `Форматов: ${state.formatsAll.length}. ` +
-    `Регионов: ${state.regionsAll.length}.`
-  );
-
-  window.PLANNER.ready = true;
-  window.dispatchEvent(
-    new CustomEvent("planner:screens-ready", {
-      detail: { count: state.screens.length }
-    })
-  );
-}
 
 function renderOwners() {
   // Карточки операторов рендерит widget.html (own-card).
@@ -7372,8 +7238,11 @@ async function startPlanner() {
       }
     }
   } else {
-    // Fallback: CSV
-    await loadScreens();
+    // Режим без авторизации больше не поддерживается: снимок инвентаря
+    // inventories_sync.csv удалён как устаревший — он был от 21.06.2026 и
+    // отставал от живого инвентаря DSP примерно на 8 тысяч экранов.
+    setStatus("Планировщик работает только с авторизацией в DSP.");
+    throw new Error("DSP_AUTH_ENABLED=false не поддерживается: снимок инвентаря удалён");
   }
 }
 
@@ -7471,7 +7340,6 @@ function downloadMapHtml() {
 // ===== EXPORTS =====
 Object.assign(window.PLANNER, {
   state,
-  loadScreens,
   startPlanner,
   loadCityRegions,
   bootPlanner,

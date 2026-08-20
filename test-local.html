@@ -35,7 +35,8 @@
 
 <script src="./widget-init.js"></script>
 <script>
-  window.DSP_AUTH_ENABLED = true;
+  // ?auth=0 в адресе — проверить поведение без авторизации DSP
+  window.DSP_AUTH_ENABLED = new URLSearchParams(location.search).get("auth") !== "0";
   window.YANDEX_MAPS_KEY = "057eda18-f07c-4338-aeec-ff684ca6703b";
 </script>
 
