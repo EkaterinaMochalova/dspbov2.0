@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Планировщик — локальный стенд</title>
+
+  <!-- Ниже воспроизведена ровно та обвязка, что стоит на странице Тильды -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    #stand-bar {
+      position: sticky; top: 0; z-index: 100000;
+      background: #1e293b; color: #e2e8f0;
+      padding: 8px 14px; font-size: 12px; font-family: ui-monospace, monospace;
+      display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+    }
+    #stand-bar b { color: #fff; }
+    #stand-bar .ok  { color: #4ade80; }
+    #stand-bar .err { color: #f87171; }
+  </style>
+</head>
+<body>
+
+<div id="stand-bar">
+  <b>ЛОКАЛЬНЫЙ СТЕНД</b>
+  <span>база: <span id="stand-base">—</span></span>
+  <span>загружено: <span id="stand-loaded">—</span></span>
+  <span id="stand-errors"></span>
+</div>
+
+<div id="planner-root"></div>
+
+<script src="./widget-init.js"></script>
+<script>
+  window.DSP_AUTH_ENABLED = true;
+  window.YANDEX_MAPS_KEY = "057eda18-f07c-4338-aeec-ff684ca6703b";
+</script>
+
+<!-- Диагностика стенда: показывает, что и откуда реально подтянулось -->
+<script>
+(function () {
+  var errors = [];
+  window.addEventListener('error', function (e) {
+    if (e.target && e.target.tagName === 'SCRIPT') errors.push('script: ' + e.target.src);
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) {
+    errors.push('promise: ' + (e.reason && e.reason.message || e.reason));
+  });
+
+  var WANT = ['geo.js', 'planner.js', 'inventories_sync.csv', 'tiers_v1.json',
+              'city_regions.json', 'affinity_data.json'];
+
+  setInterval(function () {
+    document.getElementById('stand-base').textContent =
+      window.PLANNER_ASSET_BASE === '' ? '(пусто!)' : (window.PLANNER_ASSET_BASE || '—');
+
+    var seen = performance.getEntriesByType('resource').map(function (r) { return r.name; });
+    var got = WANT.filter(function (w) {
+      return seen.some(function (n) { return n.indexOf(w) !== -1; });
+    });
+    document.getElementById('stand-loaded').innerHTML =
+      '<span class="' + (got.length === WANT.length ? 'ok' : '') + '">' +
+      got.length + '/' + WANT.length + '</span> — ' + got.join(', ');
+
+    document.getElementById('stand-errors').innerHTML =
+      errors.length ? '<span class="err">ошибок: ' + errors.length + ' — ' + errors[0] + '</span>' : '';
+  }, 500);
+})();
+</script>
+
+</body>
+</html>

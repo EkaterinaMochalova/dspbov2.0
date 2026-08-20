@@ -1,6 +1,26 @@
 // DSP auth enabled by default (set false before loading this script to disable)
 if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
 
+// Где лежат собственные файлы виджета (geo.js, planner.js, *.csv, *.json).
+// Вычисляется из адреса самого этого скрипта, поэтому виджет переносим:
+// достаточно поменять один URL в Тильде — остальное подтянется само.
+// Чтобы задать базу вручную (локальная отладка), выставьте
+// window.PLANNER_ASSET_BASE до подключения этого файла.
+window.PLANNER_ASSET_BASE = (function () {
+  var override = window.PLANNER_ASSET_BASE;
+  if (override) {
+    override = String(override);
+    return override.charAt(override.length - 1) === "/" ? override : override + "/";
+  }
+  var src = (document.currentScript && document.currentScript.src) || "";
+  var i = src.indexOf("widget-init.js");
+  if (i < 0) {
+    console.error("[widget-init] не удалось определить базовый URL виджета");
+    return "";
+  }
+  return src.slice(0, i);
+})();
+
 (async function() {
   const root = document.getElementById("planner-root");
   if (!root) { console.error("[widget-init] #planner-root not found"); return; }
@@ -977,8 +997,8 @@ if (window.DSP_AUTH_ENABLED === undefined) window.DSP_AUTH_ENABLED = true;
   await loadScript("https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js");
   await loadScript("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js");
   await loadScript("https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js");
-  await loadScript("https://rawcdn.githack.com/EkaterinaMochalova/dspbov2.0/e38e8d05a826dc5b94b8eccd28fbc19559bcb9dc/geo.js");
-  await loadScript("https://rawcdn.githack.com/EkaterinaMochalova/dspbov2.0/763fa1929e555395afeb3c678d7c4262d9d86d4b/planner.js");
+  await loadScript(window.PLANNER_ASSET_BASE + "geo.js");
+  await loadScript(window.PLANNER_ASSET_BASE + "planner.js");
 
   // 4. Inject HTML markup into planner-root
   root.innerHTML = `<!-- ===================== PLANNER WIDGET (CLEAN, SINGLE-SOURCE, NO DUPLICATES) ===================== -->

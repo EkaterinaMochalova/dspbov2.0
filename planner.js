@@ -1,5 +1,6 @@
 const PLANNER_CDN_BASE = (() => {
   try {
+    if (window.PLANNER_ASSET_BASE) return window.PLANNER_ASSET_BASE;
     const src = document.currentScript?.src || '';
     return src.replace(/\/planner\.js.*$/, '/');
   } catch(e) { return ''; }
@@ -27,14 +28,14 @@ window.PLANNER = window.PLANNER || {};
 
 const REF = "planner";
 const SCREENS_CSV_URL =
-  "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@8ee9a99e0c35ce605d736b69e049edd975e1528f/inventories_sync.csv";
+  PLANNER_CDN_BASE + "inventories_sync.csv";
 
 const TIERS_JSON_URL =
-  "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@8684fb51e3081987ae494eaaf5bacbd7b5e47160/tiers_v1.json";
+  PLANNER_CDN_BASE + "tiers_v1.json";
 
 // ===== CITY -> REGION =====
 const CITY_REGIONS_URL =
-  "https://cdn.jsdelivr.net/gh/EkaterinaMochalova/dspbov2.0@f6f96a16980cda4d7165e692526ef08f2cd0c22e/city_regions.json";
+  PLANNER_CDN_BASE + "city_regions.json";
 
 // ===== Labels =====
 const FORMAT_LABELS = {
