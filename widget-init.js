@@ -6599,12 +6599,35 @@ window.PLANNER_ASSET_BASE = (function () {
   function showSkeleton() {
     sums.forEach(n => { n.classList.add("rtb-skel"); n.textContent = "0"; });
   }
+  // \u041f\u043e\u0434\u043f\u0438\u0441\u044c \u043f\u0440\u043e \u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a \u0446\u0438\u0444\u0440: \u0440\u0430\u043d\u044c\u0448\u0435 \u0440\u0435\u043a\u043e\u043c\u0435\u043d\u0434\u0430\u0446\u0438\u044f \u043f\u0440\u0438\u0445\u043e\u0434\u0438\u043b\u0430 \u0438\u0437 \u0441\u0442\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u043e\u0433\u043e
+  // \u0441\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a\u0430 \u0438 \u0432\u044b\u0433\u043b\u044f\u0434\u0435\u043b\u0430 \u043a\u0430\u043a \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442 \u0440\u0430\u0441\u0447\u0451\u0442\u0430. \u041f\u0443\u0441\u0442\u044c \u0431\u0443\u0434\u0435\u0442 \u0432\u0438\u0434\u043d\u043e, \u043e\u0442\u043a\u0443\u0434\u0430 \u043e\u043d\u0430.
+  function sourceNote(){
+    let n = el("reco-tiers-source");
+    if (!n) {
+      const host = el("reco-tier-btns");
+      if (!host) return null;
+      n = document.createElement("div");
+      n.id = "reco-tiers-source";
+      n.style.cssText = "margin-top:8px;font-size:11px;color:#98a2b3;line-height:1.45;";
+      host.parentNode.insertBefore(n, host.nextSibling);
+    }
+    return n;
+  }
+
   function showValues(tiers) {
     sums.forEach(n => {
       n.classList.remove("rtb-skel");
       const v = tiers ? Number(tiers[n.dataset.sum]) : NaN;
       n.textContent = (Number.isFinite(v) && v > 0) ? fmtMoney(v) : "\u2014";
     });
+    const note = sourceNote();
+    if (note) {
+      note.textContent = tiers
+        ? "\u041e\u0446\u0435\u043d\u043a\u0430 \u043f\u043e \u043e\u0431\u044a\u0451\u043c\u0443 \u0438\u043d\u0432\u0435\u043d\u0442\u0430\u0440\u044f \u0432 \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u044b\u0445 \u0440\u0435\u0433\u0438\u043e\u043d\u0430\u0445 ("
+          + (window.PLANNER?.getTiersSourceLabel?.() || "\u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a \u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u0435\u043d")
+          + "), \u0441\u0432\u0435\u0440\u0445\u0443 \u043e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0430 \u0451\u043c\u043a\u043e\u0441\u0442\u044c\u044e \u0440\u0430\u0437\u043c\u0435\u0449\u0435\u043d\u0438\u044f \u0437\u0430 \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u044b\u0439 \u043f\u0435\u0440\u0438\u043e\u0434."
+        : "";
+    }
   }
 
   function recompute(force) {

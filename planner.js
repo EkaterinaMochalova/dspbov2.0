@@ -1838,12 +1838,57 @@ async function loadTiers() {
   }
 }
 
-// now name = REGION
-function getTierForGeo(name) {
-  const key = String(name || "").trim();
-  const t = window.PLANNER?.tiers?.[key];
-  return (t === "M" || t === "SP" || t === "A" || t === "B" || t === "C" || t === "D") ? t : "C";
+// Форматы, по числу которых регион относят к тиру (правило из tiers_v1.json).
+const TIER_COUNT_FORMATS = new Set(["BILLBOARD", "SUPERSITE", "CITY_BOARD"]);
+
+// Порог тира по количеству щитов в регионе — то же правило, что зашито в
+// tiers_v1.json ("A: >=300, B: 100..299, C: 50..99, D: <50").
+function tierFromBillboardCount(n) {
+  if (n >= 300) return "A";
+  if (n >= 100) return "B";
+  if (n >= 50)  return "C";
+  return "D";
 }
+
+// Тир региона. По возможности считается по живому инвентарю DSP, который уже
+// загружен на странице; статический tiers_v1.json остаётся только запасным
+// вариантом. Раньше тир брался исключительно из этого файла — снимка от
+// 06.01.2026, собранного из давно удалённого inventories_sync.csv, — и любой
+// регион, которого в нём нет (а там 80 из 751 города), молча получал тир C.
+//
+// regionScreens — все экраны региона до фильтров; если не переданы, работает
+// прежняя логика по файлу.
+function getTierForGeo(name, regionScreens) {
+  const key = String(name || "").trim();
+  const fromFile = window.PLANNER?.tiers?.[key];
+
+  // Мегаполисы заданы в правиле явно, а не порогом по количеству, — их
+  // считать по инвентарю нельзя (Москва по числу щитов попала бы в обычный A).
+  if (fromFile === "M" || fromFile === "SP") return fromFile;
+
+  if (Array.isArray(regionScreens) && regionScreens.length) {
+    let n = 0;
+    for (const s of regionScreens) {
+      if (TIER_COUNT_FORMATS.has(String(s.format || "").trim())) n++;
+    }
+    return tierFromBillboardCount(n);
+  }
+
+  const valid = (fromFile === "A" || fromFile === "B" || fromFile === "C" || fromFile === "D");
+  return valid ? fromFile : "C";
+}
+
+// Откуда взялись тиры в последнем расчёте рекомендации — для подписи под
+// кнопками бюджета, чтобы источник цифр был виден, а не подразумевался.
+function getTiersSourceLabel() {
+  const live = (Array.isArray(state.screensAll) && state.screensAll.length > 0);
+  if (live) return "по живому инвентарю DSP";
+  const gen = window.PLANNER?.tiersMeta?.generated_at;
+  if (!gen) return "по справочнику регионов";
+  const d = String(gen).slice(0, 10).split("-");
+  return d.length === 3 ? `по справочнику от ${d[2]}.${d[1]}.${d[0]}` : "по справочнику регионов";
+}
+window.PLANNER.getTiersSourceLabel = getTiersSourceLabel;
 
 // ===== Helpers =====
 function getLatLon(s) {
@@ -4022,9 +4067,13 @@ async function onCalcClick() {
     ? state.screens
     : (Array.isArray(state.screensAll) ? state.screensAll : []);
 
+  // Счётчики пробелов в данных ВК — копятся по всем регионам и выдаются одним
+  // предупреждением после цикла, чтобы при полусотне регионов не завалить
+  // сводку одинаковыми строками.
+  let _vkBase = 0, _vkNoData = 0, _vkNoDataDropped = 0;
+
   for (const region of regions) {
     const regionDisplay = region === "__gid_mode__" ? "По GID-списку" : region;
-    const tier = getTierForGeo(region);
     const selectedNorm = normalizeGeoName(region);
     // __gid_mode__: no region filter — GIDs act as the sole selector.
     // Always use screensAll (full inventory) to avoid stale state.screens from a prior session.
@@ -4044,6 +4093,11 @@ async function onCalcClick() {
             (cn && (cn.includes(selectedNorm) || selectedNorm.includes(cn)))
           );
         });
+
+    // Тир считаем по всему инвентарю региона — до фильтров по форматам,
+    // операторам и зоне. Иначе выбор одного формата ронял бы регион в младший
+    // тир и занижал и рекомендацию бюджета, и его долю при распределении.
+    const tier = getTierForGeo(region, pool);
 
     if (!pool.length) {
       console.warn("[DSP] empty pool at region step", {
@@ -4219,15 +4273,24 @@ async function onCalcClick() {
         const keepN = Math.max(1, Math.ceil(before * topPct));
         pool = withScore.slice(0, keepN).map(x => x.s);
         setStatus(`Аудитория: топ ${Math.round(topPct * 100)}% → ${pool.length} из ${before}`);
-        // В GID-режиме предупреждаем отдельно: экраны без данных ВК получают
-        // score = 0 и отбрасываются первыми, т.е. фильтр может выкинуть часть
-        // введённого списка — пользователь должен это видеть.
+
+        // Экраны без данных ВК получают score = 0 и уходят в хвост сортировки,
+        // то есть отсеиваются первыми — не из-за низкого аффинити, а из-за
+        // пробелов в данных. Копим по всем регионам (см. итог после цикла).
+        _vkBase += before;
+        _vkNoData += noVkData;
+        if (noVkData > 0) {
+          _vkNoDataDropped += withScore.slice(keepN)
+            .reduce((n, x) => n + (state.affinityMap.get(_screenIdOf(x.s)) ? 0 : 1), 0);
+        }
+
+        // В GID-режиме дополнительно показываем срез по региону: там фильтр
+        // сужает введённый пользователем список, и это надо видеть поимённо.
         if (_isManualMode) {
           const _where = region === "__gid_mode__" ? "" : ` в «${regionDisplay}»`;
           warnings.push(
             `ℹ️ Фильтр ВК${_where}: из ${before} экранов GID-списка оставлено ${pool.length} ` +
-            `(топ ${Math.round(topPct * 100)}% по [${segs.join(", ")}])` +
-            (noVkData > 0 ? `; у ${noVkData} экр. нет данных ВК — они отбираются последними.` : ".")
+            `(топ ${Math.round(topPct * 100)}% по [${segs.join(", ")}]).`
           );
         }
         if (!pool.length) {
@@ -4235,6 +4298,10 @@ async function onCalcClick() {
             note: `аффинити-фильтр: нет экранов в топ ${Math.round(topPct * 100)}% по [${segs.join(", ")}]` });
           continue;
         }
+      } else {
+        // Сюда попасть можно, только если данные ВК не загрузились. Молчать
+        // нельзя: пул окажется шире запрошенного, а причина будет неочевидна.
+        warnings.push("⚠️ Фильтр «Аудитория VK» не применён: данные ВК не загрузились. Отбор идёт по всему инвентарю.");
       }
     }
 
@@ -4326,6 +4393,21 @@ async function onCalcClick() {
     });
   }
 
+  // Итог по пробелам в данных ВК — один раз на весь расчёт.
+  // Без этого пользователь видел «оставлено 10%» и не знал, что часть отсева
+  // произошла не по аффинити, а потому что по этим экранам данных ВК просто нет.
+  if (_vkNoData > 0) {
+    const pct = Math.round(_vkNoData / Math.max(1, _vkBase) * 100);
+    warnings.push(
+      `⚠️ Данные ВК есть не по всем экранам: их нет у ${_vkNoData.toLocaleString("ru-RU")} из ` +
+      `${_vkBase.toLocaleString("ru-RU")} (${pct}%). Такие экраны получают нулевой аффинити и ` +
+      `отсеиваются первыми — ` +
+      (_vkNoDataDropped > 0
+        ? `в этом расчёте так отсеялось ${_vkNoDataDropped.toLocaleString("ru-RU")} экр.`
+        : `на этот расчёт это не повлияло.`)
+    );
+  }
+
   if (!prepared.length) {
     alert("Не удалось подобрать экраны: по выбранным условиям не осталось доступных экранов.");
     setStatus("");
@@ -4388,7 +4470,7 @@ async function onCalcClick() {
       const totalBudget = Number(brief.budget.amount);
       const fixedAllocation = allocateBudgetAcrossRegions(
         totalBudget,
-        prepared.map(r => ({ key: r.region, tier: getTierForGeo(r.region) })),
+        prepared.map(r => ({ key: r.region, tier: r.tier })),
         { minShare: 0.10, maxShare: 0.70 }
       );
       for (const r of prepared) {
@@ -4460,7 +4542,7 @@ async function onCalcClick() {
 
       const alloc = allocateBudgetAcrossRegions(
         totalBudget,
-        prepared.map(r => ({ key: r.region, tier: getTierForGeo(r.region) })),
+        prepared.map(r => ({ key: r.region, tier: r.tier })),
         { minShare: 0.10, maxShare: 0.70 }
       );
       for (const r of prepared) {
@@ -4478,7 +4560,7 @@ async function onCalcClick() {
         const totalBudget = Math.round(allGidScreens.length * _gidPpmGlobal * hpdFixed * days * recoBid);
         const alloc = allocateBudgetAcrossRegions(
           totalBudget,
-          prepared.map(r => ({ key: r.region, tier: getTierForGeo(r.region) })),
+          prepared.map(r => ({ key: r.region, tier: r.tier })),
           { minShare: 0.10, maxShare: 0.70 }
         );
         for (const r of prepared) {
@@ -4612,7 +4694,7 @@ async function onCalcClick() {
         const totalBudget = Number(brief.budget.amount);
         const newAlloc = allocateBudgetAcrossRegions(
           totalBudget,
-          prepared.map(r => ({ key: r.region, tier: getTierForGeo(r.region) })),
+          prepared.map(r => ({ key: r.region, tier: r.tier })),
           { minShare: 0.10, maxShare: 0.70 }
         );
         for (const r of prepared) {
@@ -4644,7 +4726,7 @@ async function onCalcClick() {
           const totalBudget = Math.round(N * _pph2 * days * hpdFixed * overallAvgReco);
           const alloc = allocateBudgetAcrossRegions(
             totalBudget,
-            prepared.map(r => ({ key: r.region, tier: getTierForGeo(r.region) })),
+            prepared.map(r => ({ key: r.region, tier: r.tier })),
             { minShare: 0.10, maxShare: 0.70 }
           );
           for (const r of prepared) {
@@ -6362,14 +6444,19 @@ function computeRecoBudgetTiers() {
 
   for (const region of regions) {
     const regionKey = typeof region === "string" ? region : (region?.city || region?.region || "");
-    let pool = sourceScreens.filter(s => screenMatchesGeoChoice(s, region));
+    // regionAll — весь инвентарь региона: по нему определяется тир.
+    // pool — то, что реально доступно под текущие форматы и ставки: по нему
+    // считается потолок бюджета. Смешивать нельзя — иначе выбор одного формата
+    // ронял бы регион в младший тир и занижал рекомендацию.
+    const regionAll = sourceScreens.filter(s => screenMatchesGeoChoice(s, region));
+    let pool = regionAll;
     if (formatsMode === "manual" && manualFormats.size > 0) {
       pool = pool.filter(s => manualFormats.has(s.format));
     }
     pool = pool.filter(hasActiveInventory);
     if (!pool.length) continue;
 
-    const tier = getTierForGeo(regionKey);
+    const tier = getTierForGeo(regionKey, regionAll);
     // Тот же потолок, что и в onCalcClick: плановая ёмкость, а не SC_MAX × 12 ч.
     const capBudget = computeCapacity(pool, days * hpd, brief.bidMode, bidUpliftFactor(brief))?.budget ?? Infinity;
 
