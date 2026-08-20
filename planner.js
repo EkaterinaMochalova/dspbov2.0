@@ -28,6 +28,27 @@ window.PLANNER = window.PLANNER || {};
 
 const REF = "planner";
 
+// ===== Библиотеки по требованию =====
+// papaparse / xlsx / exceljs больше не грузятся на старте — их подтягивает
+// PLANNER_ENSURE_LIB() из widget-init.js в момент первого обращения.
+// Возвращает библиотеку либо null (с понятным сообщением пользователю).
+async function ensureLib(name) {
+  const globals = { papaparse: "Papa", xlsx: "XLSX", exceljs: "ExcelJS" };
+  const g = globals[name];
+  if (window[g]) return window[g];
+  if (typeof window.PLANNER_ENSURE_LIB !== "function") {
+    console.error("[lib] PLANNER_ENSURE_LIB недоступен — planner.js запущен без widget-init.js");
+    return null;
+  }
+  try {
+    return await window.PLANNER_ENSURE_LIB(name);
+  } catch (e) {
+    console.error("[lib] не удалось загрузить", name, e);
+    return null;
+  }
+}
+window.PLANNER.ensureLib = ensureLib;
+
 const TIERS_JSON_URL =
   PLANNER_CDN_BASE + "tiers_v1.json";
 
@@ -303,23 +324,17 @@ async function loadAffinityJSON(urlOverride) {
   }
   state.affinityMap = map;
 
-  // Precompute per-segment stats: coverage at thresholds 1.0, 1.3, 1.5, 2.0
+  // affinityStats нужен интерфейсу только как перечень доступных сегментов
+  // (renderAudienceSegments берёт Object.keys, updateAudienceCoverage — проверку
+  // на наличие). Раньше здесь считалось покрытие по шести порогам для каждого
+  // из 141 сегмента — 2,9 млн итераций и ~220 мс заморозки потока, — и ни одно
+  // из этих чисел нигде не читалось. Если покрытие понадобится, считать его
+  // надо для выбранных сегментов в updateAudienceCoverage(), а не для всех.
   const stats = {};
   const total = map.size;
   for (const seg of headers) {
     if (AFFINITY_SKIP_COLS.has(seg)) continue;
-    let sum = 0, n = 0, c10 = 0, c11 = 0, c12 = 0, c13 = 0, c15 = 0, c20 = 0;
-    for (const rec of map.values()) {
-      const v = rec[seg] ?? 0;
-      if (v > 0) { sum += v; n++; }
-      if (v >= 1.0) c10++;
-      if (v >= 1.1) c11++;
-      if (v >= 1.2) c12++;
-      if (v >= 1.3) c13++;
-      if (v >= 1.5) c15++;
-      if (v >= 2.0) c20++;
-    }
-    stats[seg] = { mean: n > 0 ? Math.round(sum / n * 100) / 100 : 0, total, c10, c11, c12, c13, c15, c20 };
+    stats[seg] = { total };
   }
   state.affinityStats = stats;
 
@@ -327,6 +342,43 @@ async function loadAffinityJSON(urlOverride) {
   return map.size;
 }
 window.PLANNER.loadAffinityJSON = loadAffinityJSON;
+
+// ===== Ленивая загрузка данных ВК =====
+// affinity_data.json весит 11,3 МБ и нужен только при включённом фильтре
+// «Аудитория VK». Раньше он грузился на каждом открытии страницы: ~2,9 с сети
+// плюс ~0,5 с заморозки интерфейса на разборе. Теперь — по первому обращению.
+let _affinityPromise = null;
+function ensureAffinityLoaded() {
+  if (state.affinityMap) return Promise.resolve(state.affinityMap.size);
+  if (!_affinityPromise) {
+    _affinityPromise = loadAffinityJSON()
+      .catch(err => {
+        _affinityPromise = null; // дать возможность повторить
+        console.warn("[affinity] загрузка не удалась:", err);
+        window.dispatchEvent(new CustomEvent("planner:affinity-failed", {
+          detail: { message: err?.message || String(err) }
+        }));
+        throw err;
+      });
+  }
+  return _affinityPromise;
+}
+window.PLANNER.ensureAffinityLoaded = ensureAffinityLoaded;
+window.PLANNER.isAffinityLoading = () => !!_affinityPromise && !state.affinityMap;
+
+// Проставляет отложенный выбор сегментов ВК, если чекбоксы уже отрисованы.
+// Возвращает true, когда применять больше нечего.
+function applyPendingAudienceSegments() {
+  const want = state._pendingAudienceSegments;
+  if (!want) return true;
+  const boxes = document.querySelectorAll('#audience-segment-wrap input[type="checkbox"]');
+  if (!boxes.length) return false; // сегменты ещё не отрисованы — ждём
+  const set = new Set(want);
+  boxes.forEach(cb => { cb.checked = set.has(cb.value); });
+  state._pendingAudienceSegments = null;
+  return true;
+}
+window.PLANNER.applyPendingAudienceSegments = applyPendingAudienceSegments;
 
 function getReachModeFromUI() {
   return document.querySelector('input[name="reach_mode"]:checked')?.value || "balanced";
@@ -479,12 +531,6 @@ function getBudgetMode() {
 function getScheduleType() {
   // ожидаемые значения: all_day | peak | custom | weekly
   return document.querySelector('input[name="schedule"]:checked')?.value || "all_day";
-}
-
-function parseCSV(text) {
-  const res = Papa.parse(text, { header: true, skipEmptyLines: true, dynamicTyping: false });
-  if (res.errors && res.errors.length) console.warn("CSV parse errors:", res.errors.slice(0, 8));
-  return res.data || [];
 }
 
 function toNumber(x) {
@@ -1162,6 +1208,19 @@ function renderSelectionExtra() {
       const name = file.name.toLowerCase();
       try {
         let lines = [];
+
+        // Парсеры грузятся по требованию: на старте виджета их нет.
+        const _need = name.endsWith(".csv") ? "papaparse"
+                    : (name.endsWith(".xlsx") || name.endsWith(".xls")) ? "xlsx"
+                    : null;
+        if (_need) {
+          if (status) status.textContent = "Загружаю парсер файла…";
+          if (!(await ensureLib(_need))) {
+            if (status) status.textContent = "Не удалось загрузить парсер файла — проверьте соединение";
+            e.target.value = ""; return;
+          }
+          if (status) status.textContent = "Читаю файл…";
+        }
 
         if (name.endsWith(".txt")) {
           const text = await file.text();
@@ -2032,8 +2091,11 @@ function pickScreensUniformByGrid(pool, count, stepKm = 2, perCellMax = 2, fmtOr
 }
 
 // ===== XLSX (screens export simple) =====
-function downloadXLSX(rows) {
+async function downloadXLSX(rows) {
   if (!rows || !rows.length) return;
+
+  const XLSX = await ensureLib("xlsx");
+  if (!XLSX) { alert("Не удалось загрузить библиотеку выгрузки. Проверьте соединение и попробуйте ещё раз."); return; }
 
   const out = rows.map(r => ({
     GID: r.screen_id ?? "",
@@ -2067,8 +2129,8 @@ async function buildMediaPlanBlob() {
   const calc = window.PLANNER?.lastCalc;
   if (!calc) { alert("Сначала нажмите «Рассчитать»."); return null; }
 
-  const ExcelJS = window.ExcelJS;
-  if (!ExcelJS) { alert("ExcelJS не загружен — обновите страницу."); return null; }
+  const ExcelJS = await ensureLib("exceljs");
+  if (!ExcelJS) { alert("Не удалось загрузить библиотеку выгрузки. Проверьте соединение и попробуйте ещё раз."); return null; }
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "DSP Planner";
@@ -2655,8 +2717,8 @@ function buildSberScheduleGrid(sch) {
 async function buildSberMediaPlanBlob() {
   const calc = window.PLANNER?.lastCalc;
   if (!calc) { alert("Сначала нажмите «Рассчитать»."); return null; }
-  const ExcelJS = window.ExcelJS;
-  if (!ExcelJS) { alert("ExcelJS не загружен — обновите страницу."); return null; }
+  const ExcelJS = await ensureLib("exceljs");
+  if (!ExcelJS) { alert("Не удалось загрузить библиотеку выгрузки. Проверьте соединение и попробуйте ещё раз."); return null; }
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "DSP Planner";
@@ -3772,6 +3834,21 @@ function computeGoalOtsPlan(prepared, totalOtsGoal, opts = {}) {
 
 // ===== MAIN =====
 async function onCalcClick() {
+  // Данные ВК теперь ленивые. Если фильтр включён, а файл ещё не приехал —
+  // дожидаемся, иначе фильтр молча не применится и пул окажется шире, чем
+  // просил пользователь.
+  if (el("audience-enabled")?.checked && !state.affinityMap) {
+    setStatus("Загружаю данные ВК…");
+    try {
+      await ensureAffinityLoaded();
+    } catch (e) {
+      setStatus("");
+      alert("Не удалось загрузить данные ВК — фильтр по аудитории применить нельзя.\nВыключите «Аудиторию VK» или попробуйте ещё раз.");
+      return;
+    }
+    setStatus("");
+  }
+
   // DSP mode: подгружаем инвентарь для выбранных регионов перед расчётом
   if (window.DSP_AUTH_ENABLED && state.dspCities) {
     const brief0 = buildBrief();
@@ -5182,8 +5259,11 @@ function renderProgress() {
 
   const calcBtn = el("calc-btn");
   if (calcBtn) {
-    calcBtn.disabled = !ok;
-    calcBtn.style.opacity = ok ? "1" : ".55";
+    // Пока идёт расчёт кнопка заблокирована независимо от валидации —
+    // renderProgress зовётся из десятка мест и иначе снял бы блокировку.
+    const busy = !!state._calcRunning;
+    calcBtn.disabled = !ok || busy;
+    if (!busy) calcBtn.style.opacity = ok ? "1" : ".55";
   }
   window.dispatchEvent(new CustomEvent("planner:pool-updated"));
 }
@@ -5605,6 +5685,19 @@ document.querySelectorAll('input[name="weekly_mode"]').forEach(r => {
         let rows = [];
         let rawLines = [];
 
+        // Парсеры грузятся по требованию: на старте виджета их нет.
+        const _need = name.endsWith(".csv") ? "papaparse"
+                    : (name.endsWith(".xlsx") || name.endsWith(".xls")) ? "xlsx"
+                    : null;
+        if (_need) {
+          if (statusEl) statusEl.textContent = "Загружаю парсер файла…";
+          if (!(await ensureLib(_need))) {
+            if (statusEl) statusEl.textContent = "Не удалось загрузить парсер файла — проверьте соединение";
+            e.target.value = ""; return;
+          }
+          if (statusEl) statusEl.textContent = "Читаю файл…";
+        }
+
         if (name.endsWith(".txt")) {
           const text = await file.text();
           rawLines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -5714,6 +5807,8 @@ document.querySelectorAll('input[name="weekly_mode"]').forEach(r => {
     poiXlsxBtn.addEventListener("click", async () => {
       const pois = getPoisForExport();
       if (!pois.length) return;
+      const ExcelJS = await ensureLib("exceljs");
+      if (!ExcelJS) { alert("Не удалось загрузить библиотеку выгрузки. Проверьте соединение и попробуйте ещё раз."); return; }
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet("POI");
       ws.columns = [
@@ -5820,11 +5915,34 @@ document.querySelectorAll('input[name="weekly_mode"]').forEach(r => {
       if (!calcBtn) return;
       e.preventDefault();
       if (calcBtn.disabled) return;
-      Promise.resolve(onCalcClick()).catch((err) => {
-        console.error("[calc] failed", err);
-        alert("Не удалось выполнить расчёт. Проверьте консоль и попробуйте ещё раз.");
-        setStatus("");
-      });
+
+      // Расчёт длится секунды (догрузка инвентаря, геокодинг, прогноз ставок).
+      // Без этого замка двойной клик запускал два прохода параллельно, и оба
+      // писали в общий state — итог зависел от того, кто финиширует вторым.
+      if (state._calcRunning) return;
+      state._calcRunning = true;
+      const _label = calcBtn.textContent;
+      calcBtn.disabled = true;
+      calcBtn.textContent = "Считаю…";
+      calcBtn.style.opacity = ".7";
+      calcBtn.style.cursor = "progress";
+
+      Promise.resolve(onCalcClick())
+        .catch((err) => {
+          console.error("[calc] failed", err);
+          alert("Не удалось выполнить расчёт: " + (err?.message || "неизвестная ошибка") +
+                "\nПопробуйте ещё раз — если повторится, сообщите нам.");
+          setStatus("");
+        })
+        .finally(() => {
+          state._calcRunning = false;
+          calcBtn.textContent = _label;
+          calcBtn.style.opacity = "";
+          calcBtn.style.cursor = "";
+          // Актуальную доступность вернёт общий валидатор — он же учтёт,
+          // что за время расчёта пользователь мог что-то поменять.
+          renderProgress();
+        });
     });
   }
 
@@ -6180,13 +6298,14 @@ function restoreBriefToUI(brief) {
   // восстановления ещё не существуют в DOM.
 
   // 9. Аудитория VK
+  // Чекбоксы сегментов рисуются только после загрузки данных ВК, а она теперь
+  // ленивая — на момент восстановления их в DOM ещё нет. Запоминаем выбор и
+  // применяем, когда сегменты отрисуются (см. applyPendingAudienceSegments).
+  state._pendingAudienceSegments = Array.isArray(brief.audience?.segments)
+    ? [...brief.audience.segments] : null;
   _check("audience-enabled", brief.audience?.enabled);
   _chip("vk-affinity-card", brief.audience?.enabled);
-  if (brief.audience?.segments) {
-    document.querySelectorAll('#audience-segment-wrap input[type="checkbox"]').forEach(cb => {
-      cb.checked = brief.audience.segments.includes(cb.value);
-    });
-  }
+  applyPendingAudienceSegments();
   if (brief.audience?.topPct != null) _set("audience-top-pct", Math.round(brief.audience.topPct * 100));
 
   // 10. Ставка: режим + ручная надбавка
@@ -6432,26 +6551,37 @@ function showLoginOverlay() {
       "position:fixed;inset:0;z-index:99999;background:rgba(11,18,32,.75);" +
       "display:flex;align-items:center;justify-content:center;font-family:inherit;";
 
+    // Настоящая <form> с name/autocomplete — иначе менеджеры паролей не
+    // предлагают ни сохранить, ни подставить логин, а входить приходится
+    // руками в каждой новой вкладке.
     overlay.innerHTML = `
-      <div style="background:#fff;border-radius:20px;padding:40px 36px;width:340px;max-width:90vw;
-                  box-shadow:0 24px 64px rgba(0,0,0,.22);">
+      <form id="dsp-login-form" method="post" action="#" autocomplete="on"
+            style="background:#fff;border-radius:20px;padding:40px 36px;width:340px;max-width:90vw;
+                   box-shadow:0 24px 64px rgba(0,0,0,.22);">
         <div style="font-size:22px;font-weight:700;margin-bottom:6px;color:#0b1220;">Вход</div>
         <div style="font-size:13px;color:#667085;margin-bottom:24px;">
-          Введите данные вашего аккаунта DSP
+          Тот же логин и пароль, что в кабинете DSP
         </div>
-        <input id="dsp-email" type="email" placeholder="Email"
+        <input id="dsp-email" name="username" type="email" placeholder="Email"
+               autocomplete="username" autocapitalize="none" spellcheck="false" required
                style="width:100%;box-sizing:border-box;padding:12px 14px;border:1.5px solid #e0e0e0;
                       border-radius:10px;font-size:14px;margin-bottom:10px;outline:none;">
-        <input id="dsp-password" type="password" placeholder="Пароль"
+        <input id="dsp-password" name="password" type="password" placeholder="Пароль"
+               autocomplete="current-password" required
                style="width:100%;box-sizing:border-box;padding:12px 14px;border:1.5px solid #e0e0e0;
                       border-radius:10px;font-size:14px;margin-bottom:16px;outline:none;">
         <div id="dsp-err" style="color:#e53e3e;font-size:13px;min-height:18px;margin-bottom:10px;"></div>
-        <button id="dsp-login-btn"
+        <button id="dsp-login-btn" type="submit"
                 style="width:100%;padding:13px;background:#5b3ef5;color:#fff;border:none;
                        border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;">
           Войти
         </button>
-      </div>
+        <div style="margin-top:16px;font-size:12px;color:#98a2b3;text-align:center;line-height:1.5;">
+          Забыли пароль — восстановить можно
+          <a href="${DSP_API}" target="_blank" rel="noopener"
+             style="color:#5b3ef5;text-decoration:underline;">в кабинете DSP</a>
+        </div>
+      </form>
     `;
 
     document.body.appendChild(overlay);
@@ -6479,10 +6609,12 @@ function showLoginOverlay() {
       }
     }
 
-    btnEl.addEventListener("click", doLogin);
-    [emailEl, passEl].forEach(inp =>
-      inp.addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); })
-    );
+    // submit покрывает и клик по кнопке, и Enter в любом поле, и автозаполнение
+    // из менеджера паролей. preventDefault — чтобы страница не перезагружалась.
+    overlay.querySelector("#dsp-login-form").addEventListener("submit", e => {
+      e.preventDefault();
+      doLogin();
+    });
     setTimeout(() => emailEl.focus(), 50);
   });
 }
@@ -7256,19 +7388,8 @@ function bootPlanner() {
 // Автозапуск намеренно отключён: bootPlanner() вызывается внешним kick() из HTML-страницы.
 // Это предотвращает двойной вызов (и двойной запрос логина).
 
-// Auto-load affinity data from CDN
-(function autoLoadAffinity() {
-  function tryLoad() {
-    if (PLANNER_CDN_BASE) {
-      loadAffinityJSON().catch(err => console.warn("Affinity auto-load failed:", err));
-    }
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', tryLoad);
-  } else {
-    setTimeout(tryLoad, 0);
-  }
-})();
+// Данные ВК больше не грузятся автоматически — только по включению фильтра
+// «Аудитория VK» (ensureAffinityLoaded выше). См. обработчик в widget-init.js.
 
 // ===== HTML MAP DOWNLOAD =====
 function buildMapHtml(screens, regionLabel) {

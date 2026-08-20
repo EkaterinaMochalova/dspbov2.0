@@ -31,10 +31,16 @@ window.PLANNER_ASSET_BASE = (function () {
     document.head.appendChild(l);
   }
 
-  function loadScript(src) {
+  function loadScript(src, parallel) {
     return new Promise((resolve, reject) => {
       const s = document.createElement("script");
-      s.src = src; s.async = false;
+      s.src = src;
+      // async=false у динамически вставленного тега сохраняет порядок
+      // выполнения относительно других таких же тегов — поэтому все они
+      // качаются параллельно, а выполняются строго в порядке вставки.
+      // Для одиночной догрузки по требованию порядок неважен: async=true,
+      // чтобы не ждать чужой очереди.
+      s.async = !!parallel;
       s.onload = resolve;
       s.onerror = () => reject(new Error("Failed to load: " + src));
       document.head.appendChild(s);
@@ -991,14 +997,44 @@ window.PLANNER_ASSET_BASE = (function () {
 `;
   document.head.appendChild(style);
 
-  // 3. Load external scripts sequentially
-  await loadScript("https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js");
-  await loadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
-  await loadScript("https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js");
-  await loadScript("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js");
-  await loadScript("https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js");
-  await loadScript(window.PLANNER_ASSET_BASE + "geo.js");
-  await loadScript(window.PLANNER_ASSET_BASE + "planner.js");
+  // 3. Тяжёлые библиотеки — по требованию, а не на старте.
+  //    xlsx ~307 КБ и exceljs ~250 КБ нужны только при импорте файла и
+  //    выгрузке плана, то есть в лучшем случае один раз за сессию.
+  //    Раньше они висели в цепочке загрузки и задерживали появление виджета.
+  const LIB_URLS = {
+    papaparse: "https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js",
+    xlsx:      "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js",
+    exceljs:   "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js",
+  };
+  const LIB_GLOBALS = { papaparse: "Papa", xlsx: "XLSX", exceljs: "ExcelJS" };
+  const _libLoading = {};
+
+  // Возвращает промис с самой библиотекой. Повторные вызовы переиспользуют
+  // один и тот же промис, поэтому параллельные обращения не качают файл дважды.
+  window.PLANNER_ENSURE_LIB = function (name) {
+    const g = LIB_GLOBALS[name];
+    if (!g) return Promise.reject(new Error("Неизвестная библиотека: " + name));
+    if (window[g]) return Promise.resolve(window[g]);
+    if (!_libLoading[name]) {
+      _libLoading[name] = loadScript(LIB_URLS[name], true)
+        .then(() => {
+          if (!window[g]) throw new Error(name + " загрузился, но не объявил window." + g);
+          return window[g];
+        })
+        .catch(err => { delete _libLoading[name]; throw err; }); // дать шанс повторить
+    }
+    return _libLoading[name];
+  };
+
+  // 4. Всё остальное — параллельно. Порядок выполнения гарантирован async=false:
+  //    leaflet отработает раньше leaflet-draw, planner.js — раньше инлайновых
+  //    блоков ниже по файлу.
+  await Promise.all([
+    loadScript("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"),
+    loadScript("https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"),
+    loadScript(window.PLANNER_ASSET_BASE + "geo.js"),
+    loadScript(window.PLANNER_ASSET_BASE + "planner.js"),
+  ]);
 
   // 4. Inject HTML markup into planner-root
   root.innerHTML = `<!-- ===================== PLANNER WIDGET (CLEAN, SINGLE-SOURCE, NO DUPLICATES) ===================== -->
@@ -1937,7 +1973,9 @@ window.PLANNER_ASSET_BASE = (function () {
 
   // Script block 2
   runScript(`
-  console.log("after include:", "GeoUtils?", !!window.GeoUtils, "Papa?", !!window.Papa, "XLSX?", !!window.XLSX);
+  // Papa/XLSX/ExcelJS здесь заведомо ещё нет — они грузятся по требованию
+  // через PLANNER_ENSURE_LIB(); проверяем то, что действительно нужно к старту.
+  console.log("after include:", "GeoUtils?", !!window.GeoUtils, "PLANNER?", !!window.PLANNER, "Leaflet?", !!window.L);
 `);
 
   // Script block 3
@@ -2245,6 +2283,10 @@ window.PLANNER_ASSET_BASE = (function () {
     wrap.querySelectorAll('input[type="checkbox"]').forEach(cb => {
       cb.addEventListener("change", () => { updateAudienceCoverage(); renderProgress(); });
     });
+
+    // Чекбоксы только что появились -- проставляем отложенный выбор из
+    // черновика или из истории расчётов, если он был.
+    window.PLANNER?.applyPendingAudienceSegments?.();
 
     updateAudienceCoverage();
   }
@@ -3054,16 +3096,45 @@ window.PLANNER_ASSET_BASE = (function () {
   }
 
   // ===== AUDIENCE VK =====
+  // Данные ВК (11,3 МБ) грузятся только здесь -- по включению тумблера,
+  // а не на каждом открытии страницы.
+  function kickAffinityLoad(){
+    const statusEl = el("audience-load-status");
+    const uiEl = el("audience-ui");
+    const P = window.PLANNER;
+    if (!P || typeof P.ensureAffinityLoaded !== "function") return;
+    if (P.state?.affinityMap) { renderAudienceSegments(); return; }
+    if (statusEl) {
+      statusEl.style.display = "block";
+      statusEl.textContent = "\\u23F3 Загружаю данные ВК (11 МБ), это займёт несколько секунд\\u2026";
+      statusEl.style.color = "#667085";
+    }
+    if (uiEl) uiEl.style.display = "none";
+    P.ensureAffinityLoaded().catch(() => {}); // сообщение покажет обработчик planner:affinity-failed
+  }
+  window.PLANNER_UI = window.PLANNER_UI || {};
+  window.PLANNER_UI.kickAffinityLoad = kickAffinityLoad;
+
   const audienceEnabled = el("audience-enabled");
   if (audienceEnabled) {
     audienceEnabled.addEventListener("change", e => {
       const wrap = el("audience-wrap");
       if (wrap) wrap.style.display = e.target.checked ? "block" : "none";
       // База отбора зависит от режима шага 1 (города / GID-список) -- пересчитываем
-      if (e.target.checked) updateAudienceCoverage();
+      if (e.target.checked) { kickAffinityLoad(); updateAudienceCoverage(); }
       renderProgress();
     });
   }
+
+  window.addEventListener("planner:affinity-failed", (e) => {
+    const statusEl = el("audience-load-status");
+    if (!statusEl) return;
+    statusEl.style.display = "block";
+    statusEl.style.color = "#dc2626";
+    statusEl.textContent = "\\u26A0 Не удалось загрузить данные ВК ("
+      + (e.detail?.message || "нет связи")
+      + "). Выключите и включите тумблер, чтобы повторить.";
+  });
 
   const topPctSlider = el("audience-top-pct");
   if (topPctSlider) {
@@ -3077,7 +3148,10 @@ window.PLANNER_ASSET_BASE = (function () {
 
   window.addEventListener("planner:affinity-loaded", () => {
     const statusEl = el("audience-load-status");
-    if (statusEl) statusEl.textContent = "\\u2713 Данные загружены (" + (window.PLANNER?.state?.affinityMap?.size || 0).toLocaleString("ru-RU") + " экранов)";
+    if (statusEl) {
+      statusEl.style.color = "#667085";
+      statusEl.textContent = "\\u2713 Данные загружены (" + (window.PLANNER?.state?.affinityMap?.size || 0).toLocaleString("ru-RU") + " экранов)";
+    }
     renderAudienceSegments();
     renderProgress();
   });
