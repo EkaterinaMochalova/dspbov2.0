@@ -5726,42 +5726,48 @@ document.querySelectorAll('input[name="weekly_mode"]').forEach(r => {
     const wrap = el("constructions-count-wrap");
     if (wrap) wrap.style.display = checked ? "block" : "none";
 
-    // Constructions:
-    // - recommendation: ppm задаётся вручную (слайдер активен)
-    // - fixed/goal_ots: ppm задаётся стратегией (слайдер неактивен)
-    const ppmRow = el("constructions-ppm")?.closest("div[style]");
+    // Слайдер частоты живёт в отдельном блоке и виден всегда — значит должен
+    // честно говорить, работает он сейчас или только показывает, что выйдет.
+    // Ручной ввод имеет смысл, только когда число конструкций задано, а бюджет
+    // не задан: при заданном бюджете частота = бюджет ÷ ставка, слайдер ни на
+    // что не влияет, а раньше выглядел рабочим.
+    const ppmRow   = el("frequency-row");
     const ppmRange = el("constructions-ppm");
-    const ppmVal = el("constructions-ppm-val");
-    const ppmNote = el("constructions-ppm-note");
+    const ppmVal   = el("constructions-ppm-val");
+    const ppmNote  = el("constructions-ppm-note");
     const budgetMode = getBudgetMode();
     const manualPpmAllowed = checked && budgetMode === "recommendation";
 
-    if (checked && !manualPpmAllowed) {
-      if (ppmRange) ppmRange.disabled = true;
-      if (ppmRow) ppmRow.style.opacity = "0.4";
-      const pph = getPphTargetForUI();
-      if (ppmVal) ppmVal.textContent = pph + " (авто)";
-      if (ppmNote) ppmNote.style.display = "block";
-    } else {
+    if (manualPpmAllowed) {
       if (ppmRange) ppmRange.disabled = false;
       if (ppmRow) ppmRow.style.opacity = "";
       if (ppmVal) ppmVal.textContent = ppmRange?.value || "10";
       if (ppmNote) ppmNote.style.display = "none";
+      return;
+    }
+
+    if (ppmRange) ppmRange.disabled = true;
+    if (ppmRow) ppmRow.style.opacity = "0.45";
+    const pph = getPphTargetForUI();
+    if (ppmVal) ppmVal.textContent = pph + " (авто)";
+    if (ppmNote) {
+      ppmNote.style.display = "block";
+      ppmNote.textContent = checked
+        ? "ℹ️ Бюджет задан — частота выйдет как бюджет ÷ ставка, слайдер на неё не влияет."
+        : "ℹ️ Частоту подбирает стратегия. Включите «Задать вручную» в блоке выше и режим «Подскажите бюджет», чтобы задать её самому.";
     }
   }
 
   if (constructionsEnabled) {
-    constructionsEnabled.addEventListener("change", (e) => {
-      applyConstructionsState(e.target.checked);
+    const _syncFreq = () => applyConstructionsState(!!el("constructions-enabled")?.checked);
+    constructionsEnabled.addEventListener("change", _syncFreq);
+    // Частота зависит и от стратегии, и от режима бюджета — слушаем оба.
+    // Раньше подписка была только на стратегию и только при включённых
+    // конструкциях, поэтому подпись под слайдером отставала от реальности.
+    document.querySelectorAll('input[name="reach_mode"], input[name="budget_mode"]').forEach(r => {
+      r.addEventListener("change", _syncFreq);
     });
-    // При смене стратегии — обновить отображение частоты
-    document.querySelectorAll('input[name="reach_mode"]').forEach(r => {
-      r.addEventListener("change", () => {
-        if (el("constructions-enabled")?.checked) applyConstructionsState(true);
-      });
-    });
-    // apply initial state on load
-    applyConstructionsState(constructionsEnabled.checked);
+    _syncFreq();
   }
 
   document.querySelectorAll('input[name="bid_mode"]').forEach(r => {

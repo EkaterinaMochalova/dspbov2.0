@@ -995,6 +995,21 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .calc-history-title{ font-weight:600; color:#0b1220; }
   #planner-widget .calc-history-meta{ font-size:11px; color:#667085; margin-top:2px; }
 
+  /* ===== ЗАГОЛОВОК ШАГА ===== */
+  /* Раньше шаг назывался «Настройки» и не говорил, что внутри. Теперь у каждого
+     шага есть название и строчка о том, что здесь решается. */
+  #planner-widget .wiz-step-head{
+    margin: 0 0 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(15,23,42,.08);
+  }
+  #planner-widget .wiz-step-title{
+    font-size: 16px; font-weight: 700; color: #0b1220; line-height: 1.25;
+  }
+  #planner-widget .wiz-step-sub{
+    margin-top: 3px; font-size: 12.5px; color: #667085; line-height: 1.45;
+  }
+
   /* ===== ВАЛИДАЦИЯ ПОЛЕЙ (вместо alert) ===== */
   #planner-widget .fld-invalid,
   #planner-widget .fld-invalid:focus{
@@ -1096,11 +1111,19 @@ window.PLANNER_ASSET_BASE = (function () {
     <div class="wiz-steps" id="wiz-steps">
       <button type="button" class="wiz-chip active" data-step="1">1. География</button>
       <button type="button" class="wiz-chip" data-step="2">2. Период</button>
-      <button type="button" class="wiz-chip" data-step="3">3. Настройки</button>
-      <button type="button" class="wiz-chip" data-step="4">4. Цели</button>
+      <button type="button" class="wiz-chip" data-step="3">3. Экраны</button>
+      <button type="button" class="wiz-chip" data-step="4">4. Адреска</button>
+      <button type="button" class="wiz-chip" data-step="5">5. Цели</button>
     </div>
+    <!-- Доступный инвентарь виден на шагах отбора: пул сжимается по мере
+         добавления фильтров, и это должно быть видно сразу, а не после перехода. -->
+    <div id="pool-sticky-slot"></div>
     <!-- STEP 1 -->
     <div class="wiz-step active" id="wiz-step-1">
+      <div class="wiz-step-head">
+        <div class="wiz-step-title">Выбираем географию</div>
+        <div class="wiz-step-sub">Города и регионы размещения — или готовый список GID-ов, если экраны уже отобраны.</div>
+      </div>
       <!-- Geo mode tabs -->
       <div id="geo-mode-tabs" style="display:flex; gap:8px; margin-bottom:14px;">
         <button type="button" id="geo-tab-cities"
@@ -1246,6 +1269,10 @@ window.PLANNER_ASSET_BASE = (function () {
     </div>
      <!-- STEP 2 -->
 <div class="wiz-step" id="wiz-step-2">
+  <div class="wiz-step-head">
+    <div class="wiz-step-title">Задаём период и расписание</div>
+    <div class="wiz-step-sub">Даты кампании и часы, в которые крутится ролик.</div>
+  </div>
   <div class="planner-block">
     <div class="planner-label">Даты</div>
     <div class="row-2">
@@ -1302,6 +1329,10 @@ window.PLANNER_ASSET_BASE = (function () {
 </div>
       <!-- STEP 3 -->
       <div class="wiz-step" id="wiz-step-3">
+        <div class="wiz-step-head">
+          <div class="wiz-step-title">Считаем бюджет</div>
+          <div class="wiz-step-sub">Сумма, цель по охвату или показам — и во что это обойдётся с комиссией и НДС.</div>
+        </div>
         <div class="planner-block">
           <div class="planner-label">Бюджет</div>
 <div class="strategy-chips" style="flex-direction:column;gap:6px;">
@@ -1440,15 +1471,23 @@ window.PLANNER_ASSET_BASE = (function () {
 </div>
 
         </div>
+        <!-- Сюда раскладка переносит блоки этого шага (см. STEP_LAYOUT) -->
+        <div id="wiz-step-3-body"></div>
         <button id="calc-btn" class="ux-primary" disabled>Рассчитать</button>
         <div id="calc-blocked-hint" style="display:none; margin-top:8px; font-size:12px; color:#e84444; padding:6px 10px; background:#fff5f5; border-radius:8px;"></div>
         <div id="status" class="planner-status"></div>
         <div class="wiz-nav" style="margin-top:12px;">
-          <button type="button" class="wiz-btn ghost" id="wiz-back-3">← Настройки</button>
+          <button type="button" class="wiz-btn ghost" id="wiz-back-3">← Адреска</button>
         </div>
       </div>
       <!-- STEP 4 -->
 <div class="wiz-step" id="wiz-step-4">
+  <div class="wiz-step-head">
+    <div class="wiz-step-title">Подбираем экраны</div>
+    <div class="wiz-step-sub">Какие поверхности берём в работу и по каким ограничениям их отбираем.</div>
+  </div>
+  <!-- Сюда раскладка переносит блоки этого шага (см. STEP_LAYOUT) -->
+  <div id="wiz-step-4-body"></div>
   <!-- Форматы -->
   <div class="planner-block" id="step4-formats-block">
     <div class="planner-label">Форматы</div>
@@ -1513,12 +1552,19 @@ window.PLANNER_ASSET_BASE = (function () {
         </div>
       </label>
     </div>
-    <!-- Конструкции — независимый toggle-чип -->
+    <div class="planner-note" style="margin-top:10px;" id="reach-mode-hint"></div>
+  </div>
+  <!-- Количество экранов -->
+  <div class="planner-block" id="constructions-block">
+    <div class="planner-label">Количество экранов</div>
+    <div class="planner-note" style="margin-bottom:8px;">
+      По умолчанию число подбирает стратегия. Включите, чтобы задать точное.
+    </div>
     <div class="cns-chip" id="constructions-chip">
       <span class="cns-chip-ico">🏗</span>
       <div class="cns-chip-body">
-        <div class="str-chip-title">Конструкции</div>
-        <div class="str-chip-desc">Задать точное число экранов</div>
+        <div class="str-chip-title">Задать вручную</div>
+        <div class="str-chip-desc">Точное число конструкций</div>
       </div>
       <span class="cns-chip-badge" id="cns-chip-badge"></span>
     </div>
@@ -1546,25 +1592,34 @@ window.PLANNER_ASSET_BASE = (function () {
         </button>
         <div id="cns-region-count-rows" class="cns-per-region-rows" style="display:none;"></div>
       </div>
-      <div style="margin-top:12px;">
-        <div style="font-size:12px; font-weight:600; margin-bottom:6px; color:#0b1220;">
-          Выходов в час на экран: <span id="constructions-ppm-val" style="color:#5b3ef5;">10</span>
-        </div>
-        <input type="range" id="constructions-ppm" min="1" max="60" value="10" style="width:100%; accent-color:#5b3ef5;">
-        <div style="display:flex; justify-content:space-between; font-size:11px; color:#aaa; margin-top:2px;">
-          <span>1 / час</span><span>60 / час</span>
-        </div>
-        <div id="constructions-ppm-note" style="display:none; margin-top:6px; font-size:12px; color:#5b3ef5;">
-          ℹ️ Частота определяется стратегией подбора. Слайдер неактивен.
-        </div>
-        <!-- per-region ppm -->
-        <div id="cns-region-ppm-wrap" style="display:none; margin-top:8px;">
-          <button type="button" class="cns-per-region-toggle" id="cns-region-ppm-toggle">
-            <span id="cns-region-ppm-arrow">▶</span> По регионам
-          </button>
-          <div id="cns-region-ppm-rows" class="cns-per-region-rows" style="display:none;"></div>
-        </div>
+    </div>
+  </div>
+  <!-- Частота показов -->
+  <div class="planner-block" id="frequency-block">
+    <div class="planner-label">Частота показов</div>
+    <div class="planner-note" style="margin-bottom:8px;">
+      Сколько раз в час ролик выходит на одном экране. Чем выше частота, тем меньше экранов уместится в бюджет.
+    </div>
+    <!-- id, а не closest("div[style]"): раньше строку слайдера искали по
+         ближайшему родителю со стилем, и любая перестановка вёрстки её ломала. -->
+    <div id="frequency-row">
+      <div style="font-size:12px; font-weight:600; margin-bottom:6px; color:#0b1220;">
+        Выходов в час на экран: <span id="constructions-ppm-val" style="color:#5b3ef5;">10</span>
       </div>
+      <input type="range" id="constructions-ppm" min="1" max="60" value="10" style="width:100%; accent-color:#5b3ef5;">
+      <div style="display:flex; justify-content:space-between; font-size:11px; color:#aaa; margin-top:2px;">
+        <span>1 / час</span><span>60 / час</span>
+      </div>
+    </div>
+    <div id="constructions-ppm-note" style="display:none; margin-top:6px; font-size:12px; color:#5b3ef5;">
+      ℹ️ Частота определяется стратегией подбора. Слайдер неактивен.
+    </div>
+    <!-- per-region ppm -->
+    <div id="cns-region-ppm-wrap" style="display:none; margin-top:8px;">
+      <button type="button" class="cns-per-region-toggle" id="cns-region-ppm-toggle">
+        <span id="cns-region-ppm-arrow">▶</span> По регионам
+      </button>
+      <div id="cns-region-ppm-rows" class="cns-per-region-rows" style="display:none;"></div>
     </div>
   </div>
   <!-- Выходов в час (только GID-режим) -->
@@ -1802,12 +1857,12 @@ window.PLANNER_ASSET_BASE = (function () {
       Укажите регионы, чтобы увидеть объём доступного инвентаря.
     </div>
   </div>
-  <!-- Разделитель -->
+  <!-- Разделитель (переезжает вместе с блоком операторов) -->
   <div class="additional-filters-divider">
     <span>Дополнительные ограничения</span>
   </div>
   <!-- Операторы -->
-  <div class="planner-block">
+  <div class="planner-block" id="owners-block">
     <div class="planner-label">Операторы</div>
     <input type="text" id="owner-search" placeholder="Поиск оператора…" class="ux-input"
            style="margin-bottom:10px; width:100%;">
@@ -1821,7 +1876,7 @@ window.PLANNER_ASSET_BASE = (function () {
     <div class="planner-note" style="margin-top:6px;">Можно выбрать конкретных операторов или оставить всех доступных.</div>
   </div>
   <!-- GRP -->
-  <div class="planner-block">
+  <div class="planner-block" id="grp-block">
     <div class="planner-label">GRP</div>
     <label class="check-row"><input id="grp-enabled" type="checkbox" /> Фильтровать по GRP (0–9.98)</label>
     <div id="grp-wrap" style="display:none; margin-top:10px;">
@@ -1834,7 +1889,22 @@ window.PLANNER_ASSET_BASE = (function () {
   </div>
   <div class="wiz-nav" style="margin-top:12px;">
     <button type="button" class="wiz-btn ghost" id="wiz-back-4">← Период</button>
-    <button type="button" class="wiz-btn" id="wiz-next-4">Цели →</button>
+    <button type="button" class="wiz-btn" id="wiz-next-4">Адреска →</button>
+  </div>
+</div>
+<!-- STEP 5 (логический шаг 4) — «Настраиваем адреску».
+     Блоки в него переносятся из div4 на старте, см. STEP_LAYOUT в скрипте ниже:
+     держать разметку в одном месте, а раскладку — списком, дешевле, чем
+     физически перетаскивать по файлу тысячи строк при каждой перекомпоновке. -->
+<div class="wiz-step" id="wiz-step-5">
+  <div class="wiz-step-head">
+    <div class="wiz-step-title">Настраиваем адресную программу</div>
+    <div class="wiz-step-sub">Сколько экранов брать, как часто крутить и где именно они стоят.</div>
+  </div>
+  <div id="wiz-step-5-body"></div>
+  <div class="wiz-nav" style="margin-top:12px;">
+    <button type="button" class="wiz-btn ghost" id="wiz-back-5">← Экраны</button>
+    <button type="button" class="wiz-btn" id="wiz-next-5">Цели →</button>
   </div>
 </div>
   </div>
@@ -2035,10 +2105,71 @@ window.PLANNER_ASSET_BASE = (function () {
 (function(){
   function el(id){ return document.getElementById(id); }
 
-  // Порядок шагов: 1=География(div1), 2=Период(div2), 3=Настройки(div4), 4=Цели(div3).
+  // Порядок шагов:
+  //   1 = География  (div1)
+  //   2 = Период     (div2)
+  //   3 = Экраны     (div4)  — что берём в работу
+  //   4 = Адреска    (div5)  — сколько, как часто и где
+  //   5 = Цели       (div3)  — бюджет
   // Цели идут последними: к этому моменту адресная программа уже собрана, и
   // рекомендация бюджета считается от реального пула, а не от пустого набора.
-  const STEP_TO_DIV = { 1: 1, 2: 2, 3: 4, 4: 3 };
+  // Номера div-ов не совпадают с номерами шагов исторически — раскладка
+  // менялась дважды, а id блоков используются в десятке других мест.
+  const STEP_TO_DIV = { 1: 1, 2: 2, 3: 4, 4: 5, 5: 3 };
+
+  // ── Раскладка блоков по шагам ────────────────────────────────────
+  // Разметка всех блоков лежит в div4 (исторически «Настройки»), а раскладка
+  // задаётся здесь списком: так перекомпоновать шаги можно правкой одного
+  // массива, не перетаскивая по файлу тысячи строк вёрстки.
+  const STEP_LAYOUT = {
+    // 3. Подбираем экраны — чем ограничиваем набор поверхностей
+    "wiz-step-4-body": [
+      "step4-formats-block",     // Форматы
+      "side-block",              // Сторона экрана A/Б
+      "duration-block",          // Длительность ролика
+      "owners-block",            // Операторы
+      "grp-block",               // GRP
+    ],
+    // 4. Настраиваем адреску — сколько, как часто, где
+    "wiz-step-5-body": [
+      "step4-strategy-block",    // Стратегия подбора
+      "constructions-block",     // Количество экранов
+      "frequency-block",         // Частота показов
+      "step4-gid-ppm-block",     // Частота в GID-режиме
+      "step4-gid-extra-block",   // Доп. экраны с карты (GID)
+      "step4-map-zone-block",    // Зона на карте
+      "step4-selection-block",   // Равномерно / рядом с адресом
+      "audience-block",          // Аудитория VK
+      "yandex-geo-block",        // Яндекс Геоаналитика
+    ],
+    // 5. Цели — ставка стоит рядом с бюджетом: она и есть цена одного показа,
+    // а раньше лежала среди фильтров отбора, где к деньгам отношения не имела.
+    "wiz-step-3-body": [
+      "step4-bid-mode-block",    // Режим ставки + надбавка
+    ],
+  };
+
+  function applyStepLayout(){
+    for (const [hostId, ids] of Object.entries(STEP_LAYOUT)) {
+      const host = el(hostId);
+      if (!host) continue;
+      for (const id of ids) {
+        const node = el(id);
+        if (node) host.appendChild(node);   // appendChild переносит, а не копирует
+        else console.warn("[layout] блок не найден:", id);
+      }
+    }
+    // «Доступный инвентарь» — над шагами, чтобы пул было видно и на отборе
+    // экранов, и на настройке адрески, а не только внутри одного шага.
+    const pool = el("pool-preview-block");
+    const slot = el("pool-sticky-slot");
+    if (pool && slot) slot.appendChild(pool);
+    // Разделитель «Дополнительные ограничения» относился к операторам и GRP —
+    // они уехали на шаг «Экраны», а сам разделитель больше не нужен.
+    document.querySelectorAll("#planner-widget .additional-filters-divider")
+      .forEach(n => n.remove());
+  }
+  applyStepLayout();
   function setStep(step){
     // Используем и class, и inline style -- чтобы CSS Tilda не перебивал display
     document.querySelectorAll("#planner-widget .wiz-step").forEach(s => {
@@ -2066,37 +2197,34 @@ window.PLANNER_ASSET_BASE = (function () {
   // Делаем setStep доступным глобально
   window.setStep = setStep;
 
-  // Отмечаем посещение «Настроек» -- чтобы чип не был зелёным до первого визита
+  // В GID-режиме пользователь уже перечислил экраны поимённо, поэтому всё, что
+  // отбирает и режет набор, теряет смысл и только путает. Показываем частоту,
+  // добор с карты и фильтр ВК (он сужает сам введённый список по аффинити).
+  const GID_HIDDEN = [
+    "step4-formats-block", "side-block", "owners-block", "grp-block",
+    "step4-strategy-block", "constructions-block", "frequency-block",
+    "step4-map-zone-block", "step4-selection-block", "pool-preview-block",
+  ];
+  const GID_ONLY = ["step4-gid-ppm-block", "step4-gid-extra-block"];
+
+  function applyGidVisibility(){
+    const gidsBlock = el("geo-gids-block");
+    const isGidMode = !!(gidsBlock && gidsBlock.style.display !== "none");
+    GID_HIDDEN.forEach(id => { const n = el(id); if (n) n.style.display = isGidMode ? "none" : ""; });
+    GID_ONLY.forEach(id  => { const n = el(id); if (n) n.style.display = isGidMode ? "" : "none"; });
+    if (isGidMode && typeof window.renderGidExtra === "function") window.renderGidExtra();
+    return isGidMode;
+  }
+  window.PLANNER_UI = window.PLANNER_UI || {};
+  window.PLANNER_UI.applyGidVisibility = applyGidVisibility;
+
+  // Отмечаем посещённые шаги отбора — чтобы чип не был зелёным до первого визита
   const _origSetStep = setStep;
   window.setStep = function(step) {
-    if (step === 3) window._plannerSettingsVisited = true; // логический шаг 3 = Настройки (физический div 4)
+    if (step === 3) window._plannerScreensVisited = true;
+    if (step === 4) window._plannerProgramVisited = true;
     _origSetStep(step);
-    if (step === 3) { // Настройки
-      // В GID-режиме скрываем лишнее -- только кнопка "Рассчитать" + "Назад".
-      // «Аудитория VK» (audience-block) НЕ скрывается: фильтр по данным ВК
-      // работает и по GID-списку (сужает введённый набор до топ-X% по аффинити).
-      const gidsBlock = el("geo-gids-block");
-      const isGidMode = gidsBlock && gidsBlock.style.display !== "none";
-      const d = isGidMode ? "none" : "";
-      [
-        "step4-formats-block", "step4-strategy-block",
-        "step4-map-zone-block", "step4-selection-block",
-        "pool-preview-block"
-      ].forEach(id => { const n = el(id); if (n) n.style.display = d; });
-      document.querySelectorAll("#wiz-step-4 .additional-filters-divider").forEach(n => n.style.display = d);
-      // Операторы и GRP по label (у них нет ID)
-      document.querySelectorAll("#wiz-step-4 .planner-block").forEach(block => {
-        const lbl = block.querySelector(".planner-label")?.textContent?.trim() || "";
-        if (lbl === "Операторы" || lbl === "GRP") block.style.display = d;
-      });
-      // В GID-режиме показываем слайдер выходов в час
-      const gidPpmBlock = el("step4-gid-ppm-block");
-      if (gidPpmBlock) gidPpmBlock.style.display = isGidMode ? "" : "none";
-      // В GID-режиме показываем блок «Дополнительные экраны с карты»
-      const gidExtraBlock = el("step4-gid-extra-block");
-      if (gidExtraBlock) gidExtraBlock.style.display = isGidMode ? "" : "none";
-      if (isGidMode && typeof window.renderGidExtra === "function") window.renderGidExtra();
-    }
+    if (step === 3 || step === 4) applyGidVisibility();
     if (typeof window.renderProgress === "function") window.renderProgress();
   };
 
@@ -2158,11 +2286,15 @@ window.PLANNER_ASSET_BASE = (function () {
     window.setStep(3);
   });
 
-  el("wiz-next-4")?.addEventListener("click", () => window.setStep(4)); // Настройки → Цели
+  // Кнопки названы по номеру div-а, в котором лежат, а не по номеру шага —
+  // поэтому рядом указан осмысленный переход.
+  el("wiz-next-4")?.addEventListener("click", () => window.setStep(4)); // Экраны  → Адреска
+  el("wiz-next-5")?.addEventListener("click", () => window.setStep(5)); // Адреска → Цели
 
-  el("wiz-back-2")?.addEventListener("click", () => window.setStep(1)); // Период → География
-  el("wiz-back-3")?.addEventListener("click", () => window.setStep(3)); // Цели → Настройки
-  el("wiz-back-4")?.addEventListener("click", () => window.setStep(2)); // Настройки → Период
+  el("wiz-back-2")?.addEventListener("click", () => window.setStep(1)); // Период  → География
+  el("wiz-back-4")?.addEventListener("click", () => window.setStep(2)); // Экраны  → Период
+  el("wiz-back-5")?.addEventListener("click", () => window.setStep(3)); // Адреска → Экраны
+  el("wiz-back-3")?.addEventListener("click", () => window.setStep(4)); // Цели    → Адреска
 
   window.setStep(1);
 })();
@@ -2508,10 +2640,19 @@ window.PLANNER_ASSET_BASE = (function () {
     }
 
     // --- Обновляем состояние чипов шагов (done / active) ---
-    // Шаг 4 "выполнен" только если пользователь его посещал или уже был расчёт
-    const settingsDone = !!(window._plannerSettingsVisited || window.PLANNER?.lastCalc);
-    const _budgetOk = (()=>{ const bm = getBudgetMode(); const bv = Number(el("budget-input")?.value||0); const gv = Number(el("goal-ots")?.value||0); return bm==="recommendation"||(bm==="fixed"&&bv>0)||(bm==="goal_ots"&&gv>0); })();
-    const stepDoneMap = { "1": !!(Array.isArray(window.PLANNER?.state?.selectedRegions) && window.PLANNER.state.selectedRegions.length), "2": !!(p.dates.start && p.dates.end), "3": settingsDone, "4": p.done >= 2 && _budgetOk };
+    // Шаги отбора обязательными не являются (дефолты рабочие), поэтому их чип
+    // зеленеет по факту визита либо после первого расчёта.
+    const done = !!window.PLANNER?.lastCalc;
+    const screensDone = !!(window._plannerScreensVisited || done);
+    const programDone = !!(window._plannerProgramVisited || done);
+    const _budgetOk = (()=>{ const bm = getBudgetMode(); const bv = Number(el("budget-input")?.value||0); const gv = Number(el("goal-ots")?.value||0); const gpv = Number(el("goal-plays")?.value||0); return bm==="recommendation"||(bm==="fixed"&&bv>0)||(bm==="goal_ots"&&gv>0)||(bm==="goal_plays"&&gpv>0); })();
+    const stepDoneMap = {
+      "1": !!(Array.isArray(window.PLANNER?.state?.selectedRegions) && window.PLANNER.state.selectedRegions.length),
+      "2": !!(p.dates.start && p.dates.end),
+      "3": screensDone,
+      "4": programDone,
+      "5": p.done >= 2 && _budgetOk,
+    };
     document.querySelectorAll("#wiz-steps .wiz-chip").forEach(chip => {
       const s = chip.dataset.step;
       chip.classList.toggle("done", !!stepDoneMap[s]);
@@ -2681,6 +2822,10 @@ window.PLANNER_ASSET_BASE = (function () {
 
       // База аффинити-фильтра разная в городском и GID-режиме -- пересчитываем
       updateAudienceCoverage();
+      // Состав блоков на шагах отбора зависит от режима. Раньше это применялось
+      // только при заходе на шаг «Настройки»: если переключить режим, уже побывав
+      // там, набор блоков оставался от прошлого режима до следующего перехода.
+      window.PLANNER_UI?.applyGidVisibility?.();
       renderProgress();
     }
     window.setGeoMode = setGeoMode;
