@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Планировщик — прогон выгрузки</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    body { margin:0; padding:16px 20px; background:#0f172a; color:#e2e8f0;
+           font:13px/1.55 ui-monospace, "Cascadia Code", Consolas, monospace; }
+    h1 { font-size:15px; margin:0 0 4px; color:#fff; }
+    .sub { color:#94a3b8; margin-bottom:16px; }
+    .case { margin:0 0 6px; }
+    .ok   { color:#4ade80; }
+    .fail { color:#f87171; }
+    .skip { color:#fbbf24; }
+    .note { color:#64748b; padding-left:24px; }
+    #total { margin-top:16px; padding:10px 14px; border-radius:8px; font-weight:700; }
+    #total.pass { background:#064e3b; color:#6ee7b7; }
+    #total.fail { background:#7f1d1d; color:#fecaca; }
+    #planner-root { display:none; }
+  </style>
+</head>
+<body>
+
+<h1>Прогон выгрузки медиаплана</h1>
+<div class="sub">
+  Собирает план на инвентаре, повторяющем боевой (durationBidInfo, разрешение, фото),
+  читает готовый файл обратно и проверяет цифры. Ловит то, что не видит проверка синтаксиса:
+  битые ссылки на переменные, разъезд формул с числами, потерянные колонки.
+</div>
+<div id="out"></div>
+<div id="total">выполняется…</div>
+
+<div id="planner-root"></div>
+
+<script>
+  window.DSP_AUTH_ENABLED = false;   // без входа в DSP: план собираем из готового lastCalc
+  window.PLANNER_SMOKE = true;
+</script>
+<script src="./widget-init.js"></script>
+
+<script>
+const out = document.getElementById("out");
+let passed = 0, failed = 0;
+
+function check(name, cond, note) {
+  const el = document.createElement("div");
+  el.className = "case " + (cond ? "ok" : "fail");
+  el.textContent = (cond ? "✓ " : "✗ ") + name;
+  out.appendChild(el);
+  if (note != null && !cond) {
+    const n = document.createElement("div");
+    n.className = "note"; n.textContent = String(note);
+    out.appendChild(n);
+  }
+  cond ? passed++ : failed++;
+}
+
+// Экран в том виде, в каком его отдаёт DSP: со всеми полями, которые читает выгрузка.
+function makeScreens(city, format, n, baseBid, durationRatios, ots) {
+  return Array.from({ length: n }, (_, i) => ({
+    screen_id: `${city}-${format}-${i}`,
+    gid: `${format}-${String(i).padStart(3, "0")}`,
+    city, region: city, format,
+    owner: "Оператор " + (i % 3),
+    address: `${city}, улица Тестовая, дом ${i + 1}`,
+    side: i % 2 ? "A" : "Б",
+    resolution: "1920x1080",
+    aspectRatio: "16:9",
+    image_url: `https://example.invalid/${format}-${i}.jpg`,
+    lat: 55.75 + i * 1e-4,
+    lon: 37.62 + i * 1e-4,
+    minBid: baseBid,
+    recoBid: baseBid * 1.8,
+    _baseMinBid: baseBid,
+    _baseRecoBid: baseBid * 1.8,
+    durationBidInfo: Object.entries(durationRatios)
+      .map(([ms, k]) => ({ duration: +ms, minBid: baseBid * k })),
+    ots,
+  }));
+}
+
+function setField(id, v) {
+  const n = document.getElementById(id);
+  if (!n) return;
+  if (n.type === "checkbox") n.checked = v; else n.value = v;
+}
+
+// Мини-вычислитель формул: SUM, SUMPRODUCT/деление, IFERROR, произведения, ссылки.
+function makeEvaluator(ws) {
+  const colNum = s => [...s].reduce((a, ch) => a * 26 + (ch.charCodeAt(0) - 64), 0);
+  const numAt = ref => {
+    const m = /^([A-Z]+)(\d+)$/.exec(ref);
+    if (!m) return 0;
+    const v = ws.getCell(+m[2], colNum(m[1])).value;
+    if (v == null) return 0;
+    if (typeof v === "number") return v;
+    if (typeof v === "object" && v.formula !== undefined) return Number(v.result) || 0;
+    return 0;
+  };
+  const expand = range => {
+    const [a, b] = range.split(":");
+    const pa = /^([A-Z]+)(\d+)$/.exec(a), pb = /^([A-Z]+)(\d+)$/.exec(b);
+    const c1 = colNum(pa[1]), c2 = colNum(pb[1]);
+    const res = [];
+    for (let r = +pa[2]; r <= +pb[2]; r++)
+      for (let c = c1; c <= c2; c++) res.push(String.fromCharCode(64 + c) + r);
+    return res;
+  };
+  function ev(f) {
+    let m;
+    if ((m = /^IFERROR\((.+),0\)$/.exec(f))) { const v = ev(m[1]); return Number.isFinite(v) ? v : 0; }
+    if ((m = /^SUM\(([A-Z]+\d+:[A-Z]+\d+)\)$/.exec(f))) return expand(m[1]).reduce((a, r) => a + numAt(r), 0);
+    if ((m = /^SUMPRODUCT\(([A-Z]+\d+:[A-Z]+\d+),([A-Z]+\d+:[A-Z]+\d+)\)\/([A-Z]+\d+)$/.exec(f))) {
+      const A = expand(m[1]).map(numAt), B = expand(m[2]).map(numAt), d = numAt(m[3]);
+      return d === 0 ? NaN : A.reduce((a, v, i) => a + v * B[i], 0) / d;
+    }
+    if ((m = /^([A-Z]+\d+)\*([A-Z]+\d+)$/.exec(f))) return numAt(m[1]) * numAt(m[2]);
+    if ((m = /^([A-Z]+\d+)\*([\d.]+)$/.exec(f))) return numAt(m[1]) * Number(m[2]);
+    if ((m = /^([A-Z]+\d+)$/.exec(f))) return numAt(m[1]);
+    return null;
+  }
+  return { ev, numAt };
+}
+
+async function run() {
+  const P = window.PLANNER;
+  if (!P) { check("planner.js загрузился", false, "window.PLANNER отсутствует"); return finish(); }
+
+  // ── Инвентарь ────────────────────────────────────────────────────
+  P.state.screensAll = P.state.screens = [
+    ...makeScreens("Москва", "BILLBOARD",   30,   7, { 5000: 1, 10000: 1.8 }, 45),
+    ...makeScreens("Москва", "CITY_BOARD",  40,   5, { 5000: 1 },             22),
+    ...makeScreens("Москва", "CITY_FORMAT", 50,   3, { 5000: 1, 10000: 1.7 }, 23),
+    ...makeScreens("Москва", "OTHER",       20,   4, { 5000: 1 },              0),
+    ...makeScreens("Москва", "MEDIAFACADE",  4, 200, { 5000: 1, 10000: 1.6 }, 250),
+    ...makeScreens("Казань", "SUPERSITE",    8,  10, { 5000: 1, 10000: 1.9 }, 60),
+    ...makeScreens("Казань", "BILLBOARD",   25,   5, { 5000: 1 },             30),
+  ];
+  P.state.availableDurationsMs = [5000, 10000];
+
+  // ── Ставки под несколько длительностей ───────────────────────────
+  P.applySelectedDurations([5000, 10000]);
+  const bb = P.state.screensAll.find(s => s.format === "BILLBOARD" && s.city === "Москва");
+  const cb = P.state.screensAll.find(s => s.format === "CITY_BOARD");
+  check("экран с двумя длительностями получает 2 слота", bb._durSlots === 2, "слотов: " + bb._durSlots);
+  check("экран с одной длительностью получает 1 слот",  cb._durSlots === 1, "слотов: " + cb._durSlots);
+  check("ставка = среднее по длительностям", Math.abs(bb.minBid - (7 + 12.6) / 2) < 1e-9,
+        "minBid: " + bb.minBid);
+
+  // ── Расчёт ───────────────────────────────────────────────────────
+  const chosen = P.state.screensAll;
+  P.lastCalc = {
+    brief: {
+      dates: { start: "2026-09-01", end: "2026-09-30" },
+      schedule: { type: "all_day" },
+      budget: { mode: "fixed", amount: 1500000 },
+      duration: { ms: 10000, msList: [5000, 10000] },
+      bidMode: "recommended", bidUpliftPct: 0,
+      formats: { mode: "auto", selected: [] },
+      geo: { regions: ["Москва", "Казань"] },
+    },
+    chosen,
+    perRegion: [
+      { region: "Москва", tier: "M", budget: 1100000, plays: 60000, ots: 2400000, screens: 144 },
+      { region: "Казань", tier: "A", budget: 400000,  plays: 40000, ots: 900000,  screens: 33 },
+    ],
+    warnings: [], formatStats: {},
+    meta: { days: 30, hpd: 15, totalBudget: 1500000, totalPlays: 100000, totalOts: 3300000 },
+  };
+  setField("commission-enabled", true); setField("commission-rate", 15);
+  setField("vat-enabled", true);        setField("vat-rate", 22);
+  setField("dl-show-vat", true);        setField("dl-show-commission", true);
+
+  // ── Сборка файла ─────────────────────────────────────────────────
+  let res = null;
+  try {
+    res = await P.buildMediaPlanBlob();
+  } catch (e) {
+    check("медиаплан собирается без ошибок", false, e.message + " | " + String(e.stack).split("\n")[1]);
+    return finish();
+  }
+  check("медиаплан собирается без ошибок", !!res);
+  if (!res) return finish();
+
+  const wb = new window.ExcelJS.Workbook();
+  await wb.xlsx.load(await res.blob.arrayBuffer());
+  const ws = wb.getWorksheet("МП"), ap = wb.getWorksheet("АП");
+  check("оба листа на месте", !!ws && !!ap, wb.worksheets.map(w => w.name).join(", "));
+  if (!ws || !ap) return finish();
+
+  // ── Лист АП ──────────────────────────────────────────────────────
+  const hdr = []; ap.getRow(1).eachCell(c => hdr.push(String(c.value)));
+  check("в АП есть колонка длительности", hdr.includes("Длительность, сек"), hdr.join(" | "));
+  check("в АП столько же строк, сколько экранов", ap.rowCount - 1 === chosen.length,
+        `${ap.rowCount - 1} против ${chosen.length}`);
+  const durCol = hdr.indexOf("Длительность, сек") + 1;
+  const durVals = new Set();
+  for (let r = 2; r <= ap.rowCount; r++) durVals.add(String(ap.getCell(r, durCol).value ?? ""));
+  check("длительности проставлены и различаются по экранам",
+        durVals.has("5, 10") && durVals.has("5"), [...durVals].join(" / "));
+  let blankCells = 0;
+  for (let r = 2; r <= ap.rowCount; r++)
+    for (const h of ["GID", "Город", "Адрес", "Формат экрана", "Вид. разрешение"])
+      if (!ap.getCell(r, hdr.indexOf(h) + 1).value) blankCells++;
+  check("обязательные колонки АП заполнены везде", blankCells === 0, "пустых ячеек: " + blankCells);
+
+  // ── Формулы листа МП ─────────────────────────────────────────────
+  const { ev, numAt } = makeEvaluator(ws);
+  const formulas = [];
+  ws.eachRow({ includeEmpty: false }, (row, rn) =>
+    row.eachCell({ includeEmpty: false }, (cell, cn) => {
+      const v = cell.value;
+      if (v && typeof v === "object" && v.formula !== undefined)
+        formulas.push({ rn, cn, f: v.formula, res: Number(v.result) });
+    }));
+  check("формулы в файле есть", formulas.length > 0, "найдено: " + formulas.length);
+
+  const mismatch = [], unknown = [];
+  for (const it of formulas) {
+    const calc = ev(it.f);
+    const ref = String.fromCharCode(64 + it.cn) + it.rn;
+    if (calc === null) { unknown.push(ref + " =" + it.f); continue; }
+    if (Math.abs(calc - it.res) > Math.max(0.02, Math.abs(it.res) * 1e-6))
+      mismatch.push(`${ref} =${it.f}: ${Math.round(calc * 100) / 100} ≠ ${Math.round(it.res * 100) / 100}`);
+  }
+  check("все формулы сходятся с записанными значениями", mismatch.length === 0, mismatch.join(" ; "));
+  check("все формулы распознаны проверкой", unknown.length === 0, unknown.join(" ; "));
+
+  // ── Тождество бюджет = выходы × ставка ───────────────────────────
+  const blocks = [];
+  ws.eachRow({ includeEmpty: false }, (row, rn) => {
+    if (String(row.getCell(1).value || "").trim() === "Кол-во экранов") blocks.push(rn - 1);
+  });
+  check("блоки городов найдены", blocks.length === 2, "найдено: " + blocks.length);
+  const broken = [];
+  for (const base of blocks)
+    for (let c = 5; c <= 14; c++) {
+      const col = String.fromCharCode(64 + c);
+      const plays = numAt(col + (base + 5)), rate = numAt(col + (base + 2)), bud = numAt(col + (base + 7));
+      if (plays > 0 && Math.abs(plays * rate - bud) > 0.02)
+        broken.push(`${col}${base}: ${Math.round(plays * rate)} ≠ ${Math.round(bud)}`);
+    }
+  check("бюджет = выходы × ставка в каждой колонке", broken.length === 0, broken.join(" ; "));
+
+  // ── Порядок форматов ─────────────────────────────────────────────
+  const ORDER = ["OTHER", "PVZ", "CF", "CB", "BB", "SS", "MF"];
+  const badOrder = [];
+  for (const base of blocks) {
+    const codes = [];
+    for (let c = 5; c <= 14; c++) { const v = ws.getCell(base, c).value; if (v) codes.push(String(v)); }
+    const ranks = codes.map(c => ORDER.indexOf(c));
+    if (ranks.some(r => r < 0)) badOrder.push("неизвестный формат: " + codes.join(","));
+    for (let i = 1; i < ranks.length; i++)
+      if (ranks[i] < ranks[i - 1]) badOrder.push("порядок нарушен: " + codes.join(","));
+  }
+  check("форматы идут от меньшего к большему", badOrder.length === 0, badOrder.join(" ; "));
+
+  // ── Пустая ячейка в шапке ────────────────────────────────────────
+  let paintedEmpty = 0;
+  for (let c = 1; c <= 10; c++) {
+    const cell = ws.getCell(7, c);
+    const hasFill = !!(cell.fill && cell.fill.fgColor);
+    if (!cell.value && hasFill) paintedEmpty++;
+  }
+  check("в шапке нет пустых залитых ячеек", paintedEmpty === 0, "залитых пустых: " + paintedEmpty);
+
+  finish();
+}
+
+function finish() {
+  const t = document.getElementById("total");
+  t.className = failed === 0 ? "pass" : "fail";
+  t.textContent = failed === 0
+    ? `Всё сошлось: ${passed} проверок`
+    : `Провалено ${failed} из ${passed + failed}`;
+  window.__SMOKE__ = { passed, failed };
+}
+
+// widget-init грузит planner.js асинхронно — ждём появления сборщика плана.
+// ExcelJS ждать не надо: buildMediaPlanBlob сам подтягивает его по требованию.
+// Ошибку инициализации DSP (без авторизации инвентарь не грузится) игнорируем —
+// план собираем из подготовленного lastCalc, живой инвентарь для этого не нужен.
+(function waitReady(tries = 0) {
+  if (window.PLANNER && typeof window.PLANNER.buildMediaPlanBlob === "function") return run();
+  if (tries > 120) {
+    check("виджет успел инициализироваться", false, "не дождались planner.js");
+    return finish();
+  }
+  setTimeout(() => waitReady(tries + 1), 250);
+})();
+</script>
+
+</body>
+</html>
