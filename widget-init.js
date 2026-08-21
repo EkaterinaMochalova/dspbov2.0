@@ -64,6 +64,41 @@ window.PLANNER_ASSET_BASE = (function () {
   const style = document.createElement("style");
   style.textContent = `
 
+/* ===== ТОКЕНЫ ДИЗАЙН-СИСТЕМЫ =====
+   Жили в инлайновом <style> внутри блока Тильды (Planner UI — Style A).
+   Блок удалён 22.08.2026, потому что перебивал стили отсюда; переменные
+   перенесены, чтобы не потерять зафиксированные значения акцента и радиусов.
+   Пока ни одно правило ниже к ним не обращается — это точка входа для того,
+   чтобы постепенно заменить 107 захардкоженных hex на var(--ux-*).          */
+:root{
+  /* palette */
+  --ux-bg: #ffffff;
+  --ux-text: #0b1220;
+  --ux-sub: rgba(11,18,32,.62);
+  --ux-line: rgba(15,23,42,.10);
+  --ux-muted: rgba(255,255,255,.55);
+
+  /* accent */
+  --ux-accent: #2563eb;
+  --ux-accent2:#1d4ed8;
+  --ux-accentSoft: rgba(37,99,235,.12);
+  --ux-ring: 0 0 0 4px rgba(37,99,235,.18);
+
+  /* glass */
+  --ux-glass: rgba(255,255,255,.60);
+  --ux-glass-strong: rgba(255,255,255,.72);
+  --ux-glass-line: rgba(255,255,255,.22);
+  --ux-blur: 16px;
+
+  /* shadows */
+  --ux-shadow-soft: 0 10px 28px rgba(16,24,40,.08);
+  --ux-shadow: 0 18px 50px rgba(16,24,40,.12);
+
+  /* radius */
+  --ux-radius: 18px;
+  --ux-radius-sm: 12px;
+}
+
 #planner-widget .chart-card{
   background:#fff;
   border:1px solid #eee;
