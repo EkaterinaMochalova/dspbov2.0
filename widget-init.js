@@ -1078,7 +1078,18 @@ window.PLANNER_ASSET_BASE = (function () {
     const t = e.target.closest && e.target.closest("#planner-widget [data-kbd-click]");
     if (!t || t.getAttribute("aria-disabled") === "true") return;
     e.preventDefault();
+
+    // Карточки форматов и операторов перерисовываются списком целиком, поэтому
+    // после клика сфокусированный узел уже уничтожен и фокус падает в <body>.
+    // Мышке всё равно, а с клавиатуры это выбрасывает в начало страницы —
+    // возвращаем фокус на карточку, вставшую на то же место.
+    const box = t.parentElement;
+    const i = box ? Array.prototype.indexOf.call(box.children, t) : -1;
     t.click();
+    if (i >= 0 && (!document.activeElement || document.activeElement === document.body)) {
+      const back = box.children[i];
+      if (back && back.matches("[data-kbd-click]")) back.focus();
+    }
   });
 
   // 3. Тяжёлые библиотеки — по требованию, а не на старте.
