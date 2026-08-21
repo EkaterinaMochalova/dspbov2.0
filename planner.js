@@ -2400,6 +2400,14 @@ async function buildMediaPlanBlob() {
     return { formula, result: (Number.isFinite(result) ? result : null) };
   }
 
+  // Формат «до двух знаков, но без хвоста у целых».
+  // Маска 0.## в Excel рисует десятичный разделитель ВСЕГДА, даже когда дробной
+  // части нет: 34 показывается как «34,». Условного формата «прятать запятую у
+  // целых» в Excel нет, поэтому выбираем маску по самому числу.
+  function decFmt(v) {
+    return Number.isFinite(v) && !Number.isInteger(v) ? "#,##0.##" : "#,##0";
+  }
+
   // Round rate: frac ≥ 0.8 → floor + 1.5; frac > 0 → ceil; else x
   function roundRate(x) {
     if (!x || !isFinite(x)) return x;
@@ -2831,13 +2839,14 @@ async function buildMediaPlanBlob() {
     const wtOtsD = regCnt > 0 && _otsNum > 0 ? +(_otsNum / regCnt).toFixed(2) : null;
     sc(ws, base + 3, 1, "Средний OTS*",     { bold: true, fill: C_LIGHT });
     sc(ws, base + 3, 2, fx(`IFERROR(SUMPRODUCT(${rng(rOts)},${rng(rCnt)})/B${rCnt},0)`, wtOtsD),
-      { fill: C_GREEN, numFmt: "0.##" });
+      { fill: C_GREEN, numFmt: decFmt(wtOtsD) });
     otsPerFmt.forEach((o, fi) => {
-      sc(ws, base + 3, 5 + fi, o, { fill: C_GREEN, numFmt: "0.##" });
+      sc(ws, base + 3, 5 + fi, o, { fill: C_GREEN, numFmt: decFmt(o) });
     });
 
     // ── base+4: График ч/сутки ────────────────────────────────────
-    const hpdFmt = hpdIsRange ? undefined : (Number.isInteger(hpd) ? "0" : "0.##");
+    // Диапазон («5–10») — строка, к ней числовой формат неприменим.
+    const hpdFmt = hpdIsRange ? undefined : decFmt(hpd);
     sc(ws, base + 4, 1, "График, ч/сутки", { bold: true, fill: C_LIGHT, v: "center" });
     sc(ws, base + 4, 2, hpdValue,          { fill: C_GREEN, numFmt: hpdFmt, h: "right", v: "center" });
     if (schedTxt) sc(ws, base + 4, 3, schedTxt,

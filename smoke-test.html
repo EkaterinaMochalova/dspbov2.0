@@ -257,6 +257,21 @@ async function run() {
   }
   check("форматы идут от меньшего к большему", badOrder.length === 0, badOrder.join(" ; "));
 
+  // ── Хвостовой разделитель у целых чисел ──────────────────────────
+  // Маска вида 0.## или #,##0.## в Excel рисует запятую всегда, даже когда
+  // дробной части нет: целое 34 показывается как «34,».
+  const trailing = [];
+  ws.eachRow({ includeEmpty: false }, (row, rn) =>
+    row.eachCell({ includeEmpty: false }, (cell, cn) => {
+      const fmt = cell.numFmt;
+      if (!fmt || !/\.#+$/.test(fmt)) return;      // маска с необязательными знаками
+      const v = cell.value;
+      const num = (v && typeof v === "object" && v.formula !== undefined) ? Number(v.result) : v;
+      if (typeof num === "number" && Number.isInteger(num))
+        trailing.push(`${String.fromCharCode(64 + cn)}${rn} = ${num} при формате ${fmt}`);
+    }));
+  check("у целых чисел нет висящей запятой", trailing.length === 0, trailing.join(" ; "));
+
   // ── Пустая ячейка в шапке ────────────────────────────────────────
   let paintedEmpty = 0;
   for (let c = 1; c <= 10; c++) {
