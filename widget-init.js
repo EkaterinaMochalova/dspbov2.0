@@ -25,9 +25,10 @@ window.PLANNER_ASSET_BASE = (function () {
   const root = document.getElementById("planner-root");
   if (!root) { console.error("[widget-init] #planner-root not found"); return; }
 
-  function loadCSS(href) {
+  function loadCSS(href, integrity) {
     const l = document.createElement("link");
     l.rel = "stylesheet"; l.href = href;
+    if (integrity) { l.integrity = integrity; l.crossOrigin = ""; }
     document.head.appendChild(l);
   }
 
@@ -55,7 +56,8 @@ window.PLANNER_ASSET_BASE = (function () {
   }
 
   // 1. Inject external CSS
-  loadCSS("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css");
+  loadCSS("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
+          "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=");
   loadCSS("https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css");
 
   // 2. Inject all inline CSS from widget.html
@@ -136,7 +138,7 @@ window.PLANNER_ASSET_BASE = (function () {
     display:flex; align-items:center; gap:8px;
     margin:18px 0 10px;
     font-size:12px; font-weight:600; letter-spacing:.06em; text-transform:uppercase;
-    color:rgba(11,18,32,.4);
+    color:rgba(11,18,32,.62);
   }
   #planner-widget .additional-filters-divider::before,
   #planner-widget .additional-filters-divider::after{
@@ -149,10 +151,10 @@ window.PLANNER_ASSET_BASE = (function () {
     display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; font-size:14px;
   }
   #planner-widget .pool-preview-base{ font-weight:600; color:#0b1220; }
-  #planner-widget .pool-preview-arrow{ color:rgba(11,18,32,.35); font-size:12px; }
+  #planner-widget .pool-preview-arrow{ color:rgba(11,18,32,.62); font-size:12px; }
   #planner-widget .pool-preview-filter{ color:#667085; }
   #planner-widget .pool-preview-filter b{ color:#0b1220; }
-  #planner-widget .pool-preview-pct{ font-size:12px; color:#e04444; margin-left:2px; }
+  #planner-widget .pool-preview-pct{ font-size:12px; color:#c62828; margin-left:2px; }
 
   /* Мини-бейдж на шаге 1 */
   #pool-mini-badge{ transition: opacity .2s; }
@@ -590,7 +592,7 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .wiz-progress .bar{ flex: 1; }
   #planner-widget .wiz-progress .meta{
     font-size: 12px;
-    color: rgba(11,18,32,.55);
+    color: rgba(11,18,32,.62);
     white-space: nowrap;
     min-width: 32px;
     text-align: right;
@@ -611,8 +613,8 @@ window.PLANNER_ASSET_BASE = (function () {
     border-color:#5b3ef5; background:#f0eeff; color:#3a1dcc;
   }
   #planner-widget .sch-chip-name{ font-size:13px; font-weight:600; }
-  #planner-widget .sch-chip-time{ font-size:11px; color:rgba(11,18,32,.45); margin-top:2px; }
-  #planner-widget .sch-chip.active .sch-chip-time{ color:rgba(91,62,245,.65); }
+  #planner-widget .sch-chip-time{ font-size:11px; color:rgba(11,18,32,.62); margin-top:2px; }
+  #planner-widget .sch-chip.active .sch-chip-time{ color:#4930c7; }
   #planner-widget .pct-chip{
     padding:6px 14px; font-size:13px; font-weight:600;
     border:1.5px solid rgba(15,23,42,.14); border-radius:12px;
@@ -715,8 +717,8 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .str-chip:hover .str-chip-body{border-color:#5b3ef5;background:#f5f3ff;}
   #planner-widget .str-chip input:checked + .str-chip-body{border-color:#5b3ef5;background:#ede9fd;color:#4930c7;}
   #planner-widget .str-chip-title{font-weight:600;font-size:13px;}
-  #planner-widget .str-chip-desc{font-size:11px;color:#888;margin-top:2px;}
-  #planner-widget .str-chip input:checked + .str-chip-body .str-chip-desc{color:#7059c7;}
+  #planner-widget .str-chip-desc{font-size:11px;color:#6b7280;margin-top:2px;}
+  #planner-widget .str-chip input:checked + .str-chip-body .str-chip-desc{color:#59409f;}
 
   /* ===== CONSTRUCTIONS CHIP ===== */
   #planner-widget .cns-chip{
@@ -726,7 +728,7 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   #planner-widget .cns-chip:hover{border-color:#5b3ef5;background:#f5f3ff;}
   #planner-widget .cns-chip.active{border-color:#5b3ef5;background:#ede9fd;color:#4930c7;}
-  #planner-widget .cns-chip.active .str-chip-desc{color:#7059c7;}
+  #planner-widget .cns-chip.active .str-chip-desc{color:#59409f;}
   #planner-widget .cns-chip-ico{font-size:18px;line-height:1;flex-shrink:0;}
   #planner-widget .cns-chip-body{flex:1;}
   #planner-widget .cns-chip-badge{
@@ -752,8 +754,8 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   #planner-widget .vk-card-body{flex:1;}
   #planner-widget .vk-card-title{font-weight:600;font-size:13px;color:#0b1220;}
-  #planner-widget .vk-card-desc{font-size:11px;color:#888;margin-top:2px;}
-  #planner-widget .vk-card.active .vk-card-desc{color:#7059c7;}
+  #planner-widget .vk-card-desc{font-size:11px;color:#6b7280;margin-top:2px;}
+  #planner-widget .vk-card.active .vk-card-desc{color:#59409f;}
   #planner-widget .vk-toggle{
     width:38px;height:22px;border-radius:11px;
     background:#d0d5dd;transition:background 0.15s;flex-shrink:0;position:relative;
@@ -801,8 +803,8 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .reco-tier-btn input{ display:none; }
   #planner-widget .reco-tier-btn:has(input:checked){ background:#5b3ef5;color:#fff;border-color:#5b3ef5; }
   #planner-widget .reco-tier-btn{ flex-direction:column;align-items:flex-start;gap:1px;padding:7px 12px; }
-  #planner-widget .rtb-label{ font-size:10px;font-weight:500;color:#8b83c5;text-transform:uppercase;letter-spacing:.4px; }
-  #planner-widget .reco-tier-btn:has(input:checked) .rtb-label{ color:#d9d0ff; }
+  #planner-widget .rtb-label{ font-size:10px;font-weight:500;color:#5b4bb8;text-transform:uppercase;letter-spacing:.4px; }
+  #planner-widget .reco-tier-btn:has(input:checked) .rtb-label{ color:#e9e4ff; }
   #planner-widget .rtb-sum{ font-size:13px;font-weight:700;white-space:nowrap; }
   /* Скелетон на месте суммы, пока идёт пересчёт по адресной программе */
   #planner-widget .rtb-sum.rtb-skel{
@@ -822,7 +824,7 @@ window.PLANNER_ASSET_BASE = (function () {
     font-size:11px;color:#5b3ef5;font-weight:600;line-height:1.3;
   }
   #planner-widget .budget-tier-chip:hover{ background:#ede9ff;border-color:#b9a8f8; }
-  #planner-widget .budget-tier-chip .btc-label{ font-size:10px;font-weight:500;color:#8b83c5;text-transform:uppercase;letter-spacing:.4px; }
+  #planner-widget .budget-tier-chip .btc-label{ font-size:10px;font-weight:500;color:#5b4bb8;text-transform:uppercase;letter-spacing:.4px; }
   #planner-widget .budget-extra-row{
     display: flex;
     align-items: center;
@@ -915,18 +917,18 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .city-fmt-lbl{ font-size:12px; font-weight:600; color:#344054; min-width:72px; max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex-shrink:0; }
   #planner-widget .city-fmt-chip{ padding:2px 8px; border-radius:999px; border:1px solid rgba(15,23,42,.14); background:#fff; font-size:11px; cursor:pointer; white-space:nowrap; transition:background .1s,border-color .1s; }
   #planner-widget .city-fmt-chip.on{ border-color:rgba(37,99,235,.5); background:rgba(37,99,235,.10); color:#1D4ED8; font-weight:600; }
-  #planner-widget .city-fmt-reset{ font-size:11px; color:#9ca3af; cursor:pointer; padding:2px 4px; border:none; background:none; white-space:nowrap; }
+  #planner-widget .city-fmt-reset{ font-size:11px; color:#6b7280; cursor:pointer; padding:2px 4px; border:none; background:none; white-space:nowrap; }
   #planner-widget .city-fmt-reset:hover{ color:#ef4444; }
 
   /* ===== SEND PLAN BUTTON ===== */
   #planner-widget #send-plan-btn{
-    background:#22c55e; color:#fff; border:1.5px solid #16a34a;
+    background:#15803d; color:#fff; border:1.5px solid #166534;
     padding:8px 18px; border-radius:10px;
     font-size:13px; font-weight:600; cursor:pointer;
     display:none;
     transition:background 0.15s, opacity 0.15s;
   }
-  #planner-widget #send-plan-btn:hover{ background:#16a34a; }
+  #planner-widget #send-plan-btn:hover{ background:#166534; }
   #planner-widget #send-plan-btn:disabled{ opacity:0.6; cursor:default; }
 
   /* ===== SEND PLAN POPUP ===== */
@@ -991,7 +993,7 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .calc-history-item:hover{
     background:#eee9ff; border-color:#a78bfa;
   }
-  #planner-widget .calc-history-date{ font-size:11px; color:#888; margin-bottom:2px; }
+  #planner-widget .calc-history-date{ font-size:11px; color:#6b7280; margin-bottom:2px; }
   #planner-widget .calc-history-title{ font-weight:600; color:#0b1220; }
   #planner-widget .calc-history-meta{ font-size:11px; color:#667085; margin-top:2px; }
 
@@ -1038,8 +1040,46 @@ window.PLANNER_ASSET_BASE = (function () {
     opacity:0; pointer-events:none; transition:opacity .18s, transform .18s;
   }
   #planner-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  /* ===== ДОСТУПНОСТЬ ===== */
+  /* «Импорт городов из файла» — это <label> вокруг input[type=file].
+     Инпут спрятан визуально (не display:none), чтобы он остался в табуляции;
+     рамку фокуса рисует сама метка. */
+  #planner-widget .file-import-label{ position: relative; }
+  #planner-widget .file-import-label:focus-within{
+    outline: 3px solid rgba(37,99,235,.45);
+    outline-offset: 2px;
+  }
+
+  /* Уважаем системную настройку «меньше движения»: спиннер регионов, шиммер
+     суммы и всплытие попапа при вестибулярных нарушениях вызывают тошноту. */
+  @media (prefers-reduced-motion: reduce){
+    #planner-widget *,
+    #planner-widget *::before,
+    #planner-widget *::after,
+    #dsp-login-overlay *,
+    #send-plan-popup *,
+    #planner-toast,
+    #planner-recalc-float{
+      animation-duration: .001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 `;
   document.head.appendChild(style);
+
+  // Карточки форматов/операторов и четыре тумблера — это <div> с onclick.
+  // role/tabindex проставлены в разметке и генераторах; здесь один делегированный
+  // обработчик повторяет клик по Enter/Space, чтобы не дублировать его в шести местах.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+    const t = e.target.closest && e.target.closest("#planner-widget [data-kbd-click]");
+    if (!t || t.getAttribute("aria-disabled") === "true") return;
+    e.preventDefault();
+    t.click();
+  });
 
   // 3. Тяжёлые библиотеки — по требованию, а не на старте.
   //    xlsx ~307 КБ и exceljs ~250 КБ нужны только при импорте файла и
@@ -1091,9 +1131,9 @@ window.PLANNER_ASSET_BASE = (function () {
   <button id="planner-exclusions-reset" style="background:#ffc107; border:none; border-radius:5px; padding:2px 10px; cursor:pointer; font-size:12px; font-weight:600; color:#3a2800;">\\u21A9 Вернуть все</button>
 </div>
 <br><br><br><br>  <h2 class="planner-title">Расчёт размещения</h2>
-  <div id="dsp-user-bar" style="display:none; font-size:12px; color:#888; margin:-8px 0 10px;"></div>
+  <div id="dsp-user-bar" style="display:none; font-size:12px; color:#6b7280; margin:-8px 0 10px;"></div>
   <div id="calc-history-panel" style="display:none; margin-bottom:12px;">
-    <div id="calc-history-toggle" class="calc-history-toggle">
+    <div id="calc-history-toggle" class="calc-history-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="calc-history-list" data-kbd-click>
       <span id="calc-history-arrow">▶</span> История расчётов
     </div>
     <div id="calc-history-list" class="calc-history-list" style="display:none; flex-direction:column;"></div>
@@ -1156,11 +1196,12 @@ window.PLANNER_ASSET_BASE = (function () {
           <div id="city-selected" class="city-selected"></div>
           <!-- City import + select all -->
           <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-            <label style="display:inline-flex; align-items:center; gap:6px; padding:7px 14px;
+            <label class="file-import-label" style="display:inline-flex; align-items:center; gap:6px; padding:7px 14px;
                    border:1.5px dashed #c4b5fd; border-radius:10px; background:#faf8ff;
                    color:#5B3EF5; font-size:13px; cursor:pointer; font-weight:500;">
               ↓ Импорт городов из файла
-              <input type="file" id="region-file-input" accept=".xlsx,.csv,.txt" style="display:none;">
+              <input type="file" id="region-file-input" accept=".xlsx,.csv,.txt"
+                     style="position:absolute; width:1px; height:1px; opacity:0; pointer-events:none;">
             </label>
             <button type="button" id="regions-paste-btn"
               style="padding:7px 14px; border:1.5px dashed #c4b5fd; border-radius:10px;
@@ -1179,7 +1220,7 @@ window.PLANNER_ASSET_BASE = (function () {
               placeholder="Москва&#10;Санкт-Петербург&#10;Екатеринбург&#10;или через запятую: Москва, Казань, Уфа"
               style="width:100%; height:90px; padding:8px 10px; border:1.5px solid #c4b5fd;
                      border-radius:10px; font-size:13px; color:#0b1220; resize:vertical;
-                     font-family:inherit; box-sizing:border-box; outline:none;"></textarea>
+                     font-family:inherit; box-sizing:border-box;"></textarea>
             <div style="display:flex; gap:8px; margin-top:6px;">
               <button type="button" id="regions-paste-go"
                 style="padding:7px 18px; background:#5B3EF5; color:#fff; border:none;
@@ -1208,7 +1249,7 @@ window.PLANNER_ASSET_BASE = (function () {
             </span>
             Только активные
           </label>
-          <span style="font-size:12px;color:#9ca3af;">экраны с известной ставкой</span>
+          <span style="font-size:12px;color:#6b7280;">экраны с известной ставкой</span>
         </div>
         <!-- Pool mini badge (step 1) -->
         <div id="pool-mini-badge" style="display:none; margin-top:10px; padding:10px 14px;
@@ -1243,7 +1284,7 @@ window.PLANNER_ASSET_BASE = (function () {
           <textarea id="manual-gids"
             placeholder="Вставьте GID-ы экранов — по одному на строку или через запятую/пробел/таб.&#10;&#10;Пример:&#10;GID-12345&#10;GID-67890, GID-11111"
             style="width:100%; height:160px; padding:10px; border:1.5px solid #c4b5fd; border-radius:10px;
-                   font-size:13px; resize:vertical; box-sizing:border-box; font-family:monospace; outline:none;"></textarea>
+                   font-size:13px; resize:vertical; box-sizing:border-box; font-family:monospace;"></textarea>
           <div id="manual-gids-status" style="font-size:12px; color:#667085; margin-top:6px;">
             Введите GID-ы — после расчёта будут использованы только эти экраны.
           </div>
@@ -1276,8 +1317,8 @@ window.PLANNER_ASSET_BASE = (function () {
   <div class="planner-block">
     <div class="planner-label">Даты</div>
     <div class="row-2">
-      <input id="date-start" type="date" class="ux-input" />
-      <input id="date-end" type="date" class="ux-input" />
+      <input id="date-start" type="date" class="ux-input" aria-label="Дата начала кампании" />
+      <input id="date-end" type="date" class="ux-input" aria-label="Дата окончания кампании" />
     </div>
   </div>
   <div class="planner-block">
@@ -1374,7 +1415,8 @@ window.PLANNER_ASSET_BASE = (function () {
   </div>
   <!-- per-city toggle (shown when 2+ regions selected) -->
   <div id="per-city-toggle-wrap" style="display:none; margin-top:12px;">
-    <div id="per-city-toggle-row" style="display:flex;align-items:center;justify-content:space-between;
+    <div id="per-city-toggle-row" role="switch" aria-checked="false" tabindex="0" data-kbd-click
+         style="display:flex;align-items:center;justify-content:space-between;
          padding:10px 12px;border:1.5px solid #e5e3f0;border-radius:12px;background:#fff;cursor:pointer;
          transition:border-color .12s;">
       <span style="font-size:13px;font-weight:500;color:#344054;">Задать бюджет по городам</span>
@@ -1474,7 +1516,7 @@ window.PLANNER_ASSET_BASE = (function () {
         <!-- Сюда раскладка переносит блоки этого шага (см. STEP_LAYOUT) -->
         <div id="wiz-step-3-body"></div>
         <button id="calc-btn" class="ux-primary" disabled>Рассчитать</button>
-        <div id="calc-blocked-hint" style="display:none; margin-top:8px; font-size:12px; color:#e84444; padding:6px 10px; background:#fff5f5; border-radius:8px;"></div>
+        <div id="calc-blocked-hint" role="alert" style="display:none; margin-top:8px; font-size:12px; color:#c62828; padding:6px 10px; background:#fff5f5; border-radius:8px;"></div>
         <div id="status" class="planner-status"></div>
         <div class="wiz-nav" style="margin-top:12px;">
           <button type="button" class="wiz-btn ghost" id="wiz-back-3">← Адреска</button>
@@ -1560,7 +1602,7 @@ window.PLANNER_ASSET_BASE = (function () {
     <div class="planner-note" style="margin-bottom:8px;">
       По умолчанию число подбирает стратегия. Включите, чтобы задать точное.
     </div>
-    <div class="cns-chip" id="constructions-chip">
+    <div class="cns-chip" id="constructions-chip" role="switch" aria-checked="false" tabindex="0" data-kbd-click>
       <span class="cns-chip-ico">🏗</span>
       <div class="cns-chip-body">
         <div class="str-chip-title">Задать вручную</div>
@@ -1607,7 +1649,7 @@ window.PLANNER_ASSET_BASE = (function () {
         Выходов в час на экран: <span id="constructions-ppm-val" style="color:#5b3ef5;">10</span>
       </div>
       <input type="range" id="constructions-ppm" min="1" max="60" value="10" style="width:100%; accent-color:#5b3ef5;">
-      <div style="display:flex; justify-content:space-between; font-size:11px; color:#aaa; margin-top:2px;">
+      <div style="display:flex; justify-content:space-between; font-size:11px; color:#6b7280; margin-top:2px;">
         <span>1 / час</span><span>60 / час</span>
       </div>
     </div>
@@ -1629,7 +1671,7 @@ window.PLANNER_ASSET_BASE = (function () {
       <input type="range" id="gid-ppm" min="1" max="60" value="10" style="flex:1; accent-color:#5b3ef5;">
       <span id="gid-ppm-val" style="font-weight:700; color:#5b3ef5; min-width:28px; text-align:right;">10</span>
     </div>
-    <div style="display:flex; justify-content:space-between; font-size:11px; color:#aaa; margin-top:2px;">
+    <div style="display:flex; justify-content:space-between; font-size:11px; color:#6b7280; margin-top:2px;">
       <span>1 / час</span><span>60 / час</span>
     </div>
   </div>
@@ -1687,7 +1729,7 @@ window.PLANNER_ASSET_BASE = (function () {
     </div>
     <!-- Надбавка — независимый toggle поверх выбранного режима, а не третий
          взаимоисключающий режим: поднимать можно и минималку, и рекомендованную. -->
-    <div class="cns-chip" id="bid-uplift-chip">
+    <div class="cns-chip" id="bid-uplift-chip" role="switch" aria-checked="false" tabindex="0" data-kbd-click>
       <span class="cns-chip-ico">↑</span>
       <div class="cns-chip-body">
         <div class="str-chip-title">Надбавка к ставке</div>
@@ -1715,7 +1757,7 @@ window.PLANNER_ASSET_BASE = (function () {
   </div>
   <!-- ===== АУДИТОРИЯ VK ===== -->
     <div class="planner-block" id="audience-block">
-      <div class="vk-card" id="vk-affinity-card">
+      <div class="vk-card" id="vk-affinity-card" role="switch" aria-checked="false" tabindex="0" data-kbd-click>
         <div class="vk-card-icon">VK</div>
         <div class="vk-card-body">
           <div class="vk-card-title">Аудитория VK</div>
@@ -1737,7 +1779,7 @@ window.PLANNER_ASSET_BASE = (function () {
             </div>
             <input type="range" id="audience-top-pct" min="5" max="100" step="5" value="10"
                    style="width:100%; accent-color:#5b3ef5;">
-            <div style="display:flex; justify-content:space-between; font-size:11px; color:#aaa; margin-top:2px;">
+            <div style="display:flex; justify-content:space-between; font-size:11px; color:#6b7280; margin-top:2px;">
               <span>5%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
             </div>
           </div>
@@ -1748,7 +1790,7 @@ window.PLANNER_ASSET_BASE = (function () {
     </div>
   <!-- ===== ЯНДЕКС ГЕОАНАЛИТИКА ===== -->
   <div class="planner-block" id="yandex-geo-block">
-    <div class="vk-card" id="yandex-geo-card">
+    <div class="vk-card" id="yandex-geo-card" role="switch" aria-checked="false" tabindex="0" data-kbd-click>
       <div class="vk-card-icon" style="background:#fc3f1d; font-size:10px; font-weight:800; letter-spacing:-0.5px;">ЯГео</div>
       <div class="vk-card-body">
         <div class="vk-card-title">Яндекс Геоаналитика</div>
@@ -1760,7 +1802,7 @@ window.PLANNER_ASSET_BASE = (function () {
       <div style="margin-bottom:10px;">
         <div class="planner-label" style="margin-bottom:6px;">Категория бизнеса рядом с экраном</div>
         <select id="poi-category" style="width:100%; padding:9px 12px; border:1.5px solid #c4b5fd;
-            border-radius:10px; font-size:13px; color:#0b1220; background:#fff; outline:none; cursor:pointer;">
+            border-radius:10px; font-size:13px; color:#0b1220; background:#fff; cursor:pointer;">
           <option value="searches.pharmacy">Аптеки</option>
           <option value="searches.food">Рестораны и кафе</option>
           <option value="searches.grocery">Продуктовые магазины</option>
@@ -1790,16 +1832,16 @@ window.PLANNER_ASSET_BASE = (function () {
       <div style="margin-bottom:14px;">
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
           <div class="planner-label" style="margin:0;">Радиус поиска</div>
-          <span style="font-weight:700; color:#fc3f1d; font-size:13px;"><span id="yandex-radius-val">500</span> м</span>
+          <span style="font-weight:700; color:#c62d10; font-size:13px;"><span id="yandex-radius-val">500</span> м</span>
         </div>
         <input type="range" id="yandex-radius" min="100" max="2000" step="50" value="500"
                style="width:100%; accent-color:#fc3f1d;">
-        <div style="display:flex; justify-content:space-between; font-size:11px; color:#aaa; margin-top:2px;">
+        <div style="display:flex; justify-content:space-between; font-size:11px; color:#6b7280; margin-top:2px;">
           <span>100 м</span><span>500 м</span><span>1 км</span><span>2 км</span>
         </div>
       </div>
       <button id="yandex-find-btn" type="button"
-        style="padding:11px 24px; background:#fc3f1d; color:#fff; border:none;
+        style="padding:11px 24px; background:#c62d10; color:#fff; border:none;
                border-radius:12px; font-size:14px; font-weight:700; cursor:pointer; width:100%;">
         🔍 Найти экраны
       </button>
@@ -1808,7 +1850,7 @@ window.PLANNER_ASSET_BASE = (function () {
         <div style="height:6px; background:rgba(252,63,29,0.12); border-radius:3px; overflow:hidden;">
           <div id="yandex-poi-progress-bar" style="height:100%; width:0%; background:#fc3f1d; border-radius:3px; transition:width 0.2s;"></div>
         </div>
-        <div id="yandex-poi-progress-text" style="font-size:11px; color:#fc3f1d; margin-top:4px;"></div>
+        <div id="yandex-poi-progress-text" style="font-size:11px; color:#c62d10; margin-top:4px;"></div>
       </div>
     </div>
   </div>
@@ -2024,13 +2066,7 @@ window.PLANNER_ASSET_BASE = (function () {
   </div>
 </div>
 <!-- ===================== LIBS ===================== -->
-<link
-  rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-  crossorigin=""
-/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+<!-- CSS Leaflet подключает loadCSS() выше; дублирующие <link> убраны -->
 <!-- ===================== STRUCTURE CSS ===================== -->
 <!-- ===================== BOOT (PLANNER) ===================== -->
 <!-- ===================== HELPERS (REGIONS) ===================== -->
@@ -2414,7 +2450,7 @@ window.PLANNER_ASSET_BASE = (function () {
         <div id="interests-body" style="display:block;margin-top:8px;">
           <input type="text" id="interests-search" placeholder="Поиск интереса\\u2026"
             style="width:100%;box-sizing:border-box;padding:5px 10px;border:1px solid #e0d9ff;
-              border-radius:8px;font-size:12px;margin-bottom:8px;outline:none;">
+              border-radius:8px;font-size:12px;margin-bottom:8px;">
           <div id="interests-chips" style="display:flex;flex-wrap:wrap;gap:6px;">
             \${makeChips(interestCols)}
           </div>
@@ -2633,7 +2669,7 @@ window.PLANNER_ASSET_BASE = (function () {
         <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:3px 9px;border-radius:999px;
           background:\${s.ok?"#f0fdf4":"#f8f9fb"};
           border:1px solid \${s.ok?"#86efac":"#e5e7eb"};
-          color:\${s.ok?"#166534":"#9ca3af"};">
+          color:\${s.ok?"#166534":"#6b7280"};">
           \${s.ok?"\\u2713":"\\u25CB"} \${s.label}
         </span>
       \`).join("");
@@ -2850,6 +2886,7 @@ window.PLANNER_ASSET_BASE = (function () {
       if (!card || !wrap) return;
       card.addEventListener("click", () => {
         const active = card.classList.toggle("active");
+        card.setAttribute("aria-checked", active ? "true" : "false");
         wrap.style.display = active ? "" : "none";
       });
 
@@ -3023,6 +3060,7 @@ window.PLANNER_ASSET_BASE = (function () {
       const cb = el("constructions-enabled");
       const wrap = el("constructions-count-wrap");
       const active = chip.classList.toggle("active");
+      chip.setAttribute("aria-checked", active ? "true" : "false");
       if (cb) { cb.checked = active; cb.dispatchEvent(new Event("change", { bubbles: true })); }
       if (wrap) wrap.style.display = active ? "block" : "none";
       renderProgress();
@@ -3034,6 +3072,7 @@ window.PLANNER_ASSET_BASE = (function () {
       const cb   = el("bid-uplift-enabled");
       const wrap = el("bid-uplift-wrap");
       const active = chip.classList.toggle("active");
+      chip.setAttribute("aria-checked", active ? "true" : "false");
       if (cb) { cb.checked = active; cb.dispatchEvent(new Event("change", { bubbles: true })); }
       if (wrap) wrap.style.display = active ? "block" : "none";
       syncBidUplift();
@@ -3074,6 +3113,7 @@ window.PLANNER_ASSET_BASE = (function () {
       const cb = el("audience-enabled");
       const wrap = el("audience-wrap");
       const active = card.classList.toggle("active");
+      card.setAttribute("aria-checked", active ? "true" : "false");
       if (cb) { cb.checked = active; cb.dispatchEvent(new Event("change", { bubbles: true })); }
       if (wrap) wrap.style.display = active ? "block" : "none";
       renderProgress();
@@ -3227,7 +3267,8 @@ window.PLANNER_ASSET_BASE = (function () {
       const row    = el("per-city-toggle-row");
       if (slider) slider.style.background = enabled ? "#5b3ef5" : "#d0d5dd";
       if (knob)   knob.style.left = enabled ? "19px" : "3px";
-      if (row)    row.style.borderColor = enabled ? "#5b3ef5" : "#e5e3f0";
+      if (row)  { row.style.borderColor = enabled ? "#5b3ef5" : "#e5e3f0";
+                  row.setAttribute("aria-checked", enabled ? "true" : "false"); }
     }
 
     el("per-city-toggle-row")?.addEventListener("click", () => {
@@ -3505,6 +3546,8 @@ window.PLANNER_ASSET_BASE = (function () {
     visible.forEach(({ fmt, count, label, desc }) => {
       const card = document.createElement("div");
       card.className = "fmt-card";
+      card.setAttribute("role", "button");
+      card.dataset.kbdClick = "";
 
       card.innerHTML = \`
         <div class="fmt-left">
@@ -3522,6 +3565,11 @@ window.PLANNER_ASSET_BASE = (function () {
 
       const selected = !isAuto && st.selectedFormats?.has?.(fmt);
       if(selected) card.classList.add("is-selected");
+      // В авторежиме форматы выбирает планировщик: клик по карточке ничего
+      // не меняет, поэтому и в табуляцию её пускать незачем.
+      card.setAttribute("aria-pressed", selected ? "true" : "false");
+      card.setAttribute("aria-disabled", isAuto ? "true" : "false");
+      card.tabIndex = isAuto ? -1 : 0;
 
       card.addEventListener("click", (e) => {
         if(e.target.closest(".fmt-tip")) return;
@@ -5169,7 +5217,12 @@ window.PLANNER_ASSET_BASE = (function () {
     visible.forEach(({ owner, count }) => {
       const card = document.createElement("div");
       card.className = "own-card";
-      if(st.selectedOwners.has(owner)) card.classList.add("is-selected");
+      const ownSelected = st.selectedOwners.has(owner);
+      if(ownSelected) card.classList.add("is-selected");
+      card.setAttribute("role", "button");
+      card.setAttribute("aria-pressed", ownSelected ? "true" : "false");
+      card.tabIndex = 0;
+      card.dataset.kbdClick = "";
 
       card.innerHTML = \`
         <div class="own-left">
@@ -6554,6 +6607,7 @@ window.PLANNER_ASSET_BASE = (function () {
 
   toggle.addEventListener("click", () => {
     expanded = !expanded;
+    toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
     list.style.display = expanded ? "flex" : "none";
     if (arrow) arrow.textContent = expanded ? "\\u25BC" : "\\u25B6";
     if (expanded) renderList();

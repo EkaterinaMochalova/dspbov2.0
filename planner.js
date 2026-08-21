@@ -966,7 +966,7 @@ function renderSelectionExtra() {
             Добавить адреса
           </button>
           <button type="button" id="addr-import-cancel" style="
-            padding:8px 14px; background:#fff; color:#888; border:1px solid #ddd;
+            padding:8px 14px; background:#fff; color:#6b7280; border:1px solid #ddd;
             border-radius:8px; font-size:13px; cursor:pointer;">
             Отмена
           </button>
@@ -977,19 +977,19 @@ function renderSelectionExtra() {
       <!-- Панель 2ГИС: подбор адресов по бренду -->
       <div id="addr-2gis-panel" style="display:none; background:#f4fdf7; border:1px solid #1DB244;
            border-radius:12px; padding:12px; margin-bottom:8px;">
-        <div style="font-size:12px; font-weight:600; color:#1DB244; margin-bottom:8px;">
+        <div style="font-size:12px; font-weight:600; color:#0e7a2e; margin-bottom:8px;">
           Нет готового списка? Найдём адреса объектов в выбранных регионах и подставим их сюда.
         </div>
         <input type="text" id="addr-2gis-brand" placeholder="Напр.: Пятёрочка, Магнит, McDonald's"
           style="width:100%; box-sizing:border-box; padding:9px 12px; border:1px solid #b7e3c6;
-                 border-radius:8px; font-size:13px; outline:none;">
+                 border-radius:8px; font-size:13px;">
         <div style="display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap;">
           <span style="font-size:12px; color:#33691e;">Сколько адресов нужно</span>
           <input type="number" id="addr-2gis-limit" min="0" max="2000" step="10" value="200"
             placeholder="все"
             style="width:90px; padding:6px 8px; border:1px solid #b7e3c6; border-radius:8px;
-                   font-size:13px; outline:none;">
-          <span style="font-size:11px; color:#7a9b85;">на регион; 0 или пусто — найти все (может занять несколько минут)</span>
+                   font-size:13px;">
+          <span style="font-size:11px; color:#5f7a68;">на регион; 0 или пусто — найти все (может занять несколько минут)</span>
         </div>
         <label style="display:flex; align-items:center; gap:6px; margin-top:8px; font-size:12px; color:#33691e; cursor:pointer;">
           <input type="checkbox" id="addr-2gis-full">
@@ -997,12 +997,12 @@ function renderSelectionExtra() {
         </label>
         <div style="display:flex; gap:8px; margin-top:8px; align-items:center; flex-wrap:wrap;">
           <button type="button" id="addr-2gis-apply" style="
-            padding:8px 18px; background:#1DB244; color:#fff; border:none;
+            padding:8px 18px; background:#0e7a2e; color:#fff; border:none;
             border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;">
             Найти адреса
           </button>
           <button type="button" id="addr-2gis-cancel" style="
-            padding:8px 14px; background:#fff; color:#888; border:1px solid #ddd;
+            padding:8px 14px; background:#fff; color:#6b7280; border:1px solid #ddd;
             border-radius:8px; font-size:13px; cursor:pointer;">
             Отмена
           </button>
@@ -1151,7 +1151,8 @@ function renderSelectionExtra() {
 
       const del = document.createElement("button");
       del.type = "button"; del.textContent = "×";
-      del.style.cssText = "background:none; border:none; font-size:20px; color:#aaa; cursor:pointer; line-height:1; padding:0 4px;";
+      del.setAttribute("aria-label", "Удалить адрес");
+      del.style.cssText = "background:none; border:none; font-size:20px; color:#6b7280; cursor:pointer; line-height:1; padding:0 4px;";
       del.addEventListener("click", () => { row.remove(); });
 
       row.appendChild(inp); row.appendChild(status); row.appendChild(del);
@@ -6905,12 +6906,12 @@ function renderDspUserBar() {
   bar.style.display = "block";
   const emailHtml = email
     ? `<span style="color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(email)}</span>`
-    : `<span style="color:#888;">DSP</span>`;
+    : `<span style="color:#4b5563;">DSP</span>`;
   bar.innerHTML = `
     <span style="display:inline-flex;align-items:center;gap:6px;background:#f0f2f5;border-radius:20px;padding:4px 6px 4px 8px;font-size:12px;line-height:1;">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
       ${emailHtml}
-      <span id="dsp-inv-age" style="color:#888;font-size:11px;white-space:nowrap;"></span>
+      <span id="dsp-inv-age" style="color:#4b5563;font-size:11px;white-space:nowrap;"></span>
       <a href="#" id="dsp-inv-refresh" style="display:inline-flex;align-items:center;gap:3px;margin-left:2px;padding:2px 8px;background:#fff;border:1px solid #ddd;border-radius:12px;color:#666;text-decoration:none;font-size:11px;white-space:nowrap;">
         Обновить
       </a>
@@ -7048,27 +7049,29 @@ function showLoginOverlay() {
     // руками в каждой новой вкладке.
     overlay.innerHTML = `
       <form id="dsp-login-form" method="post" action="#" autocomplete="on"
+            role="dialog" aria-modal="true" aria-labelledby="dsp-login-title"
             style="background:#fff;border-radius:20px;padding:40px 36px;width:340px;max-width:90vw;
+                   box-sizing:border-box;
                    box-shadow:0 24px 64px rgba(0,0,0,.22);">
-        <div style="font-size:22px;font-weight:700;margin-bottom:6px;color:#0b1220;">Вход</div>
+        <div id="dsp-login-title" style="font-size:22px;font-weight:700;margin-bottom:6px;color:#0b1220;">Вход</div>
         <div style="font-size:13px;color:#667085;margin-bottom:24px;">
           Тот же логин и пароль, что в кабинете DSP
         </div>
-        <input id="dsp-email" name="username" type="email" placeholder="Email"
+        <input id="dsp-email" name="username" type="email" placeholder="Email" aria-label="Email"
                autocomplete="username" autocapitalize="none" spellcheck="false" required
                style="width:100%;box-sizing:border-box;padding:12px 14px;border:1.5px solid #e0e0e0;
-                      border-radius:10px;font-size:14px;margin-bottom:10px;outline:none;">
-        <input id="dsp-password" name="password" type="password" placeholder="Пароль"
+                      border-radius:10px;font-size:14px;margin-bottom:10px;">
+        <input id="dsp-password" name="password" type="password" placeholder="Пароль" aria-label="Пароль"
                autocomplete="current-password" required
                style="width:100%;box-sizing:border-box;padding:12px 14px;border:1.5px solid #e0e0e0;
-                      border-radius:10px;font-size:14px;margin-bottom:16px;outline:none;">
-        <div id="dsp-err" style="color:#e53e3e;font-size:13px;min-height:18px;margin-bottom:10px;"></div>
+                      border-radius:10px;font-size:14px;margin-bottom:16px;">
+        <div id="dsp-err" role="alert" style="color:#e53e3e;font-size:13px;min-height:18px;margin-bottom:10px;"></div>
         <button id="dsp-login-btn" type="submit"
                 style="width:100%;padding:13px;background:#5b3ef5;color:#fff;border:none;
                        border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;">
           Войти
         </button>
-        <div style="margin-top:16px;font-size:12px;color:#98a2b3;text-align:center;line-height:1.5;">
+        <div style="margin-top:16px;font-size:12px;color:#667085;text-align:center;line-height:1.5;">
           Забыли пароль — восстановить можно
           <a href="${DSP_API}" target="_blank" rel="noopener"
              style="color:#5b3ef5;text-decoration:underline;">в кабинете DSP</a>
