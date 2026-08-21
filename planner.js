@@ -2909,9 +2909,20 @@ async function buildMediaPlanBlob() {
     { h: "Адрес",              w: 50, fn: s => s.address    ?? "" },
     { h: "Сторона",            w: 10, fn: s => s.side       ?? "" },
     { h: "Формат экрана",      w: 18, fn: s => s.format     ?? "" },
-    { h: "Длительность, сек",  w: 14, fn: s => (Array.isArray(s.durationBidInfo) && s.durationBidInfo.length && Number.isFinite(durationMs) && durationMs > 0)
-                                        ? Math.round(durationMs / 1000)
-                                        : "" },
+    // Длительностей может быть выбрано несколько. Показываем те из них, которые
+    // этот экран реально поддерживает: по колонке видно, на каких поверхностях
+    // идут оба ролика — а это те самые, что в расчёте ставки считались дважды.
+    { h: "Длительность, сек",  w: 16, fn: s => {
+        if (!Array.isArray(s.durationBidInfo) || !s.durationBidInfo.length || !durList.length) return "";
+        const matched = new Set();
+        for (const ms of durList) {
+          const m = _resolveDurationMatch(s, ms);
+          if (m && Number.isFinite(m.duration)) matched.add(m.duration);
+        }
+        return matched.size
+          ? [...matched].sort((a, b) => a - b).map(v => Math.round(v / 1000)).join(", ")
+          : "";
+      } },
     { h: "Вид. разрешение",    w: 20, fn: s => s.resolution ?? "" },
     { h: "Соотношение сторон", w: 20, fn: s => s.aspectRatio ?? "" },
     { h: "Широта",             w: 14, fn: s => Number.isFinite(s.lat) ? s.lat : "" },
