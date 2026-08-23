@@ -391,6 +391,9 @@ const state = {
   selectedRegions: [], // ✅ мультивыбор регионов
   selectedRegion: null, // ✅ обратная совместимость
   lastChosen: [],
+  // Длительность ролика по формату: { BILLBOARD: [5000], MEDIAFACADE: [15000] }.
+  // Что здесь не задано — берёт общий выбор selectedDurationsMs.
+  durationsByFormat: {},
   manuallyExcluded: new Set(), // screens manually removed from map — persists across recalcs
   // Адресная программа, зафиксированная после расчёта. Пока она не пуста,
   // пересчёт (смена уровня бюджета, частоты, ручные правки) работает строго
@@ -1923,7 +1926,7 @@ const globalIntervals = (scheduleType === "weekly" && typeof getGlobalScheduleFr
     bidUpliftPct: (el("bid-uplift-enabled")?.checked)
       ? Math.max(0, Number(el("bid-uplift-pct")?.value || 0))
       : 0,
-    duration: { ms: Number.isFinite(state.selectedDurationMs) ? state.selectedDurationMs : null, msList: Array.isArray(state.selectedDurationsMs) ? [...state.selectedDurationsMs] : [] },
+    duration: { ms: Number.isFinite(state.selectedDurationMs) ? state.selectedDurationMs : null, msList: Array.isArray(state.selectedDurationsMs) ? [...state.selectedDurationsMs] : [], byFormat: { ...(state.durationsByFormat || {}) } },
     reachMode: getReachModeFromUI(),
     goal: {
       ots: (() => {
@@ -6989,11 +6992,13 @@ function restoreBriefToUI(brief) {
   const durList = Array.isArray(brief.duration?.msList) && brief.duration.msList.length
     ? brief.duration.msList
     : (Number(brief.duration?.ms) > 0 ? [Number(brief.duration.ms)] : []);
+  state.durationsByFormat = { ...(brief.duration?.byFormat || {}) };
   if (durList.length) {
     state.selectedDurationsMs = [...durList];
     state.selectedDurationMs = durList[durList.length - 1];
     if (typeof window.renderDurationChips === "function") window.renderDurationChips();
   }
+  if (typeof window.renderDurFmtRows === "function") window.renderDurFmtRows();
 
   if (typeof window.renderProgress === "function") window.renderProgress();
   if (typeof window.setStep === "function") window.setStep(1);
@@ -7675,20 +7680,25 @@ function _durationRatioForScreen(s, durationMs) {
 // подходящим длительностям, а вес в средней = число этих длительностей
 // (s._durSlots), который учитывает avgEffectiveBid.
 function applySelectedDurations(durationsMs) {
-  const list = (Array.isArray(durationsMs) ? durationsMs : [durationsMs])
+  const globalList = (Array.isArray(durationsMs) ? durationsMs : [durationsMs])
     .map(Number).filter(v => Number.isFinite(v) && v >= 0)
     .sort((a, b) => a - b);
-
-  state.selectedDurationsMs = list;
+  state.selectedDurationsMs = globalList;
   // Одиночное значение оставляем для мест, которым нужна одна длительность
   // (подпись в медиаплане, восстановление черновика): берём самую длинную.
-  state.selectedDurationMs = list.length ? list[list.length - 1] : null;
+  state.selectedDurationMs = globalList.length ? globalList[globalList.length - 1] : null;
 
   for (const arr of [state.screensAll, state.screens]) {
     if (!Array.isArray(arr)) continue;
     for (const s of arr) {
       if (!Array.isArray(s.durationBidInfo) || !s.durationBidInfo.length) continue;
       if (!Number.isFinite(s._baseMinBid)) s._baseMinBid = s.minBid;
+
+      // Формату можно задать свою длительность: билборды берём 5-секундные,
+      // медиафасады 15-секундные. Если для формата ничего не задано,
+      // работает общий выбор.
+      const perFmt = state.durationsByFormat?.[String(s.format || "").trim()];
+      const list = (Array.isArray(perFmt) && perFmt.length) ? perFmt : globalList;
 
       if (!list.length) {
         s.minBid = s._baseMinBid;

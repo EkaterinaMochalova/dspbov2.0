@@ -3527,6 +3527,14 @@ window.PLANNER_ASSET_BASE = (function () {
     <div class="planner-label">Длительность ролика</div>
     <div class="planner-note" style="margin-bottom:8px;">Ставка зависит от длительности — длиннее ролик, выше цена за выход.</div>
     <div class="strategy-chips duration-chips" id="duration-chips"></div>
+    <!-- Длительность по форматам: билборды можно взять 5-секундные,
+         а медиафасады 15-секундные. Что не задано — идёт по общему выбору. -->
+    <div id="duration-by-format" style="margin-top:12px;">
+      <button type="button" class="cns-per-region-toggle" id="dur-fmt-toggle">
+        <span id="dur-fmt-arrow">\u25B6</span> Задать по форматам
+      </button>
+      <div id="dur-fmt-rows" class="city-fmt-rows" style="display:none;"></div>
+    </div>
   </div>
   <!-- ===== АУДИТОРИЯ VK ===== -->
     <div class="planner-block" id="audience-block">
@@ -4613,11 +4621,14 @@ window.PLANNER_ASSET_BASE = (function () {
         if (cb && cb.checked && chip) chip.click();
       } },
     { id: "duration-block", t: "Длительность ролика", v: () => {
-        const list = window.PLANNER?.state?.selectedDurationsMs;
-        if (!Array.isArray(list) || !list.length) return ["Любая", false];
-        if (list.length === 1 && list[0] === 0) return ["Любая", false];
-        const txt = list.map(ms => Math.round(ms / 1000) + " сек").join(", ");
-        return [txt, true];
+        const st = window.PLANNER?.state;
+        const list = st?.selectedDurationsMs;
+        const nFmt = Object.keys(st?.durationsByFormat || {}).length;
+        const tail = nFmt ? (" \u00B7 " + nFmt + " с исключением") : "";
+        const base = (!Array.isArray(list) || !list.length || (list.length === 1 && list[0] === 0))
+          ? "Любая"
+          : list.map(ms => Math.round(ms / 1000) + " сек").join(", ");
+        return [base + tail, !!(nFmt || (base !== "Любая"))];
       } },
     { id: "owners-block", t: "Операторы", v: () => {
         const n = window.PLANNER?.state?.selectedOwners?.size || 0;
@@ -8322,6 +8333,114 @@ window.PLANNER_ASSET_BASE = (function () {
     apply();
     renderDurationHint();
   }
+
+  // ===== ДЛИТЕЛЬНОСТЬ ПО ФОРМАТАМ =====
+  // Общий выбор задаёт длительность всем; здесь её можно переопределить
+  // отдельному формату. Строка рисуется только для форматов, которые есть
+  // в пуле, и только с теми длительностями, которые у них правда бывают.
+  function durationsOfFormat(fmt){
+    const st = window.PLANNER?.state;
+    const all = Array.isArray(st?.screensAll) && st.screensAll.length
+      ? st.screensAll : (Array.isArray(st?.screens) ? st.screens : []);
+    const set = new Set();
+    for (const s of all){
+      if (String(s.format||"").trim() !== fmt) continue;
+      if (!Array.isArray(s.durationBidInfo)) continue;
+      for (const d of s.durationBidInfo) if (Number.isFinite(d.duration)) set.add(d.duration);
+    }
+    return [...set].sort((a,b) => a - b);
+  }
+
+  function renderDurFmtRows(){
+    const wrap = el("dur-fmt-rows");
+    const block = el("duration-by-format");
+    if (!wrap || !block) return;
+    const st = window.PLANNER?.state;
+    const fmts = (Array.isArray(st?.formatsAll) ? st.formatsAll : [])
+      .map(x => String(x||"").trim()).filter(Boolean);
+    if (!fmts.length){ block.style.display = "none"; return; }
+    block.style.display = "";
+    if (wrap.style.display === "none") return;
+
+    if (!st.durationsByFormat) st.durationsByFormat = {};
+    wrap.innerHTML = "";
+
+    for (const fmt of fmts){
+      const durs = durationsOfFormat(fmt);
+      if (durs.length < 2) continue;   // выбирать не из чего
+
+      const row = document.createElement("div");
+      row.className = "city-fmt-row";
+
+      const lbl = document.createElement("span");
+      lbl.className = "city-fmt-lbl";
+      lbl.textContent = (window.FORMAT_LABELS?.[fmt]?.label) || fmt;
+      lbl.title = fmt;
+      row.appendChild(lbl);
+
+      const own = st.durationsByFormat[fmt] || null;
+      for (const ms of durs){
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "city-fmt-chip" + (own && own.includes(ms) ? " on" : "");
+        chip.textContent = fmtSec(ms);
+        chip.addEventListener("click", () => {
+          const cur = st.durationsByFormat[fmt] ? [...st.durationsByFormat[fmt]] : [];
+          const i = cur.indexOf(ms);
+          if (i >= 0) cur.splice(i, 1); else cur.push(ms);
+          // «Любая» и конкретные длительности взаимоисключающи — как и в общем выборе.
+          const next = (ms === 0 && i < 0) ? [0] : cur.filter(v => v !== 0 || ms === 0);
+          if (next.length) st.durationsByFormat[fmt] = next.sort((a,b) => a - b);
+          else delete st.durationsByFormat[fmt];
+          if (typeof window.PLANNER.applySelectedDurations === "function"){
+            window.PLANNER.applySelectedDurations(st.selectedDurationsMs || []);
+          }
+          renderDurFmtRows();
+          if (typeof window.refreshFoldValues === "function") window.refreshFoldValues();
+          window.dispatchEvent(new CustomEvent("planner:filters-changed"));
+        });
+        row.appendChild(chip);
+      }
+
+      if (own && own.length){
+        const rst = document.createElement("button");
+        rst.type = "button";
+        rst.className = "city-fmt-reset";
+        rst.textContent = "по общему";
+        rst.addEventListener("click", () => {
+          delete st.durationsByFormat[fmt];
+          if (typeof window.PLANNER.applySelectedDurations === "function"){
+            window.PLANNER.applySelectedDurations(st.selectedDurationsMs || []);
+          }
+          renderDurFmtRows();
+          if (typeof window.refreshFoldValues === "function") window.refreshFoldValues();
+          window.dispatchEvent(new CustomEvent("planner:filters-changed"));
+        });
+        row.appendChild(rst);
+      }
+
+      wrap.appendChild(row);
+    }
+
+    if (!wrap.children.length){
+      const none = document.createElement("div");
+      none.className = "city-fmt-none";
+      none.textContent = "У форматов в пуле по одной длительности — выбирать нечего.";
+      wrap.appendChild(none);
+    }
+  }
+  window.renderDurFmtRows = renderDurFmtRows;
+
+  el("dur-fmt-toggle")?.addEventListener("click", () => {
+    const wrap = el("dur-fmt-rows"), arr = el("dur-fmt-arrow");
+    if (!wrap) return;
+    const open = wrap.style.display === "none";
+    wrap.style.display = open ? "flex" : "none";
+    if (arr) arr.textContent = open ? "\u25BC" : "\u25B6";
+    if (open) renderDurFmtRows();
+  });
+
+  window.addEventListener("planner:screens-ready", () => renderDurFmtRows());
 
   // Подпись под чипами: при нескольких роликах правило неочевидно, и его надо
   // проговорить прямо в интерфейсе, а не оставлять на догадки.
