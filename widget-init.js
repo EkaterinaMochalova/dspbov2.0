@@ -2236,9 +2236,12 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .pool-preview-filter{ font-family:var(--ux-mono); font-size:12px; }
 
   /* ---- шаги ---- */
+  /* Липкая строка шагов перекрывала содержимое и всё время лезла
+     в глаза: до кнопки «Дальше» всё равно надо долистать вниз. */
   #planner-widget .wiz-steps{
+    position:static; top:auto; z-index:auto;
     background:transparent; backdrop-filter:none; -webkit-backdrop-filter:none;
-    padding:6px 0 10px; border-radius:0;
+    padding:0 0 14px; border-radius:0;
   }
   #planner-widget .wiz-chip{
     font-size:13px; font-weight:500; padding:7px 13px; border-radius:999px;
@@ -2621,6 +2624,29 @@ window.PLANNER_ASSET_BASE = (function () {
      именно оттуда, ось только выставляет им значения. */
   #planner-widget #step4-strategy-block,
   #planner-widget #frequency-block{ display:none !important; }
+
+  /* ---- карта зоны внутри ката ----
+     Узел модалки переносится в тело ката как есть, чтобы не переписывать
+     рисование полигонов; здесь снимаем с него всё оверлейное. */
+  #poly-modal.is-inline{
+    display:block !important; position:static; inset:auto;
+    background:none; backdrop-filter:none; padding:0; z-index:auto;
+  }
+  #poly-modal.is-inline > div{
+    width:100%; max-width:none; height:440px; border-radius:var(--ux-radius-sm);
+    border:1px solid var(--ux-line); box-shadow:none;
+  }
+  #poly-modal.is-inline #poly-modal-cancel{ display:none; }
+  #planner-widget .ux-fold[data-fold-for="step4-map-zone-block"] #poly-draw-btn{ display:none; }
+
+  /* Тумблер внутри ката дублировал сам кат: раскрыли — значит включили. */
+  #planner-widget .ux-fold[data-fold-for="audience-block"] #vk-affinity-card,
+  #planner-widget .ux-fold[data-fold-for="yandex-geo-block"] #yandex-geo-card,
+  #planner-widget .ux-fold[data-fold-for="constructions-block"] #constructions-chip,
+  #planner-widget .ux-fold[data-fold-for="step4-selection-block"] #selection-mode-chips{
+    display:none;
+  }
+  #planner-widget .ux-fold-hint{ margin:0 0 12px; }
 
   /* ---- ось «охват или частота» ---- */
   #planner-widget .ux-axis{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
@@ -4274,9 +4300,26 @@ window.PLANNER_ASSET_BASE = (function () {
   // выносится в заголовок — «Любая», «все 14», «обе». Раскрывать, чтобы
   // убедиться, что ничего не задано, больше не нужно.
   const FOLDABLE = [
-    { id: "constructions-block", t: "Разбивка количества по форматам и городам", v: () => {
+    { id: "constructions-block", t: "Точное число экранов",
+      hint: "По умолчанию количество подбирает стратегия. Здесь можно задать его "
+          + "точно — целиком и отдельно по форматам и городам.",
+      v: () => {
         const on = !!el("constructions-enabled")?.checked;
-        return on ? [(el("constructions-count")?.value || "?") + " экр", true] : ["не задана", false];
+        return on ? [(el("constructions-count")?.value || "?") + " экр", true] : ["по стратегии", false];
+      },
+      onOpen: () => {
+        // Включаем ручной режим и сразу раскрываем обе разбивки: иначе
+        // до поля ввода три клика вместо одного.
+        const cb = el("constructions-enabled"), chip = el("constructions-chip");
+        if (cb && !cb.checked && chip) chip.click();
+        ["cns-format-count", "cns-region-count"].forEach(k => {
+          const rows = el(k + "-rows"), tgl = el(k + "-toggle");
+          if (rows && tgl && rows.style.display === "none") tgl.click();
+        });
+      },
+      onClose: () => {
+        const cb = el("constructions-enabled"), chip = el("constructions-chip");
+        if (cb && cb.checked && chip) chip.click();
       } },
     { id: "duration-block", t: "Длительность ролика", v: () => {
         const list = window.PLANNER?.state?.selectedDurationsMs;
@@ -4299,22 +4342,68 @@ window.PLANNER_ASSET_BASE = (function () {
         if (!on) return ["без фильтра", false];
         return [(el("grp-min")?.value || "0") + "\u2013" + (el("grp-max")?.value || ""), true];
       } },
-    { id: "step4-map-zone-block", t: "Зона на карте", v: () => {
+    { id: "step4-map-zone-block", t: "Зона на карте",
+      hint: "Обведите участок — в расчёт попадут только экраны внутри него.",
+      v: () => {
         const poly = window.PLANNER?.state?.polygon;
         return (Array.isArray(poly) && poly.length) ? ["задана", true] : ["весь город", false];
+      },
+      // Карта была за модалкой: раскрыть кат, нажать «Нарисовать зону»,
+      // дождаться попапа. Переносим сам узел модалки внутрь ката и
+      // распрямляем его правилом — вся обвязка рисования остаётся своя.
+      onOpen: () => {
+        const modal = el("poly-modal");
+        const body = document.querySelector('.ux-fold[data-fold-for="step4-map-zone-block"] .ux-fold-body');
+        if (modal && body && modal.parentNode !== body) {
+          modal.classList.add("is-inline");
+          body.appendChild(modal);
+        }
+        if (typeof window.plannerOpenPolyMap === "function") window.plannerOpenPolyMap();
+      },
+      onClose: () => {
+        const modal = el("poly-modal");
+        if (modal) { modal.classList.remove("is-inline"); document.body.appendChild(modal); }
+        if (typeof window.plannerClosePolyMap === "function") window.plannerClosePolyMap();
       } },
-    { id: "step4-selection-block", t: "Как раскладываем по городу", v: () => {
+    // Кат сам и есть переключатель режима: закрыт — равномерно по городу,
+    // открыт — собираем вокруг заданных адресов.
+    { id: "step4-selection-block", t: "Рядом с адресом",
+      hint: "Закрыто — система сама подбирает количество конструкций под заданные "
+          + "параметры и раскладывает их равномерно по городу с учётом фильтров. "
+          + "Открыто — собираем вокруг ваших адресов: список можно вводить по одному, "
+          + "загрузить готовым файлом с адресами или координатами либо найти по картам 2ГИС.",
+      v: () => {
         const m = el('selection-mode')?.value;
-        return m === "near_address" ? ["Рядом с адресом", true] : ["Равномерно", false];
-      } },
+        if (m !== "near_address") return ["выключено — равномерно по городу", false];
+        const k = document.querySelectorAll("#addr-list .addr-row, #addr-list > div").length;
+        return [k ? ("адресов: " + k) : "адреса не заданы", true];
+      },
+      onOpen: () => setSelectionMode("near_address"),
+      onClose: () => setSelectionMode("city_even") },
     { id: "audience-block", t: "Аудитория VK", v: () => {
         return el("audience-enabled")?.checked ? ["включена", true] : ["выключена", false];
-      } },
+      },
+      onOpen: () => { if (!el("audience-enabled")?.checked) el("vk-affinity-card")?.click(); },
+      onClose: () => { if (el("audience-enabled")?.checked) el("vk-affinity-card")?.click(); } },
     { id: "yandex-geo-block", t: "Яндекс Геоаналитика", v: () => {
         const on = el("yandex-geo-card")?.classList.contains("active");
         return on ? ["включена", true] : ["выключена", false];
-      } },
+      },
+      onOpen: () => { const c = el("yandex-geo-card"); if (c && !c.classList.contains("active")) c.click(); },
+      onClose: () => { const c = el("yandex-geo-card"); if (c && c.classList.contains("active")) c.click(); } },
   ];
+
+  function setSelectionMode(mode){
+    const sel = el("selection-mode");
+    if (!sel || sel.value === mode) return;
+    sel.value = mode;
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+    // Чипы «Равномерно / Рядом с адресом» показывают то же самое, что и
+    // сам кат, — держим их в согласии на случай, если кто-то нажмёт их.
+    document.querySelectorAll("#selection-mode-chips .sel-chip").forEach(c => {
+      c.classList.toggle("active", c.dataset.mode === mode);
+    });
+  }
 
   function foldOptionalBlocks(){
     for (const item of FOLDABLE) {
@@ -4342,6 +4431,20 @@ window.PLANNER_ASSET_BASE = (function () {
       // Заголовок блока внутри уже назван в шапке — второй раз не нужен.
       block.querySelector(".planner-label")?.remove();
       block.style.marginBottom = "0";
+
+      if (item.hint) {
+        const h = document.createElement("div");
+        h.className = "planner-note ux-fold-hint";
+        h.textContent = item.hint;
+        body.insertBefore(h, block);
+      }
+
+      if (item.onOpen || item.onClose) {
+        d.addEventListener("toggle", () => {
+          try { (d.open ? item.onOpen : item.onClose)?.(); } catch (e) { console.warn("[fold]", e); }
+          refreshFoldValues();
+        });
+      }
     }
     refreshFoldValues();
   }
@@ -6324,17 +6427,22 @@ window.PLANNER_ASSET_BASE = (function () {
       }).join("");
 
       return \`
-        <div class="img-section" data-pages="\${Math.max(1, Math.ceil(regItems.length / 24))}">
-          <div class="ux-ph-head">
-            <span class="ps-title">Экраны программы</span>
-            <span class="ux-ph-n">\${regItems.length.toLocaleString("ru-RU")} шт \\u00B7 \${escapeHtml(regionName)}</span>
-            \${regItems.length > 24 ? pagerHtml(regItems.length) : ""}
+        <details class="ux-fold img-section" data-pages="\${Math.max(1, Math.ceil(regItems.length / 24))}">
+          <summary class="ux-fold-sum">
+            <span class="car">\\u25B6</span>
+            <span class="ux-fold-t">Экраны программы \\u2014 \${escapeHtml(regionName)}</span>
+            <span class="ux-fold-v">\${regItems.length.toLocaleString("ru-RU")} шт</span>
+          </summary>
+          <div class="ux-fold-body">
+            <div class="ux-ph-head">
+              \${regItems.length > 24 ? pagerHtml(regItems.length) : ""}
+            </div>
+            <div class="img-row" data-region="\${escapeHtml(regionName)}" data-page="0">
+              \${cards}
+            </div>
+            <div class="ux-ph-note">Нажмите на карточку, чтобы открыть просмотр.</div>
           </div>
-          <div class="img-row" data-region="\${escapeHtml(regionName)}" data-page="0">
-            \${cards}
-          </div>
-          <div class="ux-ph-note">Нажмите на карточку, чтобы открыть просмотр.</div>
-        </div>
+        </details>
       \`;
     }).join("");
 
@@ -6794,6 +6902,10 @@ window.PLANNER_ASSET_BASE = (function () {
   }
 
   // -- open modal -------------------------------------------------------
+  // Кат «Зона на карте» переносит узел модалки внутрь себя и зовёт эти две.
+  window.plannerOpenPolyMap  = () => openModal();
+  window.plannerClosePolyMap = () => closeModal();
+
   function openModal() {
     const modal = el("poly-modal");
     if (!modal) return;
