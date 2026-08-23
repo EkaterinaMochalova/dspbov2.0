@@ -7613,7 +7613,7 @@ window.PLANNER_ASSET_BASE = (function () {
               <span><b>Бюджет:</b> \${fmtMoney(r.budget)}</span>
               <span><b>Выходов:</b> \${fmtInt(r.plays)}</span>
               <span><b>OTS:</b> \${ots}</span>
-              \${(days && hpd && r.plays > 0 && r.screens > 0) ? \`<span><b>Частота:</b> \${(r.plays / days / hpd / r.screens).toFixed(1)}/ч на экран</span>\` : ""}
+              \${(days && hpd && r.plays > 0 && r.screens > 0) ? \`<span><b>Частота:</b> \${(r.plays / days / hpd / r.screens).toFixed(1).replace(".", ",")}/ч на экран</span>\` : ""}
             </div>
           </div>
         \`;
@@ -7669,7 +7669,7 @@ window.PLANNER_ASSET_BASE = (function () {
             <div class="ps-metric"><div class="k">Выходов всего</div><div class="v">\${fmtInt(totalPlays)}</div></div>
             <div class="ps-metric"><div class="k">Стоимость выхода</div><div class="v">\${(totalBudget > 0 && totalPlays > 0) ? Math.round(totalBudget / totalPlays).toLocaleString("ru-RU") + "\u202f\\u20BD" : "\\u2014"}</div></div>
             <div class="ps-metric"><div class="k">OTS всего</div><div class="v">\${otsTotal == null ? "\\u2014" : fmtInt(otsTotal)}</div></div>
-            <div class="ps-metric"><div class="k">Выходов / час на экран</div><div class="v">\${(playsPerHour != null && totalScreens > 0) ? (playsPerHour / totalScreens).toFixed(1) : "\\u2014"}</div></div>
+            <div class="ps-metric"><div class="k">Выходов / час на экран</div><div class="v">\${(playsPerHour != null && totalScreens > 0) ? (playsPerHour / totalScreens).toFixed(1).replace(".", ",") : "\\u2014"}</div></div>
             <div class="ps-metric"><div class="k">CPM (стоимость 1\u202f000 OTS)</div><div class="v">\${(totalBudget > 0 && otsTotal > 0) ? Math.round(totalBudget / otsTotal * 1000).toLocaleString("ru-RU") + "\u202f\\u20BD" : "\\u2014"}</div></div>
           </div>
 
