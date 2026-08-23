@@ -7954,6 +7954,20 @@ window.PLANNER_ASSET_BASE = (function () {
 
   function recompute(force) {
     if (!visible()) return;
+
+    // До расчёта отобранной адресной программы ещё нет, и ёмкость пришлось бы
+    // считать по всему пулу города — для Москвы это 230 млн против 15 млн после
+    // расчёта, разница в пятнадцать раз на одном и том же плане. Показывать
+    // такие суммы как рекомендацию нельзя: вместо них ставим прочерки и
+    // предупреждение, а настоящие цифры появляются в сводке.
+    if (!window.PLANNER?.lastCalc) {
+      sums.forEach(n => { n.classList.remove("rtb-skel"); n.textContent = "—"; });
+      const note = sourceNote();
+      if (note) note.textContent = "Суммы по вариантам появятся после расчёта — они считаются от ёмкости подобранной адресной программы.";
+      lastSig = "";
+      return;
+    }
+
     const sig = apSignature();
     if (!force && sig === lastSig) return;
     lastSig = sig;
@@ -7995,6 +8009,8 @@ window.PLANNER_ASSET_BASE = (function () {
     r.addEventListener("change", () => setTimeout(() => recompute(true), 0)));
 
   recompute(true);
+  // После расчёта появляется АП — только тогда суммы вообще имеют смысл.
+  window.addEventListener("planner:calc-done", () => setTimeout(() => recompute(true), 0));
 })();
 `);
 
