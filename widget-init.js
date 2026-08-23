@@ -1076,6 +1076,897 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   #planner-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
 
+  /* ===================================================================
+     ПЕРЕНЕСЕНО ИЗ БЛОКА ТИЛЬДЫ 22.08.2026
+     Эти правила жили в инлайновом <style> внутри Tilda-блока
+     rec2318926641 («Planner UI — Style A»), а не здесь. Блок удалён,
+     потому что перебивал стили выше; но без этой части виджет остаётся
+     без оформления полей ввода, кнопок, карточек форматов и галереи фото —
+     widget-init.js всё это время был дельтой поверх тильдовского CSS,
+     а не самостоятельной таблицей стилей.
+
+     Перенесены только те селекторы, которых выше нет. Пятнадцать
+     конфликтовавших (.wiz-chip, .wiz-btn, .ux-panel, .wiz-progress и др.)
+     намеренно НЕ перенесены — их описывает код выше, и ровно из-за этого
+     конфликта активный чип шага менял цвет.
+     Оригинал целиком: Desktop/работа/tilda-removed-2026-08-22/
+     =================================================================== */
+  /* ========== container ========== */
+  #planner-widget{
+    color: var(--ux-text);
+    background: transparent;
+    position: relative;
+    isolation: isolate; /* свой stacking context, чтобы тултипы/слои предсказуемо */
+  }
+  /* “фон под стекло” только внутри виджета */
+  #planner-widget::before{
+    content:"";
+    position:absolute;
+    inset:-24px;
+    z-index:-1;
+    border-radius: 32px;
+    background:
+    radial-gradient(900px 520px at 18% 0%, rgba(37,99,235,.16), transparent 55%),
+    radial-gradient(900px 520px at 82% 10%, rgba(99,102,241,.12), transparent 55%),
+    radial-gradient(900px 520px at 50% 100%, rgba(56,189,248,.10), transparent 55%),
+    linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,255,255,.72));
+    filter: saturate(1.05);
+    pointer-events:none;
+  }
+  /* лёгкий “noise” только внутри виджета */
+  #planner-widget::after{
+    content:"";
+    position:absolute;
+    inset:-24px;
+    z-index:-1;
+    border-radius: 32px;
+    pointer-events:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.16'/%3E%3C/svg%3E");
+    mix-blend-mode: overlay;
+    opacity:.18;
+  }
+  /* если у колонок всё ещё inline-style без класса ux-panel — можно мягко поддержать */
+  #planner-widget > div[style*="grid-template-columns"] > div{
+    border-radius: var(--ux-radius);
+    border: 1px solid var(--ux-glass-line);
+    background: linear-gradient(180deg, var(--ux-glass-strong), var(--ux-glass));
+    box-shadow: var(--ux-shadow-soft);
+    backdrop-filter: blur(var(--ux-blur)) saturate(160%);
+    -webkit-backdrop-filter: blur(var(--ux-blur)) saturate(160%);
+    overflow: visible;
+  }
+  /* ========== inputs/selects (НЕ задаём width:90% глобально — это ломает компоновку) ========== */
+  #planner-widget input[type="text"],
+  #planner-widget input[type="number"],
+  #planner-widget input[type="date"],
+  #planner-widget input[type="time"]{
+    border: 1px solid rgba(15,23,42,.10) !important;
+    border-radius: var(--ux-radius-sm) !important;
+    padding: 10px 12px !important;
+    background: rgba(255,255,255,.70);
+    backdrop-filter: blur(10px) saturate(150%);
+    -webkit-backdrop-filter: blur(10px) saturate(150%);
+    outline: 0;
+    transition: box-shadow .12s ease, border-color .12s ease, background .12s ease;
+  }
+  #planner-widget input:focus,
+  #planner-widget select:focus{
+    border-color: rgba(37,99,235,.45) !important;
+    box-shadow: var(--ux-ring);
+  }
+  /* ========== buttons ========== */
+  #planner-widget .ux-btn,
+  #planner-widget .fmt-pill{
+    transition: transform .08s ease, box-shadow .12s ease, background-color .12s ease, border-color .12s ease;
+    user-select: none;
+  }
+  #planner-widget .ux-btn:active,
+  #planner-widget .fmt-pill:active{
+    transform: scale(.98);
+  }
+  #planner-widget .ux-btn:disabled{
+    opacity: .55;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+  /* primary calculate */
+  #planner-widget .ux-primary{
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,.20);
+    cursor: pointer;
+    font-weight: 800;
+    color: #fff;
+    background: linear-gradient(180deg, rgba(37,99,235,.96), rgba(29,78,216,.98));
+    box-shadow: 0 18px 40px rgba(37,99,235,.22);
+    position: relative;
+    overflow: hidden;
+  }
+  #planner-widget .ux-primary::after{
+    content:"";
+    position:absolute;
+    inset:-40%;
+    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.38), transparent 45%);
+    transform: rotate(12deg);
+    opacity: .55;
+    pointer-events:none;
+  }
+  #planner-widget .ux-primary:focus-visible{
+    outline: 0;
+    box-shadow: var(--ux-ring), 0 18px 40px rgba(37,99,235,.22);
+  }
+  #planner-widget .ux-primary:disabled{
+    opacity:.55;
+    cursor:not-allowed;
+    filter:saturate(.8);
+  }
+  #planner-widget .wiz-progress .bar > i{
+    display:block;
+    height:100%;
+    width:0%;
+    border-radius:999px;
+    background: linear-gradient(90deg, var(--ux-accent), rgba(96,165,250,.95));
+    transition: width .25s ease;
+  }
+  /* ========== live summary ========== */
+  #planner-widget .wiz-summary{
+    margin-top: 10px;
+    padding: 14px 16px;
+    border-radius: var(--ux-radius);
+    border: 1px solid rgba(255,255,255,.26);
+    background: linear-gradient(180deg, rgba(255,255,255,.76), rgba(255,255,255,.56));
+    box-shadow: 0 10px 26px rgba(16,24,40,.08);
+    backdrop-filter: blur(var(--ux-blur)) saturate(160%);
+    -webkit-backdrop-filter: blur(var(--ux-blur)) saturate(160%);
+    font-size: 13px;
+  }
+  #planner-widget .wiz-inline-row{
+    display:flex;
+    gap:16px;
+    flex-wrap:wrap;
+    justify-content:space-between;
+  }
+  #planner-widget .wiz-hint{
+    margin-top:10px;
+    font-size:12px;
+    color: rgba(11,18,32,.60);
+  }
+  /* ========== formats toolbar ========== */
+  #planner-widget .fmt-toolbar{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin: 8px 0 10px;
+  }
+  #planner-widget .fmt-pill{
+    padding: 8px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.26);
+    background: rgba(255,255,255,.58);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 650;
+    backdrop-filter: blur(10px) saturate(150%);
+    -webkit-backdrop-filter: blur(10px) saturate(150%);
+  }
+  #planner-widget .fmt-pill:hover{
+    background: rgba(255,255,255,.70);
+  }
+  /* ========== formats grid/cards ========== */
+  #planner-widget .fmt-grid{
+    display:grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    overflow: visible;
+  }
+  @media (max-width: 920px){
+    #planner-widget .fmt-grid{
+      grid-template-columns: 1fr;
+    }
+  }
+  /* карточка */
+  #planner-widget .fmt-card{
+    position: relative;
+    border-radius: var(--ux-radius);
+    border: 1px solid rgba(255,255,255,.26);
+    background: rgba(255,255,255,.54);
+    box-shadow: 0 14px 34px rgba(16,24,40,.10);
+    backdrop-filter: blur(14px) saturate(160%);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    padding: 14px;
+    cursor: pointer;
+    user-select: none;
+    transition: transform .08s ease, box-shadow .12s ease, border-color .12s ease, background .12s ease;
+    overflow: visible;
+    z-index: 1;
+  }
+  #planner-widget .fmt-card:hover{
+    transform: translateY(-1px);
+    border-color: rgba(37,99,235,.22);
+    box-shadow: 0 18px 44px rgba(16,24,40,.14);
+    z-index: 20;
+  }
+  #planner-widget .fmt-card.is-selected{
+    background: linear-gradient(180deg, rgba(255,255,255,.62), rgba(37,99,235,.06));
+    border-color: rgba(37,99,235,.35);
+    box-shadow: 0 20px 52px rgba(37,99,235,.14);
+    z-index: 25;
+  }
+  #planner-widget .fmt-card.is-disabled{
+    opacity: .55;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+  /* layout внутри карточки — фиксы налезания текста */
+  #planner-widget .fmt-card .t{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:12px;
+  }
+  #planner-widget .fmt-card .fmt-left{
+    flex: 1;
+    min-width: 0; /* КЛЮЧЕВО: иначе title лезет под правую часть */
+  }
+  #planner-widget .fmt-card .title{
+    font-weight: 850;
+    font-size: 15px;
+    line-height: 1.15;
+    letter-spacing: .2px;
+    white-space: normal;
+    word-break: break-word;
+  }
+  /* (если вдруг где-то ещё используется .sub — оставляем, но по умолчанию можно не рендерить в HTML) */
+  #planner-widget .fmt-card .sub{
+    margin-top: 6px;
+    font-size: 13px;
+    color: rgba(11,18,32,.60);
+    line-height: 1.35;
+  }
+  /* правая колонка меты */
+  #planner-widget .fmt-meta{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-shrink: 0;
+  }
+  #planner-widget .fmt-count{
+    font-size: 12px;
+    color: rgba(11,18,32,.64);
+    border: 1px solid rgba(255,255,255,.26);
+    background: rgba(255,255,255,.52);
+    border-radius: 999px;
+    padding: 6px 8px;
+    min-width: 32px;
+    text-align: center;
+    backdrop-filter: blur(10px) saturate(150%);
+    -webkit-backdrop-filter: blur(10px) saturate(150%);
+  }
+  /* empty state (если будешь добавлять класс is-empty из JS) */
+  #planner-widget .fmt-card.is-empty{
+    opacity: .80;
+  }
+  #planner-widget .fmt-card.is-empty::after{
+    content:"Нет экранов";
+    position:absolute;
+    left: 14px;
+    bottom: 12px;
+    font-size: 11px;
+    color: rgba(11,18,32,.55);
+  }
+  /* ========== info icon ========== */
+  #planner-widget .fmt-tip{
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.26);
+    background: rgba(255,255,255,.58);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight: 900;
+    color: rgba(11,18,32,.66);
+    cursor: pointer;
+    backdrop-filter: blur(10px) saturate(150%);
+    -webkit-backdrop-filter: blur(10px) saturate(150%);
+  }
+  #planner-widget .fmt-tip:hover{
+    border-color: rgba(37,99,235,.28);
+    box-shadow: 0 10px 22px rgba(16,24,40,.14);
+  }
+  /* ========== inline tooltip (если ты ещё используешь вложенный .fmt-tooltip внутри fmt-tip) ========== */
+  #planner-widget .fmt-tooltip{
+    position:absolute;
+    z-index: 99999;
+    left: 10px;
+    top: calc(100% + 10px);
+    min-width: 240px;
+    max-width: 360px;
+    padding: 14px 14px;
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,.18);
+    background: rgba(17,24,39,.38); /* “тёмное стекло” */
+    color: rgba(255,255,255,.94);
+    box-shadow: 0 22px 55px rgba(0,0,0,.22);
+    backdrop-filter: blur(18px) saturate(160%);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    opacity: 0;
+    transform: translateY(-6px);
+    pointer-events: none;
+    transition: opacity .12s ease, transform .12s ease;
+  }
+  #planner-widget .fmt-tooltip::before{
+    content:"";
+    position:absolute;
+    width: 14px;
+    height: 14px;
+    background: rgba(17,24,39,.38);
+    border-left: 1px solid rgba(255,255,255,.14);
+    border-top: 1px solid rgba(255,255,255,.14);
+    transform: rotate(45deg);
+    top: -7px;
+    left: 18px;
+  }
+  #planner-widget .fmt-tooltip::after{
+    content:"";
+    position:absolute;
+    inset:0;
+    border-radius: inherit;
+    pointer-events:none;
+    background: linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,0) 45%);
+    opacity:.35;
+  }
+  #planner-widget .fmt-tip:hover .fmt-tooltip,
+  #planner-widget .fmt-tip.is-open .fmt-tooltip{
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  /* ========== portal tooltip (если JS создаёт .fmt-tooltip-portal в body) ========== */
+  .fmt-tooltip-portal{
+    position: fixed; /* важно: portal позиционируется относительно viewport */
+    z-index: 2147483647;
+    min-width: 260px;
+    max-width: 380px;
+    padding: 14px 14px;
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,.18);
+    background: rgba(17,24,39,.38);
+    color: rgba(255,255,255,.94);
+    box-shadow: 0 30px 70px rgba(0,0,0,.22);
+    backdrop-filter: blur(18px) saturate(160%);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    opacity: 0;
+    transform: translateY(-6px);
+    pointer-events: none;
+    transition: opacity .12s ease, transform .12s ease;
+  }
+  .fmt-tooltip-portal.is-show{
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .fmt-tooltip-portal .tt-title{
+    font-weight: 900;
+    font-size: 15px;
+    margin-bottom: 6px;
+  }
+  .fmt-tooltip-portal .tt-code{
+    font-size: 12px;
+    opacity: .75;
+    margin-bottom: 10px;
+  }
+  .fmt-tooltip-portal .tt-desc{
+    font-size: 13px;
+    line-height: 1.45;
+    opacity: .92;
+  }
+  .fmt-tooltip-portal .tt-foot{
+    margin-top: 12px;
+    font-size: 12px;
+    opacity: .78;
+  }
+  .fmt-tooltip-portal::before{
+    content:"";
+    position:absolute;
+    width: 14px;
+    height: 14px;
+    background: rgba(17,24,39,.38);
+    border-left: 1px solid rgba(255,255,255,.14);
+    border-top: 1px solid rgba(255,255,255,.14);
+    transform: rotate(45deg);
+    left: 20px;
+    top: -7px; /* JS может менять */
+  }
+  /* ========== safety: не режем тултипы ========== */
+  #planner-widget,
+  #planner-widget .fmt-grid,
+  #planner-widget .fmt-card{
+    overflow: visible;
+  }
+  #planner-widget #wiz-progress,
+  #planner-widget #wiz-live-summary{
+    display:block !important;
+  }
+  /* ===== FIX: titles, empty state, tooltip arrow ===== */
+  #planner-widget .fmt-left{
+    min-width:0;
+  }
+  /* важно для переносов в flex */
+  #planner-widget .fmt-card .title{
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;         /* максимум 2 строки */
+    overflow: hidden;
+    line-height: 1.2;
+  }
+  #planner-widget .fmt-empty-note{
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.25;
+    color: rgba(11,18,32,.55);
+  }
+  /* если нет инвентаря — слегка “приглушаем” карточку, но без налезания */
+  #planner-widget .fmt-card.is-empty{
+    opacity: .78;
+  }
+  /* ===== Tooltip portal: fixed, no drift ===== */
+  .fmt-tooltip-portal{
+    position: fixed !important;          /* ключевое */
+    z-index: 2147483647;
+    /* остальное у тебя уже есть */
+  }
+  /* уменьшить/смягчить ромб-стрелку (или можно убрать совсем) */
+  .fmt-tooltip-portal::before{
+    width: 10px !important;
+    height: 10px !important;
+    top: -6px !important;
+    border-left: 1px solid rgba(255,255,255,.10) !important;
+    border-top: 1px solid rgba(255,255,255,.10) !important;
+    background: rgba(17,24,39,.50) !important; /* в тон тултипу */
+    opacity: .9;
+  }
+  /* если тултип снизу (place="top"), стрелка тоже меньше */
+  .fmt-tooltip-portal[data-place="top"]::before{
+    bottom: -6px !important;
+  }
+  /* фиксируем структуру верхней части карточки */
+  #planner-widget .fmt-card .t{
+    align-items: flex-start;
+  }
+  #planner-widget .fmt-left{
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  /* РЕЗЕРВ под заголовок: всегда 2 строки */
+  #planner-widget .fmt-card .title{
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    line-height: 1.2;
+    min-height: calc(1.2em * 2);   /* вот это главное */
+  }
+  /* подпись про пустой инвентарь — всегда ниже и с отступом */
+  #planner-widget .fmt-empty-note{
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.25;
+    color: rgba(11,18,32,.55);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  /* немного визуально "приглушаем" пустые карточки, но оставляем читабельность */
+  #planner-widget .fmt-card.is-empty .title{
+    color: rgba(11,18,32,.78);
+  }
+  #planner-widget .fmt-card.is-empty .fmt-count{
+    opacity: .75;
+  }
+  /* выключаем старый дубль пустого состояния */
+  #planner-widget .fmt-card.is-empty::after{
+    content: none !important;
+  }
+  #planner-widget .fmt-card .title{
+    font-size: 14px !important;     /* было крупновато */
+    font-weight: 800 !important;
+    letter-spacing: .1px;
+    line-height: 1.18;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    min-height: calc(1.18em * 2);   /* резерв под 2 строки */
+  }
+  #planner-widget .fmt-card .t{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:12px;
+  }
+  #planner-widget .fmt-left{
+    min-width: 0;                 /* критично для переноса текста */
+    flex: 1 1 auto;
+  }
+  #planner-widget .fmt-card .title{
+    font-size: 14px !important;
+    font-weight: 800 !important;
+    line-height: 1.18;
+    margin: 0;
+  }
+  #planner-widget .fmt-countline{
+    margin-top: 6px;
+    font-size: 12px;
+    color: rgba(11,18,32,.62);
+    line-height: 1.2;
+  }
+  #planner-widget .fmt-empty-note{
+    margin-top: 6px;
+    font-size: 12px;
+    color: rgba(11,18,32,.50);
+  }
+  /* иконка i справа */
+  #planner-widget .fmt-tip{
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border: 1px solid rgba(15,23,42,.10);
+    background: rgba(255,255,255,.55);
+    cursor: pointer;
+  }
+  /* 1) даём нормальные отступы вниз у прогресса и live-сводки */
+  #planner-widget #wiz-progress{
+    margin: 0 0 12px 0 !important;
+    position: relative;
+    z-index: 5;
+  }
+  #planner-widget #wiz-live-summary{
+    margin: 0 0 12px 0 !important;   /* ключевое */
+    position: relative;
+    z-index: 5;                      /* выше панелей */
+  }
+  /* 2) нижний grid — отдельным слоем ниже */
+  #planner-widget > div[style*="grid-template-columns"]{
+    margin-top: 0 !important;
+    position: relative;
+    z-index: 1;
+  }
+  /* Карусель: горизонтальный скролл внутри блока */
+  .screens-photos-row{
+    display:flex;
+    gap:12px;
+    overflow-x:auto;
+    overflow-y:hidden;
+    padding-bottom:8px;
+    max-width:100%;
+    -webkit-overflow-scrolling:touch;
+    scroll-snap-type:x mandatory;
+  }
+  .screens-photos-row > .photo-card{
+    flex: 0 0 260px;           /* фикс-ширина карточки */
+    border:1px solid #eee;
+    border-radius:14px;
+    overflow:hidden;
+    background:#fff;
+    scroll-snap-align:start;
+  }
+  .photo-card img{
+    width:100%;
+    height:150px;
+    object-fit:cover;
+    display:block;
+  }
+  .photo-card .meta{
+    padding:10px;
+    font-size:13px;
+  }
+  .photo-card .gid{
+    font-weight:700;
+    margin-bottom:4px;
+  }
+  .photo-card .sub{
+    color:#666;
+    font-size:12px;
+  }
+  #img-carousel{
+    max-width: 100%; overflow: hidden;
+  }
+  #img-carousel .img-row{
+    max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  }
+  /* ВАЖНО: чтобы контент в колонках НЕ раздувал grid */
+  #planner-widget .planner-left,
+  #planner-widget .planner-right{
+    min-width: 0;         /* ключевое */
+  }
+  /* сам контейнер карусели не должен выходить за правую колонку */
+  #img-carousel{
+    max-width: 100%;
+  }
+  /* ряд с картинками: скролл вместо распирания */
+  #img-carousel .img-row{
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* карточки не должны сжиматься, только скроллиться */
+  #img-carousel .img-card{
+    flex: 0 0 220px;      /* фикс ширину, не shrink */
+  }
+  #results-toggle:hover{
+    color: #0a5cff;
+  }
+  /* убираем дефолтную карусель от planner.js */
+  #screens-photos{
+    display:none !important;
+  }
+  /* на всякий случай, если planner.js показывает этот заголовок/ряд через вложенные элементы */
+  #screens-photos *{
+    display:none !important;
+  }
+  /* красивое summary вместо <pre> */
+  #summary.summary-pre{
+    background: transparent; border: none; padding: 0;
+  }
+  .sum-wrap{
+    display:flex; flex-direction:column; gap:12px;
+  }
+  .sum-top{
+    display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
+    padding:14px; border-radius:16px;
+    border:1px solid rgba(15,23,42,.10);
+    background: rgba(255,255,255,.62);
+    backdrop-filter: blur(8px);
+  }
+  .sum-title{
+    font-weight:900; font-size:14px;
+  }
+  .sum-sub{
+    margin-top:4px; font-size:12px; color: rgba(11,18,32,.62); line-height:1.35;
+  }
+  .pill-row{
+    display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;
+  }
+  .pill{
+    display:inline-flex; gap:6px; align-items:baseline;
+    padding:6px 10px; border-radius:999px;
+    border:1px solid rgba(15,23,42,.10);
+    background: rgba(255,255,255,.55);
+    font-size:12px;
+  }
+  .pill b{
+    font-weight:900;
+  }
+  .sum-grid{
+    display:grid; grid-template-columns:1fr; gap:12px;
+  }
+  .sum-card{
+    padding:14px; border-radius:16px;
+    border:1px solid rgba(15,23,42,.10);
+    background: rgba(255,255,255,.62);
+    backdrop-filter: blur(8px);
+  }
+  .sum-card-head{
+    display:flex; align-items:flex-start; justify-content:space-between; gap:10px;
+  }
+  .sum-city{
+    font-weight:900; font-size:14px;
+  }
+  .sum-mini{
+    font-size:12px; color: rgba(11,18,32,.62); margin-top:4px;
+  }
+  .kv-row{
+    display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;
+  }
+  .kv{
+    flex:1 1 140px;
+    padding:10px 12px; border-radius:14px;
+    border:1px solid rgba(15,23,42,.10);
+    background: rgba(255,255,255,.50);
+  }
+  .kv .k{
+    font-size:11px; color: rgba(11,18,32,.58);
+  }
+  .kv .v{
+    margin-top:4px; font-weight:900; font-size:14px;
+  }
+  .fmt-list{
+    margin-top:10px; display:flex; flex-direction:column; gap:8px;
+  }
+  .fmt-item{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding:8px 10px; border-radius:12px;
+    border:1px solid rgba(15,23,42,.08);
+    background: rgba(255,255,255,.45);
+    font-size:12px;
+  }
+  .fmt-item .left{
+    display:flex; gap:8px; align-items:center; min-width:0;
+  }
+  .dot{
+    width:8px; height:8px; border-radius:999px; background: rgba(59,130,246,.9); flex:0 0 auto;
+  }
+  .fmt-name{
+    font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px;
+  }
+  .fmt-val{
+    font-weight:900; white-space:nowrap;
+  }
+  .sum-details{
+    margin-top:2px;
+    padding:12px 14px; border-radius:16px;
+    border:1px solid rgba(15,23,42,.10);
+    background: rgba(255,255,255,.55);
+  }
+  .sum-details summary{
+    cursor:pointer; font-weight:800; font-size:13px;
+    list-style:none;
+  }
+  .sum-details summary::-webkit-details-marker{
+    display:none;
+  }
+  .raw-pre{
+    margin-top:10px;
+    white-space:pre-wrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size:12px;
+    color: rgba(11,18,32,.72);
+  }
+  .ps-region-left{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+  .ps-region-budget{
+    font-size:13px;
+    font-weight:600;
+    color:#111827;
+    padding:6px 10px;
+    border-radius:999px;
+    border:1px solid rgba(15,23,42,.10);
+    background:rgba(255,255,255,.55);
+    width:fit-content;
+  }
+  .ps-region-right{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+  }
+  .ps-region-left{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+  .ps-region-screens{
+    font-size:13px;
+    color: rgba(11,18,32,.62);
+    font-weight:600;
+  }
+  /* KPI в регионе — широкие */
+  .ps-region-kpis{
+    display:grid;
+    grid-template-columns: 1fr;
+    gap:10px;
+    margin-top:12px;
+  }
+  .ps-kpi-wide{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    padding:12px 14px;
+    border-radius:14px;
+    border:1px solid rgba(15,23,42,.10);
+    background: rgba(255,255,255,.55);
+    min-width:0;
+  }
+  .ps-kpi-wide .k{
+    font-size:12px;
+    color: rgba(11,18,32,.62);
+    white-space:nowrap;
+  }
+  .ps-kpi-wide .v{
+    font-weight:900;
+    font-size:16px;
+    text-align:right;
+    white-space:nowrap;
+  }
+  /* ===== Форматная карточка ===== */
+  #planner-widget .fmt-card{
+    position: relative;
+    padding: 14px 14px 16px;   /* было больше */
+    min-height: 92px;          /* компактнее */
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 10px 30px rgba(17,23,42,.06);
+  }
+  /* заголовок */
+  #planner-widget .fmt-title{
+    font-size: 16px;           /* было ~18 */
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  /* счётчик */
+  #planner-widget .fmt-countline{
+    margin-top: 4px;
+    font-size: 13px;
+    color: #667085;
+  }
+  /* ===== Кнопка i ===== */
+  #planner-widget .fmt-tip{
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid rgba(17,23,42,.12);
+    background: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 26px;
+    text-align: center;
+    cursor: pointer;
+    color: #475467;
+    transition: background .12s ease, box-shadow .12s ease;
+  }
+  #planner-widget .fmt-tip:hover{
+    background: #f2f4f7;
+    box-shadow: 0 4px 12px rgba(17,23,42,.12);
+  }
+  #planner-widget .fmt-card{
+    position: relative;
+    padding: 12px 14px 12px;   /* было 14–16 → компактнее */
+    min-height: 32px;          /* БЫЛО ~92 */
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 10px 30px rgba(17,23,42,.06);
+  }
+  #planner-widget .fmt-title{
+    font-size: 15px;     /* было 16 */
+    line-height: 1.15;   /* плотнее */
+    margin-bottom: 2px; /* меньше воздуха */
+  }
+  #planner-widget .fmt-countline{
+    font-size: 12.5px;   /* было 13 */
+    line-height: 1.2;
+    margin-top: 2px;
+  }
+  #planner-widget .fmt-tip{
+    top: 8px;
+    right: 8px;
+    width: 22px;
+    height: 22px;
+    line-height: 22px;
+    font-size: 12px;
+  }
+  #planner-widget .fmt-grid{
+    gap: 12px;   /* было 14–16 */
+  }
+  .fmt-tooltip-portal .tt-desc{
+    margin-top: 6px;
+    font-size: 13px;
+    line-height: 1.25;
+    opacity: .92;
+  }
+  /* убираем пустой серый тултип-контейнер */
+  #planner-widget .fmt-tooltip-portal .tt-head{
+    display: none !important;
+  }
+
+
   /* ===== ДОСТУПНОСТЬ ===== */
   /* «Импорт городов из файла» — это <label> вокруг input[type=file].
      Инпут спрятан визуально (не display:none), чтобы он остался в табуляции;
