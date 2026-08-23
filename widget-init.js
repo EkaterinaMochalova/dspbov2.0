@@ -2638,8 +2638,9 @@ window.PLANNER_ASSET_BASE = (function () {
     border-radius:var(--ux-radius-sm) !important;
     border:1px solid var(--ux-line) !important; box-shadow:none !important;
   }
-  /* Заголовок модалки повторяет заголовок ката. */
-  #poly-modal.is-inline > div > div:first-child > div:first-child{ display:none; }
+  /* Шапка карты: заголовок оставляем, иначе полоса с одной кнопкой
+     «Применить» выглядит пустой. Ужимаем её по высоте. */
+  #poly-modal.is-inline > div > div:first-child{ padding:10px 14px !important; }
   #poly-modal.is-inline #poly-modal-cancel{ display:none; }
   #planner-widget .ux-fold[data-fold-for="step4-map-zone-block"] #poly-draw-btn{ display:none; }
 
@@ -4346,9 +4347,7 @@ window.PLANNER_ASSET_BASE = (function () {
         if (!on) return ["без фильтра", false];
         return [(el("grp-min")?.value || "0") + "\u2013" + (el("grp-max")?.value || ""), true];
       } },
-    { id: "step4-map-zone-block", t: "Зона на карте",
-      hint: "Обведите участок — в расчёт попадут только экраны внутри него.",
-      v: () => {
+    { id: "step4-map-zone-block", t: "Зона на карте", v: () => {
         const poly = window.PLANNER?.state?.polygon;
         return (Array.isArray(poly) && poly.length) ? ["задана", true] : ["весь город", false];
       },
