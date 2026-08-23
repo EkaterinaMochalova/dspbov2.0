@@ -25,6 +25,17 @@ window.PLANNER_ASSET_BASE = (function () {
   const root = document.getElementById("planner-root");
   if (!root) { console.error("[widget-init] #planner-root not found"); return; }
 
+  // Прежняя версия стилей виджета жила инлайном в блоке Тильды. Где её
+  // не убрали руками, она перебивает всё, что приезжает отсюда: лежит в
+  // body, а наш <style> — в head, специфичность та же, выигрывает порядок.
+  // Метка «Apple-ish glass» есть только в том блоке.
+  for (const old of document.querySelectorAll("style")) {
+    if (old.textContent.indexOf("Apple-ish glass") >= 0) {
+      old.remove();
+      console.warn("[widget-init] снят старый инлайновый стиль со страницы");
+    }
+  }
+
   function loadCSS(href, integrity) {
     const l = document.createElement("link");
     l.rel = "stylesheet"; l.href = href;
