@@ -4306,8 +4306,10 @@ window.PLANNER_ASSET_BASE = (function () {
     const stops = Array.prototype.slice.call(rail.querySelectorAll(".rail-stop"));
     if (!stops.length) return;
     const railBox = rail.getBoundingClientRect();
-    const W = railBox.width;
-    if (!W) return;
+    // Пиксель запаса: сдвиг округляется до целого, и без него крайняя
+    // подпись садится ровно на границу и вылезает на субпиксель.
+    const W = Math.floor(railBox.width) - 1;
+    if (W <= 0) return;
     const GAP = 10;
 
     const items = stops.map(st => {
