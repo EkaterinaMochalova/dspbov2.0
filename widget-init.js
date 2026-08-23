@@ -1847,21 +1847,80 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .planner-right{
     min-width: 0;         /* ключевое */
   }
-  /* сам контейнер карусели не должен выходить за правую колонку */
-  #img-carousel{
-    max-width: 100%;
-  }
-  /* ряд с картинками: скролл вместо распирания */
+  /* ===== СЕТКА ЭКРАНОВ =====
+     Была горизонтальная лента: из семидесяти карточек видно четыре,
+     на большой адреске их шестьсот. Раскладываем сеткой, режем по 24
+     на страницу. Карточки лежат в DOM все — страница переключается
+     классом, потому что обработчики «Убрать» и «Заменить» вешаются
+     один раз после отрисовки. Картинки ленивые, скрытые не грузятся. */
+  #img-carousel{ max-width: 100%; }
   #img-carousel .img-row{
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+    gap: 9px;
     max-width: 100%;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
+    overflow: visible;
   }
-  /* карточки не должны сжиматься, только скроллиться */
   #img-carousel .img-card{
-    flex: 0 0 220px;      /* фикс ширину, не shrink */
+    flex: initial; width: auto; min-width: 0;
+    border: 1px solid var(--ux-line);
+    border-radius: var(--ux-radius-sm);
+    background: var(--ux-bg);
+    overflow: hidden;
+    cursor: pointer;
   }
+  #img-carousel .img-card:hover{ border-color: var(--ux-accent-line); }
+  #img-carousel .img-card.is-susp{
+    border-color: var(--ux-danger);
+    box-shadow: inset 0 0 0 1px var(--ux-danger);
+  }
+  /* Вне текущей страницы. Порядковый номер страницы карточки лежит на
+     ней самой, номер открытой — на ряду; сравниваем через :not(). */
+  #img-carousel .img-row[data-page="0"] .img-card:not([data-page="0"]),
+  #img-carousel .img-row[data-page="1"] .img-card:not([data-page="1"]),
+  #img-carousel .img-row[data-page="2"] .img-card:not([data-page="2"]),
+  #img-carousel .img-row[data-page="3"] .img-card:not([data-page="3"]),
+  #img-carousel .img-row[data-page="4"] .img-card:not([data-page="4"]),
+  #img-carousel .img-row[data-page="5"] .img-card:not([data-page="5"]),
+  #img-carousel .img-row[data-page="6"] .img-card:not([data-page="6"]),
+  #img-carousel .img-row[data-page="7"] .img-card:not([data-page="7"]),
+  #img-carousel .img-row[data-page="8"] .img-card:not([data-page="8"]),
+  #img-carousel .img-row[data-page="9"] .img-card:not([data-page="9"]){
+    display: none;
+  }
+  #img-carousel .ph-img{
+    aspect-ratio: 4 / 3;
+    background: var(--ux-bg2);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #img-carousel .ph-img img{ width: 100%; height: 100%; object-fit: cover; display: block; }
+  #img-carousel .ph-meta{ padding: 8px 10px; }
+  #img-carousel .ph-gid{
+    font-family: var(--ux-mono); font-size: 12px; font-weight: 600;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #img-carousel .ph-own{ font-size: 11.5px; color: var(--ux-text3); }
+  #img-carousel .ph-adr{
+    font-size: 11.5px; color: var(--ux-text2); margin-top: 3px; line-height: 1.3;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  #img-carousel .ph-acts{ display: flex; gap: 5px; margin-top: 8px; }
+  #img-carousel .ph-acts button{
+    flex: 1; font: inherit; font-size: 11.5px; padding: 4px 6px;
+    border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--ux-line); background: var(--ux-bg); color: var(--ux-text2);
+  }
+  #img-carousel .ph-acts button:hover{ border-color: var(--ux-line2); color: var(--ux-text); }
+  #img-carousel .ph-acts .card-remove-btn:hover{
+    border-color: var(--ux-danger); color: var(--ux-danger);
+  }
+  #img-carousel .ph-acts .card-replace-btn:hover{
+    border-color: var(--ux-accent); color: var(--ux-accent-ink);
+  }
+  #img-carousel .ux-ph-note{
+    font-size: 12px; color: var(--ux-text3); margin-top: 8px;
+  }
+  #img-carousel .img-section{ margin-top: 16px; }
   #results-toggle:hover{
     color: var(--ux-accent);
   }
@@ -3775,9 +3834,7 @@ window.PLANNER_ASSET_BASE = (function () {
     // ровно в сумму почти никогда не попадает.
     let active = null;
     for (const x of items) if (Math.abs(x.v - now) <= Math.max(1, x.v * 0.005)) active = x.k;
-    if (!active && now > 0) items.push({ k: "now", t: "Сейчас", v: now });
     items.sort((a, b) => a.v - b.v);
-    if (!active) active = "now";
     // Позиция засечки — доля от максимума: он и есть полная ёмкость.
     const max = t.max || 0;
     const pct = (v) => max > 0 ? Math.max(0, Math.min(100, v / max * 100)) : 0;
@@ -5897,6 +5954,24 @@ window.PLANNER_ASSET_BASE = (function () {
       ...Array.from(byReg.keys()).filter(r => !selectedOrder.includes(r))
     ];
 
+    // По 24 карточки на страницу: на большой адресной программе их
+    // шестьсот, и любая раскладка без страниц превращается в простыню.
+    const PER_PAGE = 24;
+
+    function pgBtn(role, goto, disabled, label){
+      return "<button type=button data-goto=" + goto
+        + (role ? " data-role=" + role : " aria-current=" + (goto === 0))
+        + (disabled ? " disabled" : "") + ">" + label + "</button>";
+    }
+
+    function pagerHtml(total){
+      const pages = Math.max(1, Math.ceil(total / PER_PAGE));
+      let out = pgBtn("prev", -1, true, "\u2039");
+      for (let i = 0; i < pages; i++) out += pgBtn("", i, false, String(i + 1));
+      out += pgBtn("next", 1, pages <= 1, "\u203A");
+      return "<span class='ux-pg'>" + out + "</span>";
+    }
+
     const sectionsHtml = regionsOrdered.map(regionName => {
       const regItems = (byReg.get(regionName) || []);
 
@@ -5933,19 +6008,19 @@ window.PLANNER_ASSET_BASE = (function () {
           : "";
 
         return \`
-          <div class="img-card" data-region="\${escapeHtml(regionName)}" data-idx="\${idx}" data-gid="\${gid}"
-               style="min-width:220px; max-width:220px; \${suspStyle} border-radius:12px; overflow:hidden; background:#fff; cursor:pointer;">
-            <div style="height:140px; background:#f2f4f8; display:flex; align-items:center; justify-content:center;">
-              <img src="\${url}" alt="\${gid}" loading="lazy" style="width:100%; height:100%; object-fit:cover;">
+          <div class="img-card\${susp ? ' is-susp' : ''}" data-region="\${escapeHtml(regionName)}" data-idx="\${idx}" data-gid="\${gid}"
+               data-page="\${Math.floor(idx / 24)}">
+            <div class="ph-img">
+              <img src="\${url}" alt="\${gid}" loading="lazy">
             </div>
-            <div style="padding:10px;">
-              <div style="font-weight:800; font-size:13px; line-height:1.2;">\${gid || "\\u2014"}</div>
+            <div class="ph-meta">
+              <div class="ph-gid">\${gid || "\\u2014"}</div>
               \${suspBadge}
-              <div style="font-size:12px; color:#555; margin-top:4px;">\${own || "\\u2014"}</div>
-              <div style="font-size:12px; color:#777; margin-top:4px; line-height:1.25; max-height:2.5em; overflow:hidden;">\${addr || ""}</div>
-              <div style="display:flex; gap:6px; margin-top:8px;">
-                <button type="button" class="card-remove-btn" data-gid="\${gid}" style="flex:1; padding:4px 6px; border-radius:6px; border:1px solid #e04444; background:#fff5f5; color:#e04444; font-size:11px; cursor:pointer; font-weight:500;">Убрать</button>
-                <button type="button" class="card-replace-btn" data-gid="\${gid}" style="flex:1; padding:4px 6px; border-radius:6px; border:1px solid #5B3EF5; background:#F4F1FF; color:#5B3EF5; font-size:11px; cursor:pointer; font-weight:500;">Заменить</button>
+              <div class="ph-own">\${own || "\\u2014"}</div>
+              <div class="ph-adr">\${addr || ""}</div>
+              <div class="ph-acts">
+                <button type="button" class="card-remove-btn" data-gid="\${gid}">Убрать</button>
+                <button type="button" class="card-replace-btn" data-gid="\${gid}">Заменить</button>
               </div>
             </div>
           </div>
@@ -5953,24 +6028,46 @@ window.PLANNER_ASSET_BASE = (function () {
       }).join("");
 
       return \`
-        <div class="img-section" style="margin-top:14px;">
-          <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:12px; margin-bottom:8px;">
-            <div style="font-weight:800;">Фото экранов \\u2014 \${escapeHtml(regionName)}</div>
-            <div style="font-size:12px; color:#666;">Всего: \${regItems.length.toLocaleString("ru-RU")}</div>
+        <div class="img-section" data-pages="\${Math.max(1, Math.ceil(regItems.length / 24))}">
+          <div class="ux-ph-head">
+            <span class="ps-title">Экраны программы</span>
+            <span class="ux-ph-n">\${regItems.length.toLocaleString("ru-RU")} шт \\u00B7 \${escapeHtml(regionName)}</span>
+            \${regItems.length > 24 ? pagerHtml(regItems.length) : ""}
           </div>
-          <div class="img-row" data-region="\${escapeHtml(regionName)}"
-               style="display:flex; gap:12px; overflow-x:auto; overflow-y:hidden; padding-bottom:6px; max-width:100%;">
+          <div class="img-row" data-region="\${escapeHtml(regionName)}" data-page="0">
             \${cards}
           </div>
-          <div style="font-size:12px; color:#666; margin-top:6px;">
-            Пролистайте вправо, чтобы увидеть больше. Нажмите на карточку, чтобы открыть просмотр.
-          </div>
+          <div class="ux-ph-note">Нажмите на карточку, чтобы открыть просмотр.</div>
         </div>
       \`;
     }).join("");
 
     box.innerHTML = sectionsHtml;
     box.style.display = "block";
+
+    // Страницы переключаются классом на секции: карточки уже в DOM,
+    // обработчики на них навешены ниже и переживать перерисовку не должны.
+    box.querySelectorAll(".ux-pg").forEach(pager => {
+      pager.addEventListener("click", (e) => {
+        const b = e.target.closest("button[data-goto]");
+        if (!b) return;
+        const section = pager.closest(".img-section");
+        const row = section.querySelector(".img-row");
+        const pages = Number(section.dataset.pages) || 1;
+        const page = Math.max(0, Math.min(pages - 1, Number(b.dataset.goto)));
+        row.dataset.page = String(page);
+        pager.querySelectorAll("button").forEach(x => {
+          const g = Number(x.dataset.goto);
+          if (x.dataset.role) {
+            x.dataset.goto = String(x.dataset.role === "prev" ? page - 1 : page + 1);
+            x.disabled = (x.dataset.role === "prev") ? page === 0 : page >= pages - 1;
+          } else {
+            x.setAttribute("aria-current", g === page ? "page" : "false");
+          }
+        });
+        section.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      });
+    });
 
     el("carousel-map-download-btn")?.addEventListener("click", () => {
       if(window.PLANNER?.downloadMapHtml) window.PLANNER.downloadMapHtml();
@@ -7268,10 +7365,7 @@ window.PLANNER_ASSET_BASE = (function () {
               <div class="ps-title">Сводка кампании</div>
               <div class="ps-sub">Итоги и разбивка по регионам</div>
             </div>
-            <div class="ps-badges">
-              <span class="ps-badge"><b>Экраны:</b> \${fmtInt(totalScreens)}</span>
-              <span class="ps-badge"><b>Бюджет:</b> \${fmtMoney(totalBudget)}</span>
-            </div>
+
           </div>
 
           <div class="ps-grid ps-metrics">
