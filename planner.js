@@ -1277,9 +1277,9 @@ function renderSelectionExtra() {
       updateAddrToggle();
     });
 
-    // Пустое поле на старте не ставим: три кнопки объясняют выбор лучше,
-    // а поле появится по «Добавить адрес». Если адреса уже есть в черновике,
-    // их отрисует восстановление состояния.
+    // Пустое поле на старте не ставим: три кнопки объясняют выбор лучше,
+    // а поле появится по «Добавить адрес». Если адреса уже есть в черновике,
+    // их отрисует восстановление состояния.
     // Пустую строку на старте не создаём — поле появится по кнопке ниже.
 
     // Список адресов пересобирается этой функцией с нуля, поэтому снаружи
@@ -7052,16 +7052,17 @@ function computeRecoBudgetTiers() {
     const tier = getTierForGeo(regionKey, regionAll);
 
     // Максимум — это вся ёмкость адресной программы: 30 вых/час на экран
-    // (8 для медиафасадов) по выбранной ставке. Считаем от зафиксированной
-    // программы: lastChosen после расчёта на минимуме короче неё, и суммы
-    // уровней прыгали бы после каждого переключения. До расчёта программы
-    // ещё нет — берём доступный пул.
+    // (8 для медиафасадов) по выбранной ставке. База — только зафиксированная
+    // программа либо, когда фиксации нет, доступный пул. Запасной путь через
+    // lastChosen убран: он давал базу, которая едет. Расчёт на минимуме
+    // отбирает меньше экранов, база от них становится меньше, минимум падает,
+    // следующий расчёт отбирает ещё меньше — и так без дна. Ровно это и
+    // происходило после «Пересобрать адреску», где ждут как раз пул.
     const frozen = (state.apFrozenIds && state.apFrozenIds.size && Array.isArray(state.screensAll))
       ? state.screensAll.filter(s => state.apFrozenIds.has(_screenIdOf(s)))
       : null;
-    const chosen = frozen || (Array.isArray(state.lastChosen) ? state.lastChosen : null);
-    const apForRegion = chosen
-      ? chosen.filter(s => screenMatchesGeoChoice(s, region))
+    const apForRegion = frozen
+      ? frozen.filter(s => screenMatchesGeoChoice(s, region))
       : null;
     const capBase = (apForRegion && apForRegion.length) ? apForRegion : pool;
 
