@@ -1039,7 +1039,14 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .city-fmt-row:last-child{ border-bottom:none; }
   #planner-widget .city-fmt-lbl{ font-size:12px; font-weight:600; color:var(--ux-text2); min-width:72px; max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex-shrink:0; }
   #planner-widget .city-fmt-chip{ padding:2px 8px; border-radius:999px; border:1px solid var(--ux-line2); background:#fff; font-size:11px; cursor:pointer; white-space:nowrap; transition:background .1s,border-color .1s; }
-  #planner-widget .city-fmt-chip.on{ border-color:rgba(79,43,232,.5); background:var(--ux-accent-soft); color:var(--ux-accent-ink); font-weight:600; }
+  #planner-widget .city-fmt-chip.on{ border-color:var(--ux-accent); background:var(--ux-accent-soft); color:var(--ux-accent-ink); font-weight:600; box-shadow:inset 0 0 0 1px var(--ux-accent); }
+  #planner-widget .city-fmt-chip b{
+    font-family:var(--ux-mono); font-variant-numeric:tabular-nums;
+    font-weight:600; font-size:10.5px; color:var(--ux-text3); margin-left:6px;
+  }
+  #planner-widget .city-fmt-chip.on b{ color:var(--ux-accent-ink); }
+  #planner-widget .city-fmt-none{ font-size:11px; color:var(--ux-text3); }
+  #planner-widget .city-fmt-lbl{ max-width:none; }
   #planner-widget .city-fmt-reset{ font-size:11px; color:var(--ux-text3); cursor:pointer; padding:2px 4px; border:none; background:none; white-space:nowrap; }
   #planner-widget .city-fmt-reset:hover{ color:var(--ux-danger); }
 
@@ -2289,8 +2296,13 @@ window.PLANNER_ASSET_BASE = (function () {
     box-shadow:inset 0 0 0 1px var(--ux-accent);
   }
   #planner-widget .fmt-card.is-selected .fmt-title::before{ content:"\u2713\u00A0"; color:var(--ux-accent); }
-  #planner-widget .fmt-left{ grid-column:1; min-width:0; }
-  #planner-widget .fmt-title{ font-size:13.5px; font-weight:600; line-height:1.25; margin:0; }
+  #planner-widget .fmt-card .fmt-left{
+    grid-column:1; min-width:0; flex:initial; display:block;
+  }
+  #planner-widget .fmt-card .fmt-title{
+    font-size:13.5px; font-weight:600; line-height:1.25; margin:0;
+    overflow-wrap:anywhere; hyphens:auto;
+  }
   #planner-widget .fmt-countline{
     grid-column:2; grid-row:1;
     font-family:var(--ux-mono); font-variant-numeric:tabular-nums;
@@ -2719,6 +2731,10 @@ window.PLANNER_ASSET_BASE = (function () {
     letter-spacing:.06em; text-transform:uppercase; color:var(--ux-text3);
   }
   #planner-widget .ux-tierbtn[aria-pressed="true"] .t{ color:var(--ux-accent-ink); }
+  #planner-widget .ux-tierbtn .v.soon{
+    font-family:var(--ux-font); font-size:11.5px; font-weight:500;
+    color:var(--ux-text3); white-space:normal;
+  }
   #planner-widget .ux-tierbtn .v{
     display:block; font-family:var(--ux-mono); font-variant-numeric:tabular-nums;
     font-size:13.5px; font-weight:600; margin-top:2px; white-space:nowrap;
@@ -4008,13 +4024,25 @@ window.PLANNER_ASSET_BASE = (function () {
   const el = (id) => document.getElementById(id);
   const money = (v) => Math.round(v).toLocaleString("ru-RU") + " \u20BD";
 
+  // Пока расчёта не было, уровни считались бы от всего пула, а не от
+  // отобранной адрески — то есть показали бы не те суммы, которые выйдут.
+  // Поэтому число появляется только после первого расчёта.
+  function tiersAreReal(){ return !!(window.PLANNER && window.PLANNER.lastCalc); }
+
+  function setBudgetMode(mode){
+    const r = document.querySelector('input[name="budget_mode"][value="' + mode + '"]');
+    if (r && !r.checked){ r.checked = true; r.dispatchEvent(new Event("change", { bubbles: true })); }
+  }
+
   function render(){
     const host = el("budget-tier-btns");
     if (!host) return;
     const t = window.PLANNER?.computeRecoBudgetTiers?.();
     if (!t || !t.max){ host.style.display = "none"; return; }
 
+    const real = tiersAreReal();
     const own = Number(el("budget-input")?.value || 0);
+    const pending = el("budget-tier-btns").dataset.pending || "";
     const items = [
       { k: "min", t: "Минимум",     v: t.min },
       { k: "opt", t: "Оптимальный", v: t.optimal },
@@ -4024,19 +4052,69 @@ window.PLANNER_ASSET_BASE = (function () {
 
     host.style.display = "grid";
     host.innerHTML = items.map(x => {
-      const on = own > 0 && Math.abs(x.v - own) <= Math.max(1, x.v * 0.005);
-      return '<button type="button" class="ux-tierbtn" data-sum="' + Math.round(x.v)
+      const on = real
+        ? (own > 0 && Math.abs(x.v - own) <= Math.max(1, x.v * 0.005))
+        : (pending === x.k);
+      const val = real ? money(x.v) : 'посчитаем при расчёте';
+      return '<button type="button" class="ux-tierbtn" data-k="' + x.k
+        + '" data-sum="' + Math.round(x.v)
         + '" aria-pressed="' + on + '"><span class="t">' + x.t
-        + '</span><span class="v">' + money(x.v) + '</span></button>';
+        + '</span><span class="v' + (real ? '' : ' soon') + '">' + val
+        + '</span></button>';
     }).join("");
+
+    // Выбран уровень — сумму задаёт он, руками её вводить нечего.
+    const inp = el("budget-input");
+    if (inp){
+      const locked = !real && !!pending;
+      inp.disabled = locked;
+      inp.placeholder = locked
+        ? "Сумму подставим по выбранному уровню"
+        : "Введите бюджет, \u20BD";
+    }
   }
   window.renderBudgetTiers = render;
+
+  // Отложенный выбор доезжает до расчёта: перехватываем клик по кнопке
+  // на фазе перехвата — обработчик самого расчёта висит на всплытии.
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest && e.target.closest("#calc-btn");
+    if (!btn) return;
+    const host = el("budget-tier-btns");
+    const k = host && host.dataset.pending;
+    if (!k) return;
+    const t = window.PLANNER?.computeRecoBudgetTiers?.();
+    const v = t && ({ min: t.min, opt: t.optimal, max: t.max })[k];
+    const inp = el("budget-input");
+    if (v > 0 && inp){
+      inp.disabled = false;
+      inp.value = String(Math.round(v));
+      inp.dispatchEvent(new Event("input", { bubbles: true }));
+      inp.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    setBudgetMode("fixed");
+    host.dataset.pending = "";
+  }, true);
 
   document.addEventListener("click", (e) => {
     const b = e.target.closest && e.target.closest("#budget-tier-btns .ux-tierbtn");
     if (!b) return;
+    const host = el("budget-tier-btns");
     const inp = el("budget-input");
-    if (!inp) return;
+    if (!inp || !host) return;
+
+    if (!tiersAreReal()){
+      // Второй клик по выбранному уровню снимает выбор и отпускает поле.
+      host.dataset.pending = (host.dataset.pending === b.dataset.k) ? "" : b.dataset.k;
+      inp.value = "";
+      setBudgetMode(host.dataset.pending ? "recommendation" : "fixed");
+      render();
+      if (typeof window.renderProgress === "function") window.renderProgress();
+      return;
+    }
+
+    host.dataset.pending = "";
+    setBudgetMode("fixed");
     inp.value = b.dataset.sum;
     inp.dispatchEvent(new Event("input", { bubbles: true }));
     inp.dispatchEvent(new Event("change", { bubbles: true }));
@@ -6035,7 +6113,7 @@ window.PLANNER_ASSET_BASE = (function () {
       };
     }).sort((a,b)=>b.count-a.count);
 
-    const COLLAPSE_LIMIT = 6;
+    const COLLAPSE_LIMIT = 8;
     const expanded = !!window.PLANNER.ui.formatsExpanded;
     const visible = expanded ? items : items.slice(0, COLLAPSE_LIMIT);
 
@@ -6162,15 +6240,50 @@ window.PLANNER_ASSET_BASE = (function () {
 (function(){
   function el(id){ return document.getElementById(id); }
 
+  // Короткие подписи. Обрезка кода по шести буквам делала CITY_FORMAT_RC,
+  // CITY_FORMAT_RD и CITY_FORMAT_WD неразличимыми — все три превращались
+  // в «CITY_F». Пишем то, чем они друг от друга отличаются.
+  const FMT_SHORT = {
+    BILLBOARD: "Билборды",
+    SUPERSITE: "Суперсайты",
+    CITY_BOARD: "City Board",
+    CITY_FORMAT: "Ситиформаты",
+    CITY_FORMAT_RC: "СФ \u00B7 МЦК",
+    CITY_FORMAT_RD: "СФ \u00B7 вокзалы",
+    CITY_FORMAT_WD: "СФ \u00B7 метро",
+    RW_PLATFORM: "СФ \u00B7 МЦД",
+    METRO_SCREEN_3X1: "Метро, гориз.",
+    METRO_LIGHTBOX: "Metro Lightbox",
+    MEDIAFACADE: "Медиафасады",
+    PVZ_SCREEN: "ПВЗ",
+    SKY_DIGITAL: "Аэропорты",
+    OTHER: "Indoor",
+  };
   function fmtShort(f){
-    const u = String(f||"").toUpperCase();
-    if(u==="MEDIAFACADE"||u==="MF") return "MF";
-    if(u==="BILLBOARD"  ||u==="BB") return "BB";
-    if(u==="SUPERSITE"  ||u==="SS") return "SS";
-    if(u==="CITY_BOARD" ||u==="CB"||u==="CITYBOARD") return "CB";
-    if(u==="CITY_FORMAT"||u==="CF") return "CF";
-    if(u==="PVZ_SCREEN" ||u==="PVZ") return "PVZ";
-    return String(f||"").slice(0,6);
+    const u = String(f||"").trim().toUpperCase();
+    return FMT_SHORT[u] || (window.FORMAT_LABELS?.[u]?.label) || String(f||"");
+  }
+
+  // Сколько экранов этого формата стоит в этом городе. Считаем по тому же
+  // инвентарю, что и карточки форматов, — иначе числа разойдутся.
+  function countByRegion(){
+    const st = window.PLANNER?.state;
+    const all = Array.isArray(st?.screensAll) && st.screensAll.length
+      ? st.screensAll : (Array.isArray(st?.screens) ? st.screens : []);
+    const norm = (x) => String(x||"").trim().toLowerCase().replace(/\u0451/g, "\u0435");
+    const map = new Map();
+    for (const s of all) {
+      const fmt = String(s.format||"").trim();
+      if (!fmt) continue;
+      // Экран числится и за своим городом, и за своим регионом; если это
+      // одно и то же имя, Set схлопнет его в один ключ.
+      for (const key of new Set([norm(s.city), norm(s.region)].filter(Boolean))) {
+        let m = map.get(key);
+        if (!m) { m = new Map(); map.set(key, m); }
+        m.set(fmt, (m.get(fmt) || 0) + 1);
+      }
+    }
+    return { map, norm };
   }
 
   function renderCityFmtRows(){
@@ -6191,6 +6304,7 @@ window.PLANNER_ASSET_BASE = (function () {
     if(!st.cityFormats) st.cityFormats = {};
 
     rowsWrap.innerHTML = "";
+    const counts = countByRegion();
     for(const region of regions){
       const override = st.cityFormats[region] || null;
       const row = document.createElement("div");
@@ -6202,11 +6316,28 @@ window.PLANNER_ASSET_BASE = (function () {
       lbl.textContent = region;
       row.appendChild(lbl);
 
-      for(const fmt of fmts){
+      // Только те форматы, которые в этом городе действительно есть:
+      // раньше в каждой строке стояли все четырнадцать, включая нулевые.
+      const inCity = counts.map.get(counts.norm(region)) || new Map();
+      const cityFmts = fmts.filter(f => (inCity.get(f) || 0) > 0);
+      if (!cityFmts.length) {
+        const none = document.createElement("span");
+        none.className = "city-fmt-none";
+        none.textContent = "нет данных по форматам";
+        row.appendChild(none);
+        rowsWrap.appendChild(row);
+        continue;
+      }
+
+      for(const fmt of cityFmts){
         const chip = document.createElement("button");
         chip.type = "button";
         chip.className = "city-fmt-chip" + (override&&override.has(fmt)?" on":"");
-        chip.textContent = fmtShort(fmt);
+        chip.innerHTML = "";
+        chip.appendChild(document.createTextNode(fmtShort(fmt)));
+        const cnt = document.createElement("b");
+        cnt.textContent = String(inCity.get(fmt));
+        chip.appendChild(cnt);
         chip.title = fmt;
         chip.addEventListener("click", ()=>{
           if(!st.cityFormats) st.cityFormats = {};
@@ -6947,7 +7078,15 @@ window.PLANNER_ASSET_BASE = (function () {
         </div>
       \`;
 
-      const marker = L.marker([lat, lon]).addTo(layer).bindPopup(html, { maxWidth: 300 });
+      // Цвета — те же три, что обещает легенда над картой.
+      const _fmt = String(s.format || "").toUpperCase();
+      const _susp = !!s._suspiciousBid;
+      const _color = _susp ? "#B3261E" : (_fmt === "MEDIAFACADE" ? "#8A5A00" : "#4F2BE8");
+      const marker = L.circleMarker([lat, lon], {
+        radius: _susp ? 7 : 6,
+        color: "#fff", weight: 2,
+        fillColor: _color, fillOpacity: 1,
+      }).addTo(layer).bindPopup(html, { maxWidth: 300 });
       // Вешаем обработчики после открытия попапа
       marker.on("popupopen", () => {
         const sc = s; // capture screen object

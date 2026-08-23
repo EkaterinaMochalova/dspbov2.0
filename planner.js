@@ -1004,6 +1004,12 @@ function renderSelectionExtra() {
         <div style="font-size:12px; font-weight:600; color:#0e7a2e; margin-bottom:8px;">
           Нет готового списка? Найдём адреса объектов в выбранных регионах и подставим их сюда.
         </div>
+        <div style="font-size:12px; line-height:1.45; color:#8A5A00; background:#FFF6E1;
+             border:1px solid #EFD8A1; border-radius:8px; padding:8px 10px; margin-bottom:8px;">
+          Один бренд за раз. Поиск идёт по всем выбранным регионам и занимает от
+          нескольких секунд до нескольких минут; параллельные запросы 2ГИС отбрасывает,
+          и часть адресов потеряется. Дождитесь результата и запустите следующий.
+        </div>
         <input type="text" id="addr-2gis-brand" placeholder="Напр.: Пятёрочка, Магнит, McDonald's"
           style="width:100%; box-sizing:border-box; padding:9px 12px; border:1px solid #b7e3c6;
                  border-radius:8px; font-size:13px;">
@@ -1034,8 +1040,12 @@ function renderSelectionExtra() {
         </div>
       </div>
 
-      <input id="planner-radius" type="number" min="50" value="500" placeholder="Радиус, м"
-             style="width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; margin-top:4px;">
+      <label style="display:flex; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap;">
+        <span style="font-size:13px; color:#4C5368;">Радиус вокруг адреса</span>
+        <input id="planner-radius" type="number" min="50" value="500"
+               style="width:110px; box-sizing:border-box; padding:8px 10px;">
+        <span style="font-size:12px; color:#6C7488;">метров</span>
+      </label>
       <div style="font-size:12px; color:#666; margin-top:6px;">
         Геокодируем каждый адрес и берём экраны в радиусе от любого из них.
         Число справа от адреса — сколько экранов попадает в радиус.
@@ -1264,7 +1274,10 @@ function renderSelectionExtra() {
       updateAddrToggle();
     });
 
-    addAddressRow(); // первый адрес
+    // Пустое поле на старте не ставим: три кнопки объясняют выбор лучше,
+    // а поле появится по «Добавить адрес». Если адреса уже есть в черновике,
+    // их отрисует восстановление состояния.
+    renderAddrToggle?.();
 
     // Список адресов пересобирается этой функцией с нуля, поэтому снаружи
     // (restoreBriefToUI) его не заполнить — отдаём точку входа.
