@@ -5776,9 +5776,14 @@ if (brief.schedule?.type === "weekly") {
   const goalOtsVal = Number(brief?.goal?.ots || 0);
   const goalPlaysVal2 = Number(brief?.goal?.plays || 0);
 
+  // Уровень мин/опт/макс выбран, но сумма ещё не подставлена: поле нарочно
+  // пустое до нажатия «Рассчитать». Считаем это заданным бюджетом — иначе
+  // кнопка гаснет, а подставляет сумму именно её нажатие.
+  const tierPending = !!el("budget-tier-btns")?.dataset?.pending;
+
   const step3 =
     (mode === "recommendation") ||
-    (mode === "fixed" && Number.isFinite(budgetVal) && budgetVal > 0) ||
+    (mode === "fixed" && ((Number.isFinite(budgetVal) && budgetVal > 0) || tierPending)) ||
     (mode === "goal_ots" && Number.isFinite(goalOtsVal) && goalOtsVal > 0) ||
     (mode === "goal_plays" && Number.isFinite(goalPlaysVal2) && goalPlaysVal2 > 0);
 
