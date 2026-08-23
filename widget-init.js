@@ -4953,6 +4953,12 @@ window.PLANNER_ASSET_BASE = (function () {
   function getBudgetMode(){
     return document.querySelector('input[name="budget_mode"]:checked')?.value || "fixed";
   }
+  // Уровень выбран, но сумма ещё не подставлена. Для валидации это
+  // заданный бюджет: иначе кнопка «Рассчитать» блокируется, а подстановка
+  // сумм висит на нажатии этой же кнопки — нажать становится нечем.
+  function tierPending(){
+    return !!el("budget-tier-btns")?.dataset?.pending;
+  }
   function getScheduleType(){
   // если включен рваный график -- считаем это главным режимом расписания
   const weeklyOn = !!document.getElementById("weekdays-enabled")?.checked;
@@ -5222,7 +5228,7 @@ window.PLANNER_ASSET_BASE = (function () {
 
     const budgetOk =
       (budgetMode === "recommendation") ||
-      (budgetMode === "fixed"    && budgetVal > 0) ||
+      (budgetMode === "fixed"    && (budgetVal > 0 || tierPending())) ||
       (budgetMode === "goal_ots" && goalVal > 0) ||
       (budgetMode === "goal_plays" && goalPlaysVal > 0);
 
@@ -5284,7 +5290,7 @@ window.PLANNER_ASSET_BASE = (function () {
     const done = !!window.PLANNER?.lastCalc;
     const screensDone = !!(window._plannerScreensVisited || done);
     const programDone = !!(window._plannerProgramVisited || done);
-    const _budgetOk = (()=>{ const bm = getBudgetMode(); const bv = Number(el("budget-input")?.value||0); const gv = Number(el("goal-ots")?.value||0); const gpv = Number(el("goal-plays")?.value||0); return bm==="recommendation"||(bm==="fixed"&&bv>0)||(bm==="goal_ots"&&gv>0)||(bm==="goal_plays"&&gpv>0); })();
+    const _budgetOk = (()=>{ const bm = getBudgetMode(); const bv = Number(el("budget-input")?.value||0); const gv = Number(el("goal-ots")?.value||0); const gpv = Number(el("goal-plays")?.value||0); return bm==="recommendation"||(bm==="fixed"&&(bv>0||tierPending()))||(bm==="goal_ots"&&gv>0)||(bm==="goal_plays"&&gpv>0); })();
     const stepDoneMap = {
       "1": !!(Array.isArray(window.PLANNER?.state?.selectedRegions) && window.PLANNER.state.selectedRegions.length),
       "2": !!(p.dates.start && p.dates.end),
@@ -5320,7 +5326,8 @@ window.PLANNER_ASSET_BASE = (function () {
           if(!p.dates.start || !p.dates.end) reasons.push("не указаны даты");
           const mode = getBudgetMode();
           const bval = mode === "goal_ots" ? el("goal-ots")?.value : el("budget-input")?.value;
-          if(!bval || Number(bval) <= 0) reasons.push("не задан бюджет");
+          if((!bval || Number(bval) <= 0) && !(mode !== "goal_ots" && tierPending()))
+            reasons.push("не задан бюджет");
           if(window.DSP_AUTH_ENABLED && !st?.dspInventoryWarmupDone)
             reasons.push("инвентарь ещё загружается");
           hint.textContent = reasons.length ? "Что блокирует: " + reasons.join(", ") : "";
