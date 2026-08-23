@@ -2301,7 +2301,7 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   #planner-widget .fmt-card .fmt-title{
     font-size:13.5px; font-weight:600; line-height:1.25; margin:0;
-    overflow-wrap:anywhere; hyphens:auto;
+    overflow-wrap:break-word;
   }
   #planner-widget .fmt-countline{
     grid-column:2; grid-row:1;
