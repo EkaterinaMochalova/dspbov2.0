@@ -79,10 +79,10 @@ window.PLANNER_ASSET_BASE = (function () {
   --ux-muted: rgba(255,255,255,.55);
 
   /* accent */
-  --ux-accent: #2563eb;
-  --ux-accent2:#1d4ed8;
-  --ux-accentSoft: rgba(37,99,235,.12);
-  --ux-ring: 0 0 0 4px rgba(37,99,235,.18);
+  --ux-accent: #5b3ef5;
+  --ux-accent2:#4930c7;
+  --ux-accentSoft: rgba(91,62,245,.12);
+  --ux-ring: 0 0 0 4px rgba(91,62,245,.18);
 
   /* glass */
   --ux-glass: rgba(255,255,255,.60);
@@ -140,7 +140,7 @@ window.PLANNER_ASSET_BASE = (function () {
   display:block;
   height:100%;
   width:0%;
-  background:#2563eb;
+  background:#5b3ef5;
   border-radius:999px;
 }
 
@@ -158,7 +158,7 @@ window.PLANNER_ASSET_BASE = (function () {
     font-family: inherit;
     font-size: inherit;
   }
-  #planner-widget .planner-title{ margin:0 0 12px 0; }
+  #planner-widget .planner-title{ margin:24px 0 12px 0; }
   /* ===== ДВЕ ФАЗЫ ВМЕСТО ДВУХ КОЛОНОК =====
      Сетка 50/50 неверна на обоих концах: до расчёта пустует правая половина,
      после — левая, а результат (108 карточек с фото, карта, разбивка по
@@ -168,7 +168,6 @@ window.PLANNER_ASSET_BASE = (function () {
 
   #planner-widget[data-phase="brief"]  .planner-right{ display:none; }
   #planner-widget[data-phase="result"] .planner-left,
-  #planner-widget[data-phase="result"] #wiz-progress,
   #planner-widget[data-phase="result"] #progress-checklist{ display:none; }
 
   /* ===== РЕЗУЛЬТАТ ВО ВСЮ ШИРИНУ ===== */
@@ -178,7 +177,7 @@ window.PLANNER_ASSET_BASE = (function () {
      помещается 4 карточки вместо 2 в прежней колонке 390 px.
      Сетка имеет смысл только вместе с пагинацией — это правка рендера. */
   #planner-widget[data-phase="result"] .ps-grid{
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   }
   #planner-widget[data-phase="result"] #planner-map.planner-map{ height: 520px; }
 
@@ -251,7 +250,7 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .dl-settings-gear:disabled{ opacity:.4;cursor:default; }
   #planner-widget .dl-settings-popup{
     position:absolute;top:calc(100% + 8px);left:0;z-index:9999;
-    background:#fff;border:1.5px solid #e0d9fd;border-radius:14px;
+    background:#fff;border:1.5px solid #e0d9fd;border-radius:12px;
     box-shadow:0 8px 32px rgba(91,62,245,.12);padding:14px 16px;
     min-width:280px;
   }
@@ -266,7 +265,7 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .dl-settings-row:last-child{ margin-bottom:0; }
   #planner-widget .dl-settings-row input{ margin-top:2px;accent-color:#5b3ef5;flex-shrink:0; }
   #planner-widget .planner-status{ margin-top:10px; font-size:14px; color:rgba(11,18,32,.62); }
-  #planner-map.planner-map{ height:420px; width:100%; border-radius:14px; overflow:hidden; border:1px solid rgba(15,23,42,.10); font-family: Inter, Arial, sans-serif; }
+  #planner-map.planner-map{ height:420px; width:100%; border-radius:12px; overflow:hidden; border:1px solid rgba(15,23,42,.10); font-family: Inter, Arial, sans-serif; }
 
   #planner-widget .wiz-step{ display:none; }
   #planner-widget .wiz-step.active{ display:block; }
@@ -277,7 +276,7 @@ window.PLANNER_ASSET_BASE = (function () {
     background: rgba(255,255,255,.62);
     border: 1px solid rgba(15,23,42,.10);
     border-radius: 16px;
-    padding: 14px;
+    padding: 12px 14px;
     box-shadow: 0 10px 30px rgba(15,23,42,.06);
   }
   #planner-widget .ps-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
@@ -295,26 +294,32 @@ window.PLANNER_ASSET_BASE = (function () {
     white-space: nowrap;
   }
 
-  #planner-widget .ps-grid{ display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:10px; margin-top:12px; }
+  #planner-widget .ps-grid{ display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:8px; margin-top:10px; }
   @media (max-width: 920px){ #planner-widget .ps-grid{ grid-template-columns:1fr; } }
 
   #planner-widget .ps-metric{
     border: 1px solid rgba(15,23,42,.08);
     background: rgba(255,255,255,.50);
-    border-radius: 14px;
-    padding: 12px;
+    border-radius: 12px;
+    padding: 8px 10px;
+    min-width: 0;
   }
-  #planner-widget .ps-metric .k{ font-size:12px; color: rgba(11,18,32,.62); }
-  #planner-widget .ps-metric .v{ margin-top:6px; font-weight:700; font-size:16px; }
+  #planner-widget .ps-metric .k{
+    font-size:11px; color: rgba(11,18,32,.62); line-height:1.25;
+  }
+  #planner-widget .ps-metric .v{
+    margin-top:3px; font-weight:700; font-size:16px; line-height:1.2;
+    font-variant-numeric: tabular-nums; white-space:nowrap;
+  }
 
   #planner-widget .ps-region{
     border: 1px solid rgba(15,23,42,.08);
     background: rgba(255,255,255,.50);
-    border-radius: 16px;
-    padding: 12px;
+    border-radius: 12px;
+    padding: 10px 12px;
   }
   #planner-widget .ps-region-top{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
-  #planner-widget .ps-region-name{ font-weight:700; font-size:16px; }
+  #planner-widget .ps-region-name{ font-weight:700; font-size:14px; }
   #planner-widget .ps-region-chip{
     padding: 7px 10px;
     border-radius: 999px;
@@ -335,11 +340,25 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .ps-warn{
     margin-top:10px;
     padding: 10px 12px;
-    border-radius: 14px;
+    border-radius:12px;
     border: 1px solid rgba(245,158,11,.25);
     background: rgba(245,158,11,.08);
     font-size: 12px;
     color: rgba(11,18,32,.72);
+  }
+  #planner-widget .ps-warn-h{
+    display:block; font-size:11px; font-weight:700; letter-spacing:.06em;
+    text-transform:uppercase; color:#8a5a00; margin-bottom:2px;
+  }
+  /* Каждое предупреждение — своя строка со знаком. Слитный абзац через
+     <br> читался как один длинный текст, и число проблем было не видно. */
+  #planner-widget .ps-warn-item{
+    display:flex; gap:7px; align-items:flex-start;
+    padding:6px 0; line-height:1.4;
+    border-top:1px solid rgba(245,158,11,.22);
+  }
+  #planner-widget .ps-warn-item::before{
+    content:"\u26A0"; flex:0 0 auto; color:#8a5a00; font-size:11px; line-height:1.5;
   }
 
   #planner-widget .ps-details{
@@ -366,16 +385,16 @@ window.PLANNER_ASSET_BASE = (function () {
   .ps-badge{font-size:12px;padding:6px 10px;border-radius:999px;background:#F2F4F7;color:#111827;}
   .ps-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px;}
   @media (max-width: 980px){ .ps-grid{grid-template-columns:repeat(2,minmax(0,1fr));} }
-  .ps-metric{border:1px solid #eef2f6;border-radius:14px;padding:10px 12px;background:#fcfcfd;}
+  .ps-metric{border:1px solid #eef2f6;border-radius:12px;padding:10px 12px;background:#fcfcfd;}
   .ps-metric .k{font-size:12px;color:#667085;}
   .ps-metric .v{font-size:16px;font-weight:700;margin-top:6px;color:#111827;}
   .ps-regions{display:grid;gap:10px;margin-top:12px;}
   .ps-region-top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
   .ps-region-name{font-weight:700;font-size:14px;}
-  .ps-chip{font-size:12px;padding:6px 10px;border-radius:999px;background:#EEF4FF;color:#1D4ED8;}
+  .ps-chip{font-size:12px;padding:6px 10px;border-radius:999px;background:#F2EFFE;color:#4930c7;}
   .ps-mini{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
   .ps-mini span{font-size:12px;padding:6px 10px;border-radius:12px;background:#F8FAFC;border:1px solid #EEF2F6;color:#111827;}
-  .ps-warn{border:1px solid #FDE68A;background:#FFFBEB;color:#92400E;border-radius:14px;padding:10px 12px;font-size:12px;line-height:1.35;}
+  .ps-warn{border:1px solid #FDE68A;background:#FFFBEB;color:#92400E;border-radius:12px;padding:10px 12px;font-size:12px;line-height:1.35;}
   .ps-warn b{font-weight:700;}
 
   /* --- Region input UI --- */
@@ -555,7 +574,7 @@ window.PLANNER_ASSET_BASE = (function () {
 
   #planner-widget .own-card{
     display:flex; align-items:center; justify-content:space-between; gap:12px;
-    padding: 14px 14px; border-radius: 18px;
+    padding: 14px 14px; border-radius:16px;
     border: 1px solid rgba(15,23,42,.10); background: rgba(255,255,255,.70);
     box-shadow: 0 10px 30px rgba(15,23,42,.06);
     cursor:pointer; user-select:none;
@@ -567,8 +586,8 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .own-title{ font-weight: 700; font-size: 16px; color:#111827; line-height: 1.2; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; max-width: 100%; }
   #planner-widget .own-countline{ margin-top: 6px; font-size: 14px; color:#667085; font-weight: 600; }
   #planner-widget .own-tip{ flex: 0 0 auto; width: 28px; height: 28px; border-radius: 999px; border: 1px solid rgba(15,23,42,.12); background: rgba(255,255,255,.85); color: rgba(11,18,32,.72); font-weight: 700; cursor: pointer; display:flex; align-items:center; justify-content:center; box-shadow: 0 6px 18px rgba(15,23,42,.06); }
-  #planner-widget .own-card.is-selected{ border-color: rgba(37,99,235,.55); box-shadow: 0 14px 40px rgba(37,99,235,.12); background: rgba(37,99,235,.06); }
-  #planner-widget .own-card.is-selected .own-title{ color:#1D4ED8; }
+  #planner-widget .own-card.is-selected{ border-color: rgba(91,62,245,.55); box-shadow: 0 14px 40px rgba(91,62,245,.12); background: rgba(91,62,245,.06); }
+  #planner-widget .own-card.is-selected .own-title{ color:#4930c7; }
 
   #planner-widget .owner-wrap.owner-collapsed{ max-height: 220px; overflow: hidden; position: relative; border-radius: 16px; }
   #planner-widget .owner-wrap.owner-collapsed:after{ content:""; position:absolute; left:0; right:0; bottom:0; height:60px; pointer-events:none; background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,1)); }
@@ -626,8 +645,8 @@ window.PLANNER_ASSET_BASE = (function () {
     border-color: rgba(15,23,42,.22);
   }
   #planner-widget .wiz-chip.active{
-    background: #2563eb;
-    border-color: #2563eb;
+    background: #5b3ef5;
+    border-color: #5b3ef5;
     color: #fff;
   }
   #planner-widget .wiz-chip.done{
@@ -636,25 +655,9 @@ window.PLANNER_ASSET_BASE = (function () {
     color: #166534;
   }
   #planner-widget .wiz-chip.done.active{
-    background: #2563eb;
-    border-color: #2563eb;
+    background: #5b3ef5;
+    border-color: #5b3ef5;
     color: #fff;
-  }
-
-  /* ===== PROGRESS BAR ROW ===== */
-  #planner-widget .wiz-progress{
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 10px;
-  }
-  #planner-widget .wiz-progress .bar{ flex: 1; }
-  #planner-widget .wiz-progress .meta{
-    font-size: 12px;
-    color: rgba(11,18,32,.62);
-    white-space: nowrap;
-    min-width: 32px;
-    text-align: right;
   }
 
   /* ===== SCHEDULE CHIPS ===== */
@@ -699,8 +702,8 @@ window.PLANNER_ASSET_BASE = (function () {
     gap: 6px;
     padding: 10px 22px;
     border-radius: 12px;
-    border: 1px solid #2563eb;
-    background: #2563eb;
+    border: 1px solid #5b3ef5;
+    background: #5b3ef5;
     color: #fff;
     font-size: 14px;
     font-weight: 600;
@@ -710,9 +713,9 @@ window.PLANNER_ASSET_BASE = (function () {
     user-select: none;
   }
   #planner-widget .wiz-btn:hover{
-    background: #1d4ed8;
-    border-color: #1d4ed8;
-    box-shadow: 0 6px 18px rgba(37,99,235,.25);
+    background: #4930c7;
+    border-color: #4930c7;
+    box-shadow: 0 6px 18px rgba(91,62,245,.25);
   }
   #planner-widget .wiz-btn:active{ transform: translateY(1px); }
   #planner-widget .wiz-btn.ghost{
@@ -751,8 +754,16 @@ window.PLANNER_ASSET_BASE = (function () {
     background:#fff;cursor:pointer;font-size:12px;font-weight:500;color:#555;
     transition:all 0.12s;min-width:76px;text-align:center;
   }
-  #planner-widget .sel-chip:hover{border-color:#5b3ef5;background:#f5f3ff;}
-  #planner-widget .sel-chip.active{border-color:#5b3ef5;background:#ede9fd;color:#4930c7;font-weight:600;}
+  #planner-widget .sel-chip{position:relative;}
+  #planner-widget .sel-chip:hover{border-color:#c3b4f8;background:#fff;}
+  #planner-widget .sel-chip.active{
+    border-color:#5b3ef5;background:#ede9fd;color:#4930c7;font-weight:600;
+    box-shadow:inset 0 0 0 1px #5b3ef5;
+  }
+  #planner-widget .sel-chip.active::after{
+    content:"\u2713";position:absolute;top:3px;right:6px;
+    font-size:11px;font-weight:700;color:#5b3ef5;line-height:1;
+  }
   #planner-widget .sel-chip-ico{font-size:18px;line-height:1;}
 
   /* ===== STRATEGY / BID CHIPS ===== */
@@ -773,8 +784,14 @@ window.PLANNER_ASSET_BASE = (function () {
     padding:10px 12px;border:1.5px solid #e5e3f0;border-radius:12px;
     background:#fff;transition:all 0.12s;
   }
-  #planner-widget .str-chip:hover .str-chip-body{border-color:#5b3ef5;background:#f5f3ff;}
-  #planner-widget .str-chip input:checked + .str-chip-body{border-color:#5b3ef5;background:#ede9fd;color:#4930c7;}
+  #planner-widget .str-chip:hover .str-chip-body{border-color:#c3b4f8;background:#fff;}
+  #planner-widget .str-chip input:checked + .str-chip-body{
+    border-color:#5b3ef5;background:#ede9fd;color:#4930c7;
+    box-shadow:inset 0 0 0 1px #5b3ef5;
+  }
+  #planner-widget .str-chip input:checked + .str-chip-body .str-chip-title::before{
+    content:"\u2713\u00A0";color:#5b3ef5;font-weight:700;
+  }
   #planner-widget .str-chip-title{font-weight:600;font-size:13px;}
   #planner-widget .str-chip-desc{font-size:11px;color:#6b7280;margin-top:2px;}
   #planner-widget .str-chip input:checked + .str-chip-body .str-chip-desc{color:#59409f;}
@@ -785,8 +802,11 @@ window.PLANNER_ASSET_BASE = (function () {
     background:#fff;cursor:pointer;transition:all 0.12s;
     display:flex;align-items:center;gap:10px;margin-top:8px;
   }
-  #planner-widget .cns-chip:hover{border-color:#5b3ef5;background:#f5f3ff;}
-  #planner-widget .cns-chip.active{border-color:#5b3ef5;background:#ede9fd;color:#4930c7;}
+  #planner-widget .cns-chip:hover{border-color:#c3b4f8;background:#fff;}
+  #planner-widget .cns-chip.active{
+    border-color:#5b3ef5;background:#ede9fd;color:#4930c7;
+    box-shadow:inset 0 0 0 1px #5b3ef5;
+  }
   #planner-widget .cns-chip.active .str-chip-desc{color:#59409f;}
   #planner-widget .cns-chip-ico{font-size:18px;line-height:1;flex-shrink:0;}
   #planner-widget .cns-chip-body{flex:1;}
@@ -803,8 +823,11 @@ window.PLANNER_ASSET_BASE = (function () {
     padding:12px 14px;border:1.5px solid #e5e3f0;border-radius:12px;
     background:#fff;cursor:pointer;transition:all 0.12s;
   }
-  #planner-widget .vk-card:hover{border-color:#5b3ef5;background:#f5f3ff;}
-  #planner-widget .vk-card.active{border-color:#5b3ef5;background:#ede9fd;}
+  #planner-widget .vk-card:hover{border-color:#c3b4f8;background:#fff;}
+  #planner-widget .vk-card.active{
+    border-color:#5b3ef5;background:#ede9fd;
+    box-shadow:inset 0 0 0 1px #5b3ef5;
+  }
   #planner-widget .vk-card-icon{
     width:38px;height:38px;border-radius:10px;
     background:#0077ff;color:#fff;
@@ -920,8 +943,8 @@ window.PLANNER_ASSET_BASE = (function () {
     font-size: 12px;
     color: #667085;
     padding: 6px 10px;
-    background: rgba(37,99,235,.05);
-    border: 1px solid rgba(37,99,235,.12);
+    background: rgba(91,62,245,.05);
+    border: 1px solid rgba(91,62,245,.12);
     border-radius: 8px;
   }
 
@@ -937,7 +960,7 @@ window.PLANNER_ASSET_BASE = (function () {
     background: #5B3EF5;
     color: #fff;
     border: none;
-    border-radius: 24px;
+    border-radius:20px;
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
@@ -975,7 +998,7 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .city-fmt-row:last-child{ border-bottom:none; }
   #planner-widget .city-fmt-lbl{ font-size:12px; font-weight:600; color:#344054; min-width:72px; max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex-shrink:0; }
   #planner-widget .city-fmt-chip{ padding:2px 8px; border-radius:999px; border:1px solid rgba(15,23,42,.14); background:#fff; font-size:11px; cursor:pointer; white-space:nowrap; transition:background .1s,border-color .1s; }
-  #planner-widget .city-fmt-chip.on{ border-color:rgba(37,99,235,.5); background:rgba(37,99,235,.10); color:#1D4ED8; font-weight:600; }
+  #planner-widget .city-fmt-chip.on{ border-color:rgba(91,62,245,.5); background:rgba(91,62,245,.10); color:#4930c7; font-weight:600; }
   #planner-widget .city-fmt-reset{ font-size:11px; color:#6b7280; cursor:pointer; padding:2px 4px; border:none; background:none; white-space:nowrap; }
   #planner-widget .city-fmt-reset:hover{ color:#ef4444; }
 
@@ -998,7 +1021,7 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   #send-plan-popup.active{ display:flex; }
   #send-plan-popup .spp-card{
-    background:#fff; border-radius:24px; padding:40px 40px 36px;
+    background:#fff; border-radius:20px; padding:40px 40px 36px;
     max-width:380px; width:90%; text-align:center;
     box-shadow:0 24px 64px rgba(91,62,245,0.18), 0 2px 8px rgba(11,18,32,0.08);
     animation:spp-in 0.22s cubic-bezier(.34,1.36,.64,1);
@@ -1015,11 +1038,11 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   #send-plan-popup .spp-icon svg{ width:30px; height:30px; }
   #send-plan-popup .spp-title{
-    font-size:19px; font-weight:700; color:#0b1220;
+    font-size:18px; font-weight:700; color:#0b1220;
     margin-bottom:8px; letter-spacing:-0.2px;
   }
   #send-plan-popup .spp-sub{
-    font-size:13.5px; color:#667085; line-height:1.55;
+    font-size:13px; color:#667085; line-height:1.55;
     margin-bottom:28px;
   }
   #send-plan-popup .spp-close{
@@ -1068,7 +1091,7 @@ window.PLANNER_ASSET_BASE = (function () {
     font-size: 16px; font-weight: 700; color: #0b1220; line-height: 1.25;
   }
   #planner-widget .wiz-step-sub{
-    margin-top: 3px; font-size: 12.5px; color: #667085; line-height: 1.45;
+    margin-top: 3px; font-size:12px; color: #667085; line-height: 1.45;
   }
 
   /* ===== ВАЛИДАЦИЯ ПОЛЕЙ (вместо alert) ===== */
@@ -1104,13 +1127,13 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .rc-card{
     background: rgba(255,255,255,.62);
     border: 1px solid rgba(15,23,42,.10);
-    border-radius: 14px;
+    border-radius:12px;
     padding: 12px 14px;
     margin-bottom: 10px;
   }
   #planner-widget .rc-head{ display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; margin-bottom:10px; }
-  #planner-widget .rc-head b{ font-size:13.5px; font-weight:700; }
-  #planner-widget .rc-head span{ font-size:11.5px; color:#667085; }
+  #planner-widget .rc-head b{ font-size:13px; font-weight:700; }
+  #planner-widget .rc-head span{ font-size:12px; color:#667085; }
   #planner-widget .rc-tiers{ display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:7px; }
   @media (max-width: 720px){ #planner-widget .rc-tiers{ grid-template-columns: repeat(2, minmax(0,1fr)); } }
   #planner-widget .rc-tier{
@@ -1133,18 +1156,18 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget #rc-pph-out{
     font-size:15px; font-weight:700; color:#4930c7; min-width:34px; text-align:right;
   }
-  #planner-widget .rc-out{ margin-top:10px; font-size:12.5px; line-height:1.5; color:#4b5162; }
+  #planner-widget .rc-out{ margin-top:10px; font-size:12px; line-height:1.5; color:#4b5162; }
   #planner-widget .rc-delta b{ font-size:16px; color:#0b1220; }
   #planner-widget .rc-up{
-    font-size:12.5px; font-weight:600; color:#a81f28;
+    font-size:12px; font-weight:600; color:#a81f28;
     background:#fdeded; border-radius:6px; padding:2px 7px; margin-left:6px;
   }
   #planner-widget .rc-adv{
     margin-top:8px; padding:8px 10px; background:#fff;
-    border:1px solid rgba(15,23,42,.10); border-radius:9px; font-size:12px; line-height:1.5;
+    border:1px solid rgba(15,23,42,.10); border-radius:8px; font-size:12px; line-height:1.5;
   }
   #planner-widget .rc-apply{
-    margin-top:9px; font:600 12px Inter,Arial,sans-serif; border-radius:9px;
+    margin-top:9px; font:600 12px Inter,Arial,sans-serif; border-radius:8px;
     padding:7px 14px; cursor:pointer; border:1.5px solid #5b3ef5;
     background:#5b3ef5; color:#fff;
   }
@@ -1162,12 +1185,12 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .brief-row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
   #planner-widget .brief-row.second{ padding-top:8px; border-top:1px dashed rgba(15,23,42,.10); }
   #planner-widget .brief-lbl{
-    font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+    font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
     color: rgba(11,18,32,.45); margin-right:2px;
   }
   #planner-widget .brief-chip{
     display:inline-flex; align-items:center; gap:6px;
-    font-size:12.5px; font-weight:600; color:#3b2f7a;
+    font-size:12px; font-weight:600; color:#3b2f7a;
     background:#f2effe; border:1px solid #ddd5fb; border-radius:20px;
     padding:5px 11px; cursor:pointer;
     transition: background .12s, border-color .12s;
@@ -1175,7 +1198,7 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .brief-chip:hover{ background:#e7e1fd; border-color:#c3b4f8; }
   #planner-widget .brief-chip .k{ color:#7c74a8; font-weight:500; }
   #planner-widget .brief-chip.sm{
-    font-size:11.5px; padding:4px 9px; font-weight:500;
+    font-size:12px; padding:4px 9px; font-weight:500;
     background:#fff; border-color:#e7e4f5; color:#525a6b;
   }
   #planner-widget .brief-chip.sm.on{
@@ -1218,9 +1241,9 @@ window.PLANNER_ASSET_BASE = (function () {
     z-index:-1;
     border-radius: 32px;
     background:
-    radial-gradient(900px 520px at 18% 0%, rgba(37,99,235,.16), transparent 55%),
-    radial-gradient(900px 520px at 82% 10%, rgba(99,102,241,.12), transparent 55%),
-    radial-gradient(900px 520px at 50% 100%, rgba(56,189,248,.10), transparent 55%),
+    radial-gradient(900px 520px at 18% 0%, rgba(91,62,245,.16), transparent 55%),
+    radial-gradient(900px 520px at 82% 10%, rgba(139,92,246,.10), transparent 55%),
+    radial-gradient(900px 520px at 50% 100%, rgba(167,139,250,.08), transparent 55%),
     linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,255,255,.72));
     filter: saturate(1.05);
     pointer-events:none;
@@ -1263,7 +1286,7 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   #planner-widget input:focus,
   #planner-widget select:focus{
-    border-color: rgba(37,99,235,.45) !important;
+    border-color: rgba(91,62,245,.45) !important;
     box-shadow: var(--ux-ring);
   }
   /* ========== buttons ========== */
@@ -1290,8 +1313,8 @@ window.PLANNER_ASSET_BASE = (function () {
     cursor: pointer;
     font-weight: 800;
     color: #fff;
-    background: linear-gradient(180deg, rgba(37,99,235,.96), rgba(29,78,216,.98));
-    box-shadow: 0 18px 40px rgba(37,99,235,.22);
+    background: linear-gradient(180deg, rgba(91,62,245,.96), rgba(74,47,224,.98));
+    box-shadow: 0 18px 40px rgba(91,62,245,.22);
     position: relative;
     overflow: hidden;
   }
@@ -1306,20 +1329,12 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   #planner-widget .ux-primary:focus-visible{
     outline: 0;
-    box-shadow: var(--ux-ring), 0 18px 40px rgba(37,99,235,.22);
+    box-shadow: var(--ux-ring), 0 18px 40px rgba(91,62,245,.22);
   }
   #planner-widget .ux-primary:disabled{
     opacity:.55;
     cursor:not-allowed;
     filter:saturate(.8);
-  }
-  #planner-widget .wiz-progress .bar > i{
-    display:block;
-    height:100%;
-    width:0%;
-    border-radius:999px;
-    background: linear-gradient(90deg, var(--ux-accent), rgba(96,165,250,.95));
-    transition: width .25s ease;
   }
   /* ========== live summary ========== */
   #planner-widget .wiz-summary{
@@ -1395,14 +1410,14 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   #planner-widget .fmt-card:hover{
     transform: translateY(-1px);
-    border-color: rgba(37,99,235,.22);
+    border-color: rgba(91,62,245,.30);
     box-shadow: 0 18px 44px rgba(16,24,40,.14);
     z-index: 20;
   }
   #planner-widget .fmt-card.is-selected{
-    background: linear-gradient(180deg, rgba(255,255,255,.62), rgba(37,99,235,.06));
-    border-color: rgba(37,99,235,.35);
-    box-shadow: 0 20px 52px rgba(37,99,235,.14);
+    background: linear-gradient(180deg, rgba(255,255,255,.62), rgba(91,62,245,.10));
+    border-color: #5b3ef5;
+    box-shadow: inset 0 0 0 1px #5b3ef5, 0 20px 52px rgba(91,62,245,.14);
     z-index: 25;
   }
   #planner-widget .fmt-card.is-disabled{
@@ -1485,7 +1500,7 @@ window.PLANNER_ASSET_BASE = (function () {
     -webkit-backdrop-filter: blur(10px) saturate(150%);
   }
   #planner-widget .fmt-tip:hover{
-    border-color: rgba(37,99,235,.28);
+    border-color: rgba(91,62,245,.28);
     box-shadow: 0 10px 22px rgba(16,24,40,.14);
   }
   /* ========== inline tooltip (если ты ещё используешь вложенный .fmt-tooltip внутри fmt-tip) ========== */
@@ -1497,7 +1512,7 @@ window.PLANNER_ASSET_BASE = (function () {
     min-width: 240px;
     max-width: 360px;
     padding: 14px 14px;
-    border-radius: 18px;
+    border-radius:16px;
     border: 1px solid rgba(255,255,255,.18);
     background: rgba(17,24,39,.38); /* “тёмное стекло” */
     color: rgba(255,255,255,.94);
@@ -1543,7 +1558,7 @@ window.PLANNER_ASSET_BASE = (function () {
     min-width: 260px;
     max-width: 380px;
     padding: 14px 14px;
-    border-radius: 18px;
+    border-radius:16px;
     border: 1px solid rgba(255,255,255,.18);
     background: rgba(17,24,39,.38);
     color: rgba(255,255,255,.94);
@@ -1598,7 +1613,6 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .fmt-card{
     overflow: visible;
   }
-  #planner-widget #wiz-progress,
   #planner-widget #wiz-live-summary{
     display:block !important;
   }
@@ -1735,12 +1749,7 @@ window.PLANNER_ASSET_BASE = (function () {
     background: rgba(255,255,255,.55);
     cursor: pointer;
   }
-  /* 1) даём нормальные отступы вниз у прогресса и live-сводки */
-  #planner-widget #wiz-progress{
-    margin: 0 0 12px 0 !important;
-    position: relative;
-    z-index: 5;
-  }
+  /* 1) даём нормальный отступ вниз у live-сводки */
   #planner-widget #wiz-live-summary{
     margin: 0 0 12px 0 !important;   /* ключевое */
     position: relative;
@@ -1766,7 +1775,7 @@ window.PLANNER_ASSET_BASE = (function () {
   .screens-photos-row > .photo-card{
     flex: 0 0 260px;           /* фикс-ширина карточки */
     border:1px solid #eee;
-    border-radius:14px;
+    border-radius:12px;
     overflow:hidden;
     background:#fff;
     scroll-snap-align:start;
@@ -1882,7 +1891,7 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   .kv{
     flex:1 1 140px;
-    padding:10px 12px; border-radius:14px;
+    padding:10px 12px; border-radius:12px;
     border:1px solid rgba(15,23,42,.10);
     background: rgba(255,255,255,.50);
   }
@@ -1978,7 +1987,7 @@ window.PLANNER_ASSET_BASE = (function () {
     justify-content:space-between;
     gap:12px;
     padding:12px 14px;
-    border-radius:14px;
+    border-radius:12px;
     border:1px solid rgba(15,23,42,.10);
     background: rgba(255,255,255,.55);
     min-width:0;
@@ -2052,7 +2061,7 @@ window.PLANNER_ASSET_BASE = (function () {
     margin-bottom: 2px; /* меньше воздуха */
   }
   #planner-widget .fmt-countline{
-    font-size: 12.5px;   /* было 13 */
+    font-size:12px;   /* было 13 */
     line-height: 1.2;
     margin-top: 2px;
   }
@@ -2085,7 +2094,7 @@ window.PLANNER_ASSET_BASE = (function () {
      рамку фокуса рисует сама метка. */
   #planner-widget .file-import-label{ position: relative; }
   #planner-widget .file-import-label:focus-within{
-    outline: 3px solid rgba(37,99,235,.45);
+    outline: 3px solid rgba(91,62,245,.45);
     outline-offset: 2px;
   }
 
@@ -2194,17 +2203,13 @@ window.PLANNER_ASSET_BASE = (function () {
   \\u274C Исключено вручную: <b id="planner-exclusions-count">0</b> экр. &nbsp;
   <button id="planner-exclusions-reset" style="background:#ffc107; border:none; border-radius:5px; padding:2px 10px; cursor:pointer; font-size:12px; font-weight:600; color:#3a2800;">\\u21A9 Вернуть все</button>
 </div>
-<br><br><br><br>  <h2 class="planner-title">Расчёт размещения</h2>
+  <h2 class="planner-title">Расчёт размещения</h2>
   <div id="dsp-user-bar" style="display:none; font-size:12px; color:#6b7280; margin:-8px 0 10px;"></div>
   <div id="calc-history-panel" style="display:none; margin-bottom:12px;">
     <div id="calc-history-toggle" class="calc-history-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="calc-history-list" data-kbd-click>
       <span id="calc-history-arrow">▶</span> История расчётов
     </div>
     <div id="calc-history-list" class="calc-history-list" style="display:none; flex-direction:column;"></div>
-  </div>
-  <div class="wiz-progress" id="wiz-progress">
-    <div class="bar"><i id="wiz-bar"></i></div>
-    <div class="meta" id="wiz-meta">0/4</div>
   </div>
   <div id="progress-checklist" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;"></div>
   <!-- Строка брифа: видна только в фазе результата, собирается из состояния. -->
@@ -3018,7 +3023,6 @@ window.PLANNER_ASSET_BASE = (function () {
   </div>
     <!-- Right -->
     <div class="ux-panel planner-right">
-      <div class="planner-kicker" style="margin-bottom:10px;">Сводка</div>
       <!-- raw summary from planner.js (оставляем как источник истины) -->
 <pre id="summary" class="summary-pre"></pre>
 <!-- КРАСИВАЯ СВОДКА (карточки) -->
@@ -3970,12 +3974,6 @@ window.PLANNER_ASSET_BASE = (function () {
 
   function renderProgress(){
     const p = calcCompletion();
-    const pct = Math.round((p.done / 4) * 100);
-
-    const bar = el("wiz-bar");
-    const meta = el("wiz-meta");
-    if(bar) bar.style.width = pct + "%";
-    if(meta) meta.textContent = \`\${p.done}/4\`;
 
     // --- Прогресс-чеклист ---
     const chkEl = el("progress-checklist");
@@ -5105,7 +5103,7 @@ window.PLANNER_ASSET_BASE = (function () {
       z-index: 2147483647;
       max-width: 320px;
       padding: 10px 12px;
-      border-radius: 14px;
+      border-radius:12px;
       border: 1px solid rgba(15,23,42,.12);
       background: rgba(255,255,255,.95);
       box-shadow: 0 16px 46px rgba(15,23,42,.18);
@@ -5425,7 +5423,7 @@ window.PLANNER_ASSET_BASE = (function () {
 
         return \`
           <div class="img-card" data-region="\${escapeHtml(regionName)}" data-idx="\${idx}" data-gid="\${gid}"
-               style="min-width:220px; max-width:220px; \${suspStyle} border-radius:14px; overflow:hidden; background:#fff; cursor:pointer;">
+               style="min-width:220px; max-width:220px; \${suspStyle} border-radius:12px; overflow:hidden; background:#fff; cursor:pointer;">
             <div style="height:140px; background:#f2f4f8; display:flex; align-items:center; justify-content:center;">
               <img src="\${url}" alt="\${gid}" loading="lazy" style="width:100%; height:100%; object-fit:cover;">
             </div>
@@ -6696,7 +6694,7 @@ window.PLANNER_ASSET_BASE = (function () {
       : raw.split("\\n").filter(l => l.trim().startsWith("\\u26A0\\uFE0F")).map(l => l.replace(/^\\u26A0\\uFE0F\\s*/, ""));
 
     const warnsHtml = warnArr.length
-      ? \`<div class="ps-warn"><b>Предупреждения:</b><br>\${warnArr.map(x => x.replace(/^\\u26A0\\uFE0F\\s*/, "")).join("<br>")}</div>\`
+      ? \`<div class="ps-warn"><b class="ps-warn-h">Предупреждения</b>\${warnArr.map(x => \`<div class="ps-warn-item">\${x.replace(/^\\u26A0\\uFE0F\\s*/, "")}</div>\`).join("")}</div>\`
       : "";
 
     const regionCards = perRegion
