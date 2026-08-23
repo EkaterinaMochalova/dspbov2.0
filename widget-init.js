@@ -59,6 +59,8 @@ window.PLANNER_ASSET_BASE = (function () {
   loadCSS("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
           "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=");
   loadCSS("https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css");
+  loadCSS("https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700" +
+          "&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
 
   // 2. Inject all inline CSS from widget.html
   const style = document.createElement("style");
@@ -71,47 +73,80 @@ window.PLANNER_ASSET_BASE = (function () {
    Пока ни одно правило ниже к ним не обращается — это точка входа для того,
    чтобы постепенно заменить 107 захардкоженных hex на var(--ux-*).          */
 :root{
-  /* palette */
-  --ux-bg: #ffffff;
-  --ux-text: #0b1220;
-  --ux-sub: rgba(11,18,32,.62);
-  --ux-line: rgba(15,23,42,.10);
-  --ux-muted: rgba(255,255,255,.55);
+  /* поверхности: фон страницы, карточка, вложенная карточка */
+  --ux-ground: #F1F2F7;
+  --ux-bg: #FFFFFF;
+  --ux-bg2: #F7F8FC;
 
-  /* accent */
-  --ux-accent: #5b3ef5;
-  --ux-accent2:#4930c7;
-  --ux-accentSoft: rgba(91,62,245,.12);
-  --ux-ring: 0 0 0 4px rgba(91,62,245,.18);
+  /* линии. Нейтральные с синим уклоном под акцент — чистый серый
+     читается как невыбранный по умолчанию, а не как решение. */
+  --ux-line: #E1E4EE;
+  --ux-line2: #C9CEDE;
 
-  /* glass */
-  --ux-glass: rgba(255,255,255,.60);
-  --ux-glass-strong: rgba(255,255,255,.72);
-  --ux-glass-line: rgba(255,255,255,.22);
-  --ux-blur: 16px;
+  /* текст. Три ступени, все проходят 4.5:1 на белом:
+     18.0 / 7.6 / 4.7 — третья специально темнее, чем в макете,
+     иначе подписи и подсказки набраны нечитаемым. */
+  --ux-text: #0E1220;
+  --ux-text2: #4C5368;
+  --ux-text3: #6C7488;
 
-  /* shadows */
-  --ux-shadow-soft: 0 10px 28px rgba(16,24,40,.08);
-  --ux-shadow: 0 18px 50px rgba(16,24,40,.12);
+  /* акцент — только нажимаемое и выбранное, ничего декоративного */
+  --ux-accent: #4F2BE8;
+  --ux-accent-ink: #3A1FB0;
+  --ux-accent-soft: #EDE9FE;
+  --ux-accent-line: #C5B6FA;
+  --ux-ring: 0 0 0 3px rgba(79,43,232,.22);
 
-  /* radius */
-  --ux-radius: 18px;
+  /* смысловые. Отдельно от акцента: это состояние данных,
+     а не то, что можно нажать. */
+  --ux-warn: #8A5A00;
+  --ux-warn-bg: #FFF6E1;
+  --ux-warn-line: #EFD8A1;
+  --ux-danger: #B3261E;
+  --ux-danger-bg: #FDECEA;
+  --ux-ok: #14663A;
+  --ux-ok-bg: #E7F5ED;
+  --ux-ok-line: #A8D9BE;
+
+  /* шрифты */
+  --ux-font: "Golos Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --ux-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* радиусы */
+  --ux-radius: 16px;
   --ux-radius-sm: 12px;
+  --ux-radius-xs: 8px;
+
+  /* Тени сведены к одной волосяной линии: стекло и подъём при
+     наведении убраны, иначе шестьсот карточек экранов пересчитывают
+     размытие на каждый кадр прокрутки. */
+  --ux-shadow-soft: none;
+  --ux-shadow: none;
+
+  /* старые имена — на них ссылаются перенесённые из Тильды правила */
+  --ux-sub: var(--ux-text2);
+  --ux-muted: var(--ux-bg2);
+  --ux-accent2: var(--ux-accent-ink);
+  --ux-accentSoft: var(--ux-accent-soft);
+  --ux-glass: var(--ux-bg);
+  --ux-glass-strong: var(--ux-bg);
+  --ux-glass-line: var(--ux-line);
+  --ux-blur: 0px;
 }
 
 #planner-widget .chart-card{
   background:#fff;
-  border:1px solid #eee;
+  border:1px solid var(--ux-line);
   border-radius:16px;
   padding:14px;
   margin-top:12px;
-  box-shadow: 0 10px 30px rgba(15,23,42,.06);
+  
 }
 
 #planner-widget .chart-title{
   font-weight:700;
   font-size:14px;
-  color:#111827;
+  color:var(--ux-text);
 }
 
 #planner-widget .bar-row{
@@ -124,14 +159,14 @@ window.PLANNER_ASSET_BASE = (function () {
 
 #planner-widget .bar-lbl{
   font-size:12px;
-  color:#667085;
+  color:var(--ux-text3);
   font-weight:700;
   white-space:nowrap;
 }
 
 #planner-widget .bar{
   height:10px;
-  background:#eef2f6;
+  background:var(--ux-line);
   border-radius:999px;
   overflow:hidden;
 }
@@ -140,13 +175,13 @@ window.PLANNER_ASSET_BASE = (function () {
   display:block;
   height:100%;
   width:0%;
-  background:#5b3ef5;
+  background:var(--ux-accent);
   border-radius:999px;
 }
 
 #planner-widget .bar-val{
   font-size:12px;
-  color:#111827;
+  color:var(--ux-text);
   text-align:right;
   white-space:nowrap;
 }
@@ -192,33 +227,33 @@ window.PLANNER_ASSET_BASE = (function () {
   }
 
   #planner-widget .planner-kicker{ font-weight:700; margin-bottom:6px; }
-  #planner-widget .planner-sub{ font-size:14px; color:rgba(11,18,32,.62); margin-bottom:12px; }
+  #planner-widget .planner-sub{ font-size:14px; color:var(--ux-text2); margin-bottom:12px; }
   #planner-widget .planner-block{ margin-bottom:12px; }
   #planner-widget .planner-label{ font-weight:600; margin-bottom:8px; }
-  #planner-widget .planner-note{ font-size:12px; color:rgba(11,18,32,.62); margin-top:8px; }
+  #planner-widget .planner-note{ font-size:12px; color:var(--ux-text2); margin-top:8px; }
 
   /* Разделитель "Дополнительные ограничения" */
   #planner-widget .additional-filters-divider{
     display:flex; align-items:center; gap:8px;
     margin:18px 0 10px;
     font-size:12px; font-weight:600; letter-spacing:.06em; text-transform:uppercase;
-    color:rgba(11,18,32,.62);
+    color:var(--ux-text2);
   }
   #planner-widget .additional-filters-divider::before,
   #planner-widget .additional-filters-divider::after{
-    content:''; flex:1; height:1px; background:rgba(11,18,32,.1);
+    content:''; flex:1; height:1px; background:var(--ux-line);
   }
 
   /* Превью пула */
-  #planner-widget .pool-preview-block{ background:#f8f9fb; border-radius:12px; padding:12px 14px; }
+  #planner-widget .pool-preview-block{ background:var(--ux-bg2); border-radius:12px; padding:12px 14px; }
   #planner-widget .pool-preview-row{
     display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; font-size:14px;
   }
-  #planner-widget .pool-preview-base{ font-weight:600; color:#0b1220; }
-  #planner-widget .pool-preview-arrow{ color:rgba(11,18,32,.62); font-size:12px; }
-  #planner-widget .pool-preview-filter{ color:#667085; }
-  #planner-widget .pool-preview-filter b{ color:#0b1220; }
-  #planner-widget .pool-preview-pct{ font-size:12px; color:#c62828; margin-left:2px; }
+  #planner-widget .pool-preview-base{ font-weight:600; color:var(--ux-text); }
+  #planner-widget .pool-preview-arrow{ color:var(--ux-text2); font-size:12px; }
+  #planner-widget .pool-preview-filter{ color:var(--ux-text3); }
+  #planner-widget .pool-preview-filter b{ color:var(--ux-text); }
+  #planner-widget .pool-preview-pct{ font-size:12px; color:var(--ux-danger); margin-left:2px; }
 
   /* Мини-бейдж на шаге 1 */
   #pool-mini-badge{ transition: opacity .2s; }
@@ -230,15 +265,15 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .radio-row{ display:block; margin-bottom:6px; }
   #planner-widget .radio-inline{ display:flex; gap:14px; flex-wrap:wrap; }
   #planner-widget .check-row{ display:flex; gap:8px; align-items:center; margin:0; }
-  #planner-widget .hint{ font-size:12px; color:rgba(11,18,32,.58); margin-top:6px; }
+  #planner-widget .hint{ font-size:12px; color:var(--ux-text2); margin-top:6px; }
 
   #planner-widget .city-suggestions{ margin-top:8px; display:flex; flex-wrap:wrap; gap:8px; }
   #planner-widget .city-selected{ margin-top:10px; }
 
   #planner-widget .summary-pre{
     white-space: pre-wrap;
-    background: rgba(255,255,255,.55);
-    border: 1px solid rgba(15,23,42,.10);
+    background: var(--ux-bg2);
+    border: 1px solid var(--ux-line);
     padding: 12px;
     border-radius: 12px;
     min-height: 180px;
@@ -248,30 +283,30 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .download-row{ margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
   #planner-widget .dl-settings-gear{
     display:inline-flex;align-items:center;justify-content:center;
-    width:32px;height:32px;border-radius:8px;border:1.5px solid #e0d9fd;
-    background:#f7f5ff;color:#5b3ef5;cursor:pointer;transition:background .15s;flex-shrink:0;
+    width:32px;height:32px;border-radius:8px;border:1.5px solid var(--ux-accent-line);
+    background:var(--ux-accent-soft);color:var(--ux-accent);cursor:pointer;transition:background .15s;flex-shrink:0;
     padding:0;
   }
-  #planner-widget .dl-settings-gear:hover{ background:#ede9ff; }
+  #planner-widget .dl-settings-gear:hover{ background:var(--ux-accent-soft); }
   #planner-widget .dl-settings-gear:disabled{ opacity:.4;cursor:default; }
   #planner-widget .dl-settings-popup{
     position:absolute;top:calc(100% + 8px);left:0;z-index:9999;
-    background:#fff;border:1.5px solid #e0d9fd;border-radius:12px;
-    box-shadow:0 8px 32px rgba(91,62,245,.12);padding:14px 16px;
+    background:#fff;border:1.5px solid var(--ux-accent-line);border-radius:12px;
+    box-shadow:0 8px 32px var(--ux-accent-soft);padding:14px 16px;
     min-width:280px;
   }
   #planner-widget .dl-settings-title{
-    font-size:12px;font-weight:700;color:#5b3ef5;text-transform:uppercase;
+    font-size:12px;font-weight:700;color:var(--ux-accent);text-transform:uppercase;
     letter-spacing:.5px;margin-bottom:10px;
   }
   #planner-widget .dl-settings-row{
     display:flex;align-items:flex-start;gap:8px;cursor:pointer;
-    font-size:13px;color:#374151;margin-bottom:8px;line-height:1.4;
+    font-size:13px;color:var(--ux-text2);margin-bottom:8px;line-height:1.4;
   }
   #planner-widget .dl-settings-row:last-child{ margin-bottom:0; }
-  #planner-widget .dl-settings-row input{ margin-top:2px;accent-color:#5b3ef5;flex-shrink:0; }
-  #planner-widget .planner-status{ margin-top:10px; font-size:14px; color:rgba(11,18,32,.62); }
-  #planner-map.planner-map{ height:420px; width:100%; border-radius:12px; overflow:hidden; border:1px solid rgba(15,23,42,.10); font-family: Inter, Arial, sans-serif; }
+  #planner-widget .dl-settings-row input{ margin-top:2px;accent-color:var(--ux-accent);flex-shrink:0; }
+  #planner-widget .planner-status{ margin-top:10px; font-size:14px; color:var(--ux-text2); }
+  #planner-map.planner-map{ height:420px; width:100%; border-radius:12px; overflow:hidden; border:1px solid var(--ux-line); font-family: Inter, Arial, sans-serif; }
 
   #planner-widget .wiz-step{ display:none; }
   #planner-widget .wiz-step.active{ display:block; }
@@ -279,23 +314,23 @@ window.PLANNER_ASSET_BASE = (function () {
   /* Pretty summary */
   #planner-widget .ps-wrap{ display:flex; flex-direction:column; gap:12px; }
   #planner-widget .ps-card{
-    background: rgba(255,255,255,.62);
-    border: 1px solid rgba(15,23,42,.10);
+    background: var(--ux-bg);
+    border: 1px solid var(--ux-line);
     border-radius: 16px;
     padding: 12px 14px;
-    box-shadow: 0 10px 30px rgba(15,23,42,.06);
+    
   }
   #planner-widget .ps-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
   #planner-widget .ps-title{ font-weight:700; font-size:16px; margin:0; }
-  #planner-widget .ps-sub{ font-size:12px; color: rgba(11,18,32,.62); margin-top:4px; }
+  #planner-widget .ps-sub{ font-size:12px; color: var(--ux-text2); margin-top:4px; }
 
   #planner-widget .ps-badges{ display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
   #planner-widget .ps-badge{
     display:inline-flex; align-items:center; gap:8px;
     padding: 8px 10px;
     border-radius: 999px;
-    border: 1px solid rgba(15,23,42,.10);
-    background: rgba(255,255,255,.55);
+    border: 1px solid var(--ux-line);
+    background: var(--ux-bg2);
     font-size: 12px;
     white-space: nowrap;
   }
@@ -304,14 +339,14 @@ window.PLANNER_ASSET_BASE = (function () {
   @media (max-width: 920px){ #planner-widget .ps-grid{ grid-template-columns:1fr; } }
 
   #planner-widget .ps-metric{
-    border: 1px solid rgba(15,23,42,.08);
-    background: rgba(255,255,255,.50);
+    border: 1px solid var(--ux-line);
+    background: var(--ux-bg2);
     border-radius: 12px;
     padding: 8px 10px;
     min-width: 0;
   }
   #planner-widget .ps-metric .k{
-    font-size:11px; color: rgba(11,18,32,.62); line-height:1.25;
+    font-size:11px; color: var(--ux-text2); line-height:1.25;
   }
   #planner-widget .ps-metric .v{
     margin-top:3px; font-weight:700; font-size:16px; line-height:1.2;
@@ -319,8 +354,8 @@ window.PLANNER_ASSET_BASE = (function () {
   }
 
   #planner-widget .ps-region{
-    border: 1px solid rgba(15,23,42,.08);
-    background: rgba(255,255,255,.50);
+    border: 1px solid var(--ux-line);
+    background: var(--ux-bg2);
     border-radius: 12px;
     padding: 10px 12px;
   }
@@ -329,8 +364,8 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .ps-region-chip{
     padding: 7px 10px;
     border-radius: 999px;
-    border: 1px solid rgba(15,23,42,.10);
-    background: rgba(255,255,255,.55);
+    border: 1px solid var(--ux-line);
+    background: var(--ux-bg2);
     font-size: 12px;
     white-space: nowrap;
   }
@@ -338,8 +373,8 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .ps-fmt{
     padding: 7px 10px;
     border-radius: 999px;
-    border: 1px solid rgba(15,23,42,.10);
-    background: rgba(255,255,255,.55);
+    border: 1px solid var(--ux-line);
+    background: var(--ux-bg2);
     font-size: 12px;
   }
 
@@ -347,60 +382,60 @@ window.PLANNER_ASSET_BASE = (function () {
     margin-top:10px;
     padding: 10px 12px;
     border-radius:12px;
-    border: 1px solid rgba(245,158,11,.25);
-    background: rgba(245,158,11,.08);
+    border: 1px solid var(--ux-warn-line);
+    background: var(--ux-warn-bg);
     font-size: 12px;
-    color: rgba(11,18,32,.72);
+    color: var(--ux-text2);
   }
   #planner-widget .ps-warn-h{
     display:block; font-size:11px; font-weight:700; letter-spacing:.06em;
-    text-transform:uppercase; color:#8a5a00; margin-bottom:2px;
+    text-transform:uppercase; color:var(--ux-warn); margin-bottom:2px;
   }
   /* Каждое предупреждение — своя строка со знаком. Слитный абзац через
      <br> читался как один длинный текст, и число проблем было не видно. */
   #planner-widget .ps-warn-item{
     display:flex; gap:7px; align-items:flex-start;
     padding:6px 0; line-height:1.4;
-    border-top:1px solid rgba(245,158,11,.22);
+    border-top:1px solid var(--ux-warn-line);
   }
   #planner-widget .ps-warn-item::before{
-    content:"\u26A0"; flex:0 0 auto; color:#8a5a00; font-size:11px; line-height:1.5;
+    content:"\u26A0"; flex:0 0 auto; color:var(--ux-warn); font-size:11px; line-height:1.5;
   }
 
   #planner-widget .ps-details{
     margin-top:10px;
     background: rgba(255,255,255,.45);
-    border: 1px solid rgba(15,23,42,.10);
+    border: 1px solid var(--ux-line);
     border-radius: 16px;
     padding: 10px 12px;
   }
   #planner-widget .ps-details summary{ cursor:pointer; font-weight:700; list-style:none; }
   #planner-widget .ps-details summary::-webkit-details-marker{ display:none; }
-  #planner-widget .ps-details .hint{ font-size:12px; color: rgba(11,18,32,.58); margin-top:6px; }
+  #planner-widget .ps-details .hint{ font-size:12px; color: var(--ux-text2); margin-top:6px; }
 
 
   .ps-wrap{display:grid;gap:12px;}
   .ps-card{
-    background:#fff;border:1px solid #eee;border-radius:16px;
-    padding:14px; box-shadow:0 10px 30px rgba(15,23,42,.06);
+    background:#fff;border:1px solid var(--ux-line);border-radius:16px;
+    padding:14px; 
   }
   .ps-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;}
   .ps-title{font-weight:700;font-size:16px;line-height:1.2;}
-  .ps-sub{color:#667085;font-size:12px;margin-top:4px;}
+  .ps-sub{color:var(--ux-text3);font-size:12px;margin-top:4px;}
   .ps-badges{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
-  .ps-badge{font-size:12px;padding:6px 10px;border-radius:999px;background:#F2F4F7;color:#111827;}
+  .ps-badge{font-size:12px;padding:6px 10px;border-radius:999px;background:#F2F4F7;color:var(--ux-text);}
   .ps-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px;}
   @media (max-width: 980px){ .ps-grid{grid-template-columns:repeat(2,minmax(0,1fr));} }
-  .ps-metric{border:1px solid #eef2f6;border-radius:12px;padding:10px 12px;background:#fcfcfd;}
-  .ps-metric .k{font-size:12px;color:#667085;}
-  .ps-metric .v{font-size:16px;font-weight:700;margin-top:6px;color:#111827;}
+  .ps-metric{border:1px solid var(--ux-line);border-radius:12px;padding:10px 12px;background:var(--ux-bg2);}
+  .ps-metric .k{font-size:12px;color:var(--ux-text3);}
+  .ps-metric .v{font-size:16px;font-weight:700;margin-top:6px;color:var(--ux-text);}
   .ps-regions{display:grid;gap:10px;margin-top:12px;}
   .ps-region-top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
   .ps-region-name{font-weight:700;font-size:14px;}
-  .ps-chip{font-size:12px;padding:6px 10px;border-radius:999px;background:#F2EFFE;color:#4930c7;}
+  .ps-chip{font-size:12px;padding:6px 10px;border-radius:999px;background:#F2EFFE;color:var(--ux-accent-ink);}
   .ps-mini{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
-  .ps-mini span{font-size:12px;padding:6px 10px;border-radius:12px;background:#F8FAFC;border:1px solid #EEF2F6;color:#111827;}
-  .ps-warn{border:1px solid #FDE68A;background:#FFFBEB;color:#92400E;border-radius:12px;padding:10px 12px;font-size:12px;line-height:1.35;}
+  .ps-mini span{font-size:12px;padding:6px 10px;border-radius:12px;background:var(--ux-bg2);border:1px solid var(--ux-line);color:var(--ux-text);}
+  .ps-warn{border:1px solid var(--ux-warn-line);background:var(--ux-warn-bg);color:var(--ux-warn);border-radius:12px;padding:10px 12px;font-size:12px;line-height:1.35;}
   .ps-warn b{font-weight:700;}
 
   /* --- Region input UI --- */
@@ -445,9 +480,9 @@ window.PLANNER_ASSET_BASE = (function () {
   align-items: center;
   gap: 10px;
   font-size: 12px;
-  color: #374151;
+  color: var(--ux-text2);
   background: rgba(255,255,255,0.85);
-  border: 1px solid rgba(229,231,235,0.9);
+  border: 1px solid var(--ux-line);
   padding: 10px 12px;
   border-radius: 999px;
 }
@@ -547,14 +582,14 @@ window.PLANNER_ASSET_BASE = (function () {
   }
 
   .weekday-row{ display:flex; gap:8px; flex-wrap:wrap; }
-  .ux-chip{ display:inline-flex; gap:8px; align-items:center; padding:8px 10px; border:1px solid rgba(15,23,42,.12); border-radius:999px; background:#fff; font-size:12px; cursor:pointer; }
+  .ux-chip{ display:inline-flex; gap:8px; align-items:center; padding:8px 10px; border:1px solid var(--ux-line2); border-radius:999px; background:#fff; font-size:12px; cursor:pointer; }
   .ux-chip input{ margin:0; }
 
   #planner-widget .weekly-days{ display: grid; gap: 10px; margin-top: 10px; }
 
   #planner-widget .wd-card{
-    border: 1px solid rgba(15,23,42,.10);
-    background: rgba(255,255,255,.55);
+    border: 1px solid var(--ux-line);
+    background: var(--ux-bg2);
     border-radius: 16px;
     padding: 12px;
   }
@@ -562,18 +597,18 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .wd-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
   #planner-widget .wd-left{ display:flex; align-items:center; gap:10px; min-width: 0; }
   #planner-widget .wd-title{ font-weight: 700; font-size: 14px; white-space: nowrap; }
-  #planner-widget .wd-sub{ font-size: 12px; color: rgba(11,18,32,.62); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 360px; }
+  #planner-widget .wd-sub{ font-size: 12px; color: var(--ux-text2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width: 360px; }
   #planner-widget .wd-actions{ display:flex; gap:8px; align-items:center; }
-  #planner-widget .wd-btn{ padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(17, 23, 42, .14); background: rgba(255,255,255,.92); cursor: pointer; font-weight: 600; font-size: 12px; }
+  #planner-widget .wd-btn{ padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(17, 23, 42, .14); background: var(--ux-bg); cursor: pointer; font-weight: 600; font-size: 12px; }
   #planner-widget .wd-btn:disabled{ opacity: .5; cursor: not-allowed; }
   #planner-widget .wd-rows{ display: grid; gap: 8px; }
   #planner-widget .wd-row{ display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
   #planner-widget .wd-row .ux-input{ width: 160px; max-width: 42vw; }
-  #planner-widget .wd-remove{ padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(239,68,68,.25); background: rgba(239,68,68,.06); cursor: pointer; font-weight: 700; font-size: 12px; }
+  #planner-widget .wd-remove{ padding: 8px 10px; border-radius: 12px; border: 1px solid var(--ux-danger); background: var(--ux-danger-bg); cursor: pointer; font-weight: 700; font-size: 12px; }
   #planner-widget .wd-bars{ margin-top: 10px; display:flex; flex-direction: column; gap: 6px; }
   #planner-widget .wd-barline{ height: 10px; border-radius: 999px; background: rgba(15,23,42,.06); position: relative; overflow: hidden; }
-  #planner-widget .wd-seg{ position:absolute; top:0; bottom:0; border-radius: 999px; background: rgba(47,98,255,.35); }
-  #planner-widget .wd-barhint{ font-size: 12px; color: rgba(11,18,32,.62); }
+  #planner-widget .wd-seg{ position:absolute; top:0; bottom:0; border-radius: 999px; background: rgba(79,43,232,.35); }
+  #planner-widget .wd-barhint{ font-size: 12px; color: var(--ux-text2); }
 
   #planner-widget #owner-wrap{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 8px; }
   @media (max-width: 560px){ #planner-widget #owner-wrap{ grid-template-columns: 1fr; } }
@@ -581,19 +616,19 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .own-card{
     display:flex; align-items:center; justify-content:space-between; gap:12px;
     padding: 14px 14px; border-radius:16px;
-    border: 1px solid rgba(15,23,42,.10); background: rgba(255,255,255,.70);
-    box-shadow: 0 10px 30px rgba(15,23,42,.06);
+    border: 1px solid var(--ux-line); background: var(--ux-bg);
+    
     cursor:pointer; user-select:none;
     transition: transform .12s ease, box-shadow .12s ease, background-color .12s ease, border-color .12s ease;
   }
-  #planner-widget .own-card:hover{ transform: translateY(-1px); box-shadow: 0 14px 36px rgba(15,23,42,.10); background: rgba(255,255,255,.92); }
-  #planner-widget .own-card:active{ transform: translateY(0px); box-shadow: 0 10px 30px rgba(15,23,42,.06); }
+  #planner-widget .own-card:hover{ transform: translateY(-1px);  background: var(--ux-bg); }
+  #planner-widget .own-card:active{ transform: translateY(0px);  }
   #planner-widget .own-left{ min-width:0; }
-  #planner-widget .own-title{ font-weight: 700; font-size: 16px; color:#111827; line-height: 1.2; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; max-width: 100%; }
-  #planner-widget .own-countline{ margin-top: 6px; font-size: 14px; color:#667085; font-weight: 600; }
-  #planner-widget .own-tip{ flex: 0 0 auto; width: 28px; height: 28px; border-radius: 999px; border: 1px solid rgba(15,23,42,.12); background: rgba(255,255,255,.85); color: rgba(11,18,32,.72); font-weight: 700; cursor: pointer; display:flex; align-items:center; justify-content:center; box-shadow: 0 6px 18px rgba(15,23,42,.06); }
-  #planner-widget .own-card.is-selected{ border-color: rgba(91,62,245,.55); box-shadow: 0 14px 40px rgba(91,62,245,.12); background: rgba(91,62,245,.06); }
-  #planner-widget .own-card.is-selected .own-title{ color:#4930c7; }
+  #planner-widget .own-title{ font-weight: 700; font-size: 16px; color:var(--ux-text); line-height: 1.2; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; max-width: 100%; }
+  #planner-widget .own-countline{ margin-top: 6px; font-size: 14px; color:var(--ux-text3); font-weight: 600; }
+  #planner-widget .own-tip{ flex: 0 0 auto; width: 28px; height: 28px; border-radius: 999px; border: 1px solid var(--ux-line2); background: var(--ux-bg); color: var(--ux-text2); font-weight: 700; cursor: pointer; display:flex; align-items:center; justify-content:center;  }
+  #planner-widget .own-card.is-selected{ border-color: rgba(79,43,232,.55);  background: var(--ux-accent-soft); }
+  #planner-widget .own-card.is-selected .own-title{ color:var(--ux-accent-ink); }
 
   #planner-widget .owner-wrap.owner-collapsed{ max-height: 220px; overflow: hidden; position: relative; border-radius: 16px; }
   #planner-widget .owner-wrap.owner-collapsed:after{ content:""; position:absolute; left:0; right:0; bottom:0; height:60px; pointer-events:none; background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,1)); }
@@ -608,17 +643,17 @@ window.PLANNER_ASSET_BASE = (function () {
   }
 
   #planner-widget .date-error{ margin-top:8px; font-size:14px; font-weight:600; color:#DC2626; display:none; }
-  #planner-widget .ux-input.is-invalid{ border-color:#DC2626 !important; box-shadow:0 0 0 3px rgba(220,38,38,.12); }
+  #planner-widget .ux-input.is-invalid{ border-color:#DC2626 !important; box-shadow:0 0 0 3px var(--ux-danger-bg); }
 
   /* ===== PANELS ===== */
   #planner-widget .ux-panel{
-    background: rgba(255,255,255,.72);
-    border: 1px solid rgba(15,23,42,.10);
-    border-radius: 20px;
-    padding: 20px;
-    box-shadow: 0 10px 30px rgba(15,23,42,.06);
+    background: var(--ux-bg);
+    border: 1px solid var(--ux-line);
+    border-radius: var(--ux-radius);
+    padding: 20px 22px;
     min-width: 0;
   }
+  @media (max-width: 640px){ #planner-widget .ux-panel{ padding: 14px; } }
 
   /* ===== WIZARD CHIPS (step tabs) ===== */
   #planner-widget .wiz-steps{
@@ -630,39 +665,39 @@ window.PLANNER_ASSET_BASE = (function () {
     top: 12px;
     z-index: 60;
     background: rgba(255,255,255,0.94);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    
+    -webkit-
     padding: 6px 0 8px;
     border-radius: 10px;
   }
   #planner-widget .wiz-chip{
     padding: 6px 14px;
-    border: 1px solid rgba(15,23,42,.14);
+    border: 1px solid var(--ux-line2);
     border-radius: 999px;
-    background: rgba(255,255,255,.85);
+    background: var(--ux-bg);
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    color: rgba(11,18,32,.70);
+    color: var(--ux-text2);
     transition: background .12s ease, border-color .12s ease, color .12s ease;
   }
   #planner-widget .wiz-chip:hover{
     background: #fff;
-    border-color: rgba(15,23,42,.22);
+    border-color: var(--ux-line2);
   }
   #planner-widget .wiz-chip.active{
-    background: #5b3ef5;
-    border-color: #5b3ef5;
+    background: var(--ux-accent);
+    border-color: var(--ux-accent);
     color: #fff;
   }
   #planner-widget .wiz-chip.done{
-    background: #f0fdf4;
-    border-color: #86efac;
-    color: #166534;
+    background: var(--ux-ok-bg);
+    border-color: var(--ux-ok-line);
+    color: var(--ux-ok);
   }
   #planner-widget .wiz-chip.done.active{
-    background: #5b3ef5;
-    border-color: #5b3ef5;
+    background: var(--ux-accent);
+    border-color: var(--ux-accent);
     color: #fff;
   }
 
@@ -670,27 +705,27 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .sch-chip{
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     padding:8px 14px; min-width:76px; text-align:center;
-    border:1.5px solid rgba(15,23,42,.14); border-radius:12px;
+    border:1.5px solid var(--ux-line2); border-radius:12px;
     background:#fff; cursor:pointer;
     transition:border-color .12s, background .12s, box-shadow .12s;
   }
   #planner-widget .sch-chip:hover{
-    border-color:rgba(91,62,245,.4); background:#faf8ff;
+    border-color:rgba(79,43,232,.4); background:var(--ux-accent-soft);
   }
   #planner-widget .sch-chip.active{
-    border-color:#5b3ef5; background:#f0eeff; color:#3a1dcc;
+    border-color:var(--ux-accent); background:var(--ux-accent-soft); color:var(--ux-accent-ink);
   }
   #planner-widget .sch-chip-name{ font-size:13px; font-weight:600; }
-  #planner-widget .sch-chip-time{ font-size:11px; color:rgba(11,18,32,.62); margin-top:2px; }
-  #planner-widget .sch-chip.active .sch-chip-time{ color:#4930c7; }
+  #planner-widget .sch-chip-time{ font-size:11px; color:var(--ux-text2); margin-top:2px; }
+  #planner-widget .sch-chip.active .sch-chip-time{ color:var(--ux-accent-ink); }
   #planner-widget .pct-chip{
     padding:6px 14px; font-size:13px; font-weight:600;
-    border:1.5px solid rgba(15,23,42,.14); border-radius:12px;
+    border:1.5px solid var(--ux-line2); border-radius:12px;
     background:#fff; cursor:pointer; color:inherit;
     transition:border-color .12s, background .12s;
   }
-  #planner-widget .pct-chip:hover{ border-color:rgba(91,62,245,.4); background:#faf8ff; }
-  #planner-widget .pct-chip.active{ border-color:#5b3ef5; background:#f0eeff; color:#3a1dcc; }
+  #planner-widget .pct-chip:hover{ border-color:rgba(79,43,232,.4); background:var(--ux-accent-soft); }
+  #planner-widget .pct-chip.active{ border-color:var(--ux-accent); background:var(--ux-accent-soft); color:var(--ux-accent-ink); }
 
   /* ===== NAV ROW ===== */
   #planner-widget .wiz-nav{
@@ -708,8 +743,8 @@ window.PLANNER_ASSET_BASE = (function () {
     gap: 6px;
     padding: 10px 22px;
     border-radius: 12px;
-    border: 1px solid #5b3ef5;
-    background: #5b3ef5;
+    border: 1px solid var(--ux-accent);
+    background: var(--ux-accent);
     color: #fff;
     font-size: 14px;
     font-weight: 600;
@@ -719,20 +754,20 @@ window.PLANNER_ASSET_BASE = (function () {
     user-select: none;
   }
   #planner-widget .wiz-btn:hover{
-    background: #4930c7;
-    border-color: #4930c7;
-    box-shadow: 0 6px 18px rgba(91,62,245,.25);
+    background: var(--ux-accent-ink);
+    border-color: var(--ux-accent-ink);
+    box-shadow: none;
   }
   #planner-widget .wiz-btn:active{ transform: translateY(1px); }
   #planner-widget .wiz-btn.ghost{
-    background: rgba(255,255,255,.92);
-    border-color: rgba(15,23,42,.14);
+    background: var(--ux-bg);
+    border-color: var(--ux-line2);
     color: rgba(11,18,32,.80);
   }
   #planner-widget .wiz-btn.ghost:hover{
     background: #fff;
-    border-color: rgba(15,23,42,.28);
-    box-shadow: 0 4px 12px rgba(15,23,42,.08);
+    border-color: var(--ux-line2);
+    
   }
   #planner-widget .wiz-btn:disabled{
     opacity: .45;
@@ -756,19 +791,19 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .sel-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;}
   #planner-widget .sel-chip{
     display:flex;flex-direction:column;align-items:center;gap:3px;
-    padding:10px 12px;border:1.5px solid #e5e3f0;border-radius:12px;
-    background:#fff;cursor:pointer;font-size:12px;font-weight:500;color:#555;
+    padding:10px 12px;border:1.5px solid var(--ux-line);border-radius:12px;
+    background:#fff;cursor:pointer;font-size:12px;font-weight:500;color:var(--ux-text2);
     transition:all 0.12s;min-width:76px;text-align:center;
   }
   #planner-widget .sel-chip{position:relative;}
-  #planner-widget .sel-chip:hover{border-color:#c3b4f8;background:#fff;}
+  #planner-widget .sel-chip:hover{border-color:var(--ux-accent-line);background:#fff;}
   #planner-widget .sel-chip.active{
-    border-color:#5b3ef5;background:#ede9fd;color:#4930c7;font-weight:600;
-    box-shadow:inset 0 0 0 1px #5b3ef5;
+    border-color:var(--ux-accent);background:var(--ux-accent-soft);color:var(--ux-accent-ink);font-weight:600;
+    box-shadow:inset 0 0 0 1px var(--ux-accent);
   }
   #planner-widget .sel-chip.active::after{
     content:"\u2713";position:absolute;top:3px;right:6px;
-    font-size:11px;font-weight:700;color:#5b3ef5;line-height:1;
+    font-size:11px;font-weight:700;color:var(--ux-accent);line-height:1;
   }
   #planner-widget .sel-chip-ico{font-size:18px;line-height:1;}
 
@@ -787,38 +822,38 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .str-chip input[type="radio"],
   #planner-widget .str-chip input[type="checkbox"]{display:none;}
   #planner-widget .str-chip-body{
-    padding:10px 12px;border:1.5px solid #e5e3f0;border-radius:12px;
+    padding:10px 12px;border:1.5px solid var(--ux-line);border-radius:12px;
     background:#fff;transition:all 0.12s;
   }
-  #planner-widget .str-chip:hover .str-chip-body{border-color:#c3b4f8;background:#fff;}
+  #planner-widget .str-chip:hover .str-chip-body{border-color:var(--ux-accent-line);background:#fff;}
   #planner-widget .str-chip input:checked + .str-chip-body{
-    border-color:#5b3ef5;background:#ede9fd;color:#4930c7;
-    box-shadow:inset 0 0 0 1px #5b3ef5;
+    border-color:var(--ux-accent);background:var(--ux-accent-soft);color:var(--ux-accent-ink);
+    box-shadow:inset 0 0 0 1px var(--ux-accent);
   }
   #planner-widget .str-chip input:checked + .str-chip-body .str-chip-title::before{
-    content:"\u2713\u00A0";color:#5b3ef5;font-weight:700;
+    content:"\u2713\u00A0";color:var(--ux-accent);font-weight:700;
   }
   #planner-widget .str-chip-title{font-weight:600;font-size:13px;}
-  #planner-widget .str-chip-desc{font-size:11px;color:#6b7280;margin-top:2px;}
-  #planner-widget .str-chip input:checked + .str-chip-body .str-chip-desc{color:#59409f;}
+  #planner-widget .str-chip-desc{font-size:11px;color:var(--ux-text3);margin-top:2px;}
+  #planner-widget .str-chip input:checked + .str-chip-body .str-chip-desc{color:var(--ux-accent-ink);}
 
   /* ===== CONSTRUCTIONS CHIP ===== */
   #planner-widget .cns-chip{
-    padding:10px 14px;border:1.5px solid #e5e3f0;border-radius:12px;
+    padding:10px 14px;border:1.5px solid var(--ux-line);border-radius:12px;
     background:#fff;cursor:pointer;transition:all 0.12s;
     display:flex;align-items:center;gap:10px;margin-top:8px;
   }
-  #planner-widget .cns-chip:hover{border-color:#c3b4f8;background:#fff;}
+  #planner-widget .cns-chip:hover{border-color:var(--ux-accent-line);background:#fff;}
   #planner-widget .cns-chip.active{
-    border-color:#5b3ef5;background:#ede9fd;color:#4930c7;
-    box-shadow:inset 0 0 0 1px #5b3ef5;
+    border-color:var(--ux-accent);background:var(--ux-accent-soft);color:var(--ux-accent-ink);
+    box-shadow:inset 0 0 0 1px var(--ux-accent);
   }
-  #planner-widget .cns-chip.active .str-chip-desc{color:#59409f;}
+  #planner-widget .cns-chip.active .str-chip-desc{color:var(--ux-accent-ink);}
   #planner-widget .cns-chip-ico{font-size:18px;line-height:1;flex-shrink:0;}
   #planner-widget .cns-chip-body{flex:1;}
   #planner-widget .cns-chip-badge{
-    font-size:12px;font-weight:700;color:#5b3ef5;
-    background:#e0d9ff;border-radius:20px;padding:2px 8px;
+    font-size:12px;font-weight:700;color:var(--ux-accent);
+    background:var(--ux-accent-line);border-radius:20px;padding:2px 8px;
     display:none;
   }
   #planner-widget .cns-chip.active .cns-chip-badge[data-val]{display:inline;}
@@ -826,13 +861,13 @@ window.PLANNER_ASSET_BASE = (function () {
   /* ===== VK AFFINITY CARD ===== */
   #planner-widget .vk-card{
     display:flex;align-items:center;gap:12px;
-    padding:12px 14px;border:1.5px solid #e5e3f0;border-radius:12px;
+    padding:12px 14px;border:1.5px solid var(--ux-line);border-radius:12px;
     background:#fff;cursor:pointer;transition:all 0.12s;
   }
-  #planner-widget .vk-card:hover{border-color:#c3b4f8;background:#fff;}
+  #planner-widget .vk-card:hover{border-color:var(--ux-accent-line);background:#fff;}
   #planner-widget .vk-card.active{
-    border-color:#5b3ef5;background:#ede9fd;
-    box-shadow:inset 0 0 0 1px #5b3ef5;
+    border-color:var(--ux-accent);background:var(--ux-accent-soft);
+    box-shadow:inset 0 0 0 1px var(--ux-accent);
   }
   #planner-widget .vk-card-icon{
     width:38px;height:38px;border-radius:10px;
@@ -841,14 +876,14 @@ window.PLANNER_ASSET_BASE = (function () {
     font-weight:800;font-size:15px;letter-spacing:-0.5px;flex-shrink:0;
   }
   #planner-widget .vk-card-body{flex:1;}
-  #planner-widget .vk-card-title{font-weight:600;font-size:13px;color:#0b1220;}
-  #planner-widget .vk-card-desc{font-size:11px;color:#6b7280;margin-top:2px;}
-  #planner-widget .vk-card.active .vk-card-desc{color:#59409f;}
+  #planner-widget .vk-card-title{font-weight:600;font-size:13px;color:var(--ux-text);}
+  #planner-widget .vk-card-desc{font-size:11px;color:var(--ux-text3);margin-top:2px;}
+  #planner-widget .vk-card.active .vk-card-desc{color:var(--ux-accent-ink);}
   #planner-widget .vk-toggle{
     width:38px;height:22px;border-radius:11px;
-    background:#d0d5dd;transition:background 0.15s;flex-shrink:0;position:relative;
+    background:var(--ux-line2);transition:background 0.15s;flex-shrink:0;position:relative;
   }
-  #planner-widget .vk-card.active .vk-toggle{background:#5b3ef5;}
+  #planner-widget .vk-card.active .vk-toggle{background:var(--ux-accent);}
   #planner-widget .vk-toggle::after{
     content:'';position:absolute;top:3px;left:3px;
     width:16px;height:16px;border-radius:50%;background:#fff;
@@ -861,7 +896,7 @@ window.PLANNER_ASSET_BASE = (function () {
     display:flex;align-items:center;gap:8px;margin-bottom:6px;
   }
   #planner-widget .per-city-row-label{
-    flex:1;font-size:13px;font-weight:500;color:#344054;min-width:0;
+    flex:1;font-size:13px;font-weight:500;color:var(--ux-text2);min-width:0;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   }
   #planner-widget .per-city-row .ux-input{
@@ -871,7 +906,7 @@ window.PLANNER_ASSET_BASE = (function () {
   /* ===== BUDGET EXTRAS (НДС / commission) ===== */
   #planner-widget .ux-toggle-track{
     position:relative;display:inline-block;width:36px;height:20px;
-    background:#d1d5db;border-radius:999px;transition:background .2s;flex-shrink:0;
+    background:var(--ux-line2);border-radius:999px;transition:background .2s;flex-shrink:0;
   }
   #planner-widget .ux-toggle-input{ position:absolute;opacity:0;width:0;height:0; }
   #planner-widget .ux-toggle-thumb{
@@ -881,38 +916,38 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   #planner-widget .ux-toggle-input:checked ~ .ux-toggle-thumb{ transform:translateX(16px); }
   #planner-widget .ux-toggle-input:checked + .ux-toggle-thumb{ transform:translateX(16px); }
-  #planner-widget .ux-toggle-track:has(.ux-toggle-input:checked){ background:#5b3ef5; }
+  #planner-widget .ux-toggle-track:has(.ux-toggle-input:checked){ background:var(--ux-accent); }
   #planner-widget .reco-tier-btn{
     display:inline-flex;align-items:center;gap:6px;padding:6px 14px;
-    border-radius:10px;border:1.5px solid #e0d9fd;background:#f7f5ff;
-    cursor:pointer;font-size:13px;font-weight:600;color:#5b3ef5;
+    border-radius:10px;border:1.5px solid var(--ux-accent-line);background:var(--ux-accent-soft);
+    cursor:pointer;font-size:13px;font-weight:600;color:var(--ux-accent);
     transition:background .15s,border-color .15s;
   }
   #planner-widget .reco-tier-btn input{ display:none; }
-  #planner-widget .reco-tier-btn:has(input:checked){ background:#5b3ef5;color:#fff;border-color:#5b3ef5; }
+  #planner-widget .reco-tier-btn:has(input:checked){ background:var(--ux-accent);color:#fff;border-color:var(--ux-accent); }
   #planner-widget .reco-tier-btn{ flex-direction:column;align-items:flex-start;gap:1px;padding:7px 12px; }
-  #planner-widget .rtb-label{ font-size:10px;font-weight:500;color:#5b4bb8;text-transform:uppercase;letter-spacing:.4px; }
-  #planner-widget .reco-tier-btn:has(input:checked) .rtb-label{ color:#e9e4ff; }
+  #planner-widget .rtb-label{ font-size:10px;font-weight:500;color:var(--ux-accent-ink);text-transform:uppercase;letter-spacing:.4px; }
+  #planner-widget .reco-tier-btn:has(input:checked) .rtb-label{ color:var(--ux-accent-line); }
   #planner-widget .rtb-sum{ font-size:13px;font-weight:700;white-space:nowrap; }
   /* Скелетон на месте суммы, пока идёт пересчёт по адресной программе */
   #planner-widget .rtb-sum.rtb-skel{
     display:inline-block;min-width:78px;height:14px;border-radius:4px;color:transparent;
-    background:linear-gradient(90deg,#e6e0ff 25%,#f4f1ff 50%,#e6e0ff 75%);
+    background:linear-gradient(90deg,var(--ux-accent-line) 25%,var(--ux-accent-soft) 50%,var(--ux-accent-line) 75%);
     background-size:200% 100%;animation:rtbShimmer 1.1s ease-in-out infinite;
   }
   #planner-widget .reco-tier-btn:has(input:checked) .rtb-sum.rtb-skel{
-    background:linear-gradient(90deg,#7a63f7 25%,#a795fb 50%,#7a63f7 75%);
+    background:linear-gradient(90deg,var(--ux-accent) 25%,var(--ux-accent-line) 50%,var(--ux-accent) 75%);
     background-size:200% 100%;
   }
   @keyframes rtbShimmer{ 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
   #planner-widget .budget-tier-chip{
     display:inline-flex;flex-direction:column;align-items:flex-start;
-    gap:1px;padding:7px 12px;border-radius:10px;border:1.5px solid #e0d9fd;
-    background:#f7f5ff;cursor:pointer;transition:background .15s,border-color .15s;
-    font-size:11px;color:#5b3ef5;font-weight:600;line-height:1.3;
+    gap:1px;padding:7px 12px;border-radius:10px;border:1.5px solid var(--ux-accent-line);
+    background:var(--ux-accent-soft);cursor:pointer;transition:background .15s,border-color .15s;
+    font-size:11px;color:var(--ux-accent);font-weight:600;line-height:1.3;
   }
-  #planner-widget .budget-tier-chip:hover{ background:#ede9ff;border-color:#b9a8f8; }
-  #planner-widget .budget-tier-chip .btc-label{ font-size:10px;font-weight:500;color:#5b4bb8;text-transform:uppercase;letter-spacing:.4px; }
+  #planner-widget .budget-tier-chip:hover{ background:var(--ux-accent-soft);border-color:var(--ux-accent-line); }
+  #planner-widget .budget-tier-chip .btc-label{ font-size:10px;font-weight:500;color:var(--ux-accent-ink);text-transform:uppercase;letter-spacing:.4px; }
   #planner-widget .budget-extra-row{
     display: flex;
     align-items: center;
@@ -938,7 +973,7 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .budget-extra-rate input{
     width: 64px;
     padding: 4px 8px;
-    border: 1px solid rgba(15,23,42,.14);
+    border: 1px solid var(--ux-line2);
     border-radius: 8px;
     font-size: 13px;
     box-sizing: border-box;
@@ -947,10 +982,10 @@ window.PLANNER_ASSET_BASE = (function () {
     display: none;
     margin-top: 4px;
     font-size: 12px;
-    color: #667085;
+    color: var(--ux-text3);
     padding: 6px 10px;
-    background: rgba(91,62,245,.05);
-    border: 1px solid rgba(91,62,245,.12);
+    background: var(--ux-accent-soft);
+    border: 1px solid var(--ux-accent-soft);
     border-radius: 8px;
   }
 
@@ -963,24 +998,24 @@ window.PLANNER_ASSET_BASE = (function () {
     align-items: center;
     gap: 8px;
     padding: 10px 20px;
-    background: #5B3EF5;
+    background: var(--ux-accent);
     color: #fff;
     border: none;
     border-radius:20px;
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    box-shadow: 0 4px 20px rgba(91,62,245,.45);
+    
     transition: top .15s, opacity .2s;
     white-space: nowrap;
   }
-  #planner-recalc-float:hover { background: #4730d4; }
+  #planner-recalc-float:hover { background: var(--ux-accent-ink); }
   #planner-recalc-float .rf-icon { font-size: 16px; line-height: 1; }
 
   /* ===== PER-REGION CONSTRUCTIONS ===== */
   #planner-widget .cns-per-region-toggle{
     display:inline-flex; align-items:center; gap:5px;
-    font-size:12px; font-weight:600; color:#5B3EF5;
+    font-size:12px; font-weight:600; color:var(--ux-accent);
     cursor:pointer; padding:4px 0; user-select:none;
     background:none; border:none;
   }
@@ -989,47 +1024,47 @@ window.PLANNER_ASSET_BASE = (function () {
     display:flex; align-items:center; gap:8px;
   }
   #planner-widget .cns-per-region-label{
-    flex:1; font-size:12px; color:#344054; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    flex:1; font-size:12px; color:var(--ux-text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
   #planner-widget .cns-per-region-row .ux-input{
     width:80px; flex:none; font-size:13px; padding:5px 8px;
   }
   #planner-widget .cns-per-region-unit{
-    font-size:12px; color:#667085; min-width:24px;
+    font-size:12px; color:var(--ux-text3); min-width:24px;
   }
 
   /* ===== PER-CITY FORMATS ===== */
   #planner-widget .city-fmt-rows{ display:flex; flex-direction:column; gap:4px; margin-top:6px; }
-  #planner-widget .city-fmt-row{ display:flex; align-items:center; gap:5px; flex-wrap:wrap; padding:3px 0; border-bottom:1px solid rgba(15,23,42,.05); }
+  #planner-widget .city-fmt-row{ display:flex; align-items:center; gap:5px; flex-wrap:wrap; padding:3px 0; border-bottom:1px solid var(--ux-line); }
   #planner-widget .city-fmt-row:last-child{ border-bottom:none; }
-  #planner-widget .city-fmt-lbl{ font-size:12px; font-weight:600; color:#344054; min-width:72px; max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex-shrink:0; }
-  #planner-widget .city-fmt-chip{ padding:2px 8px; border-radius:999px; border:1px solid rgba(15,23,42,.14); background:#fff; font-size:11px; cursor:pointer; white-space:nowrap; transition:background .1s,border-color .1s; }
-  #planner-widget .city-fmt-chip.on{ border-color:rgba(91,62,245,.5); background:rgba(91,62,245,.10); color:#4930c7; font-weight:600; }
-  #planner-widget .city-fmt-reset{ font-size:11px; color:#6b7280; cursor:pointer; padding:2px 4px; border:none; background:none; white-space:nowrap; }
-  #planner-widget .city-fmt-reset:hover{ color:#ef4444; }
+  #planner-widget .city-fmt-lbl{ font-size:12px; font-weight:600; color:var(--ux-text2); min-width:72px; max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex-shrink:0; }
+  #planner-widget .city-fmt-chip{ padding:2px 8px; border-radius:999px; border:1px solid var(--ux-line2); background:#fff; font-size:11px; cursor:pointer; white-space:nowrap; transition:background .1s,border-color .1s; }
+  #planner-widget .city-fmt-chip.on{ border-color:rgba(79,43,232,.5); background:var(--ux-accent-soft); color:var(--ux-accent-ink); font-weight:600; }
+  #planner-widget .city-fmt-reset{ font-size:11px; color:var(--ux-text3); cursor:pointer; padding:2px 4px; border:none; background:none; white-space:nowrap; }
+  #planner-widget .city-fmt-reset:hover{ color:var(--ux-danger); }
 
   /* ===== SEND PLAN BUTTON ===== */
   #planner-widget #send-plan-btn{
-    background:#15803d; color:#fff; border:1.5px solid #166534;
+    background:var(--ux-ok); color:#fff; border:1.5px solid var(--ux-ok);
     padding:8px 18px; border-radius:10px;
     font-size:13px; font-weight:600; cursor:pointer;
     display:none;
     transition:background 0.15s, opacity 0.15s;
   }
-  #planner-widget #send-plan-btn:hover{ background:#166534; }
+  #planner-widget #send-plan-btn:hover{ background:var(--ux-ok); }
   #planner-widget #send-plan-btn:disabled{ opacity:0.6; cursor:default; }
 
   /* ===== SEND PLAN POPUP ===== */
   #send-plan-popup{
     display:none; position:fixed; inset:0; z-index:999999;
-    background:rgba(11,18,32,0.55); backdrop-filter:blur(6px);
+    background:var(--ux-text3); backdrop-filter:blur(6px);
     align-items:center; justify-content:center;
   }
   #send-plan-popup.active{ display:flex; }
   #send-plan-popup .spp-card{
     background:#fff; border-radius:20px; padding:40px 40px 36px;
     max-width:380px; width:90%; text-align:center;
-    box-shadow:0 24px 64px rgba(91,62,245,0.18), 0 2px 8px rgba(11,18,32,0.08);
+    box-shadow:0 24px 64px rgba(79,43,232,0.18), 0 2px 8px var(--ux-line);
     animation:spp-in 0.22s cubic-bezier(.34,1.36,.64,1);
   }
   @keyframes spp-in{
@@ -1038,52 +1073,52 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   #send-plan-popup .spp-icon{
     width:64px; height:64px; border-radius:50%;
-    background:linear-gradient(135deg,#7c5cfc,#5B3EF5);
+    background:linear-gradient(135deg,var(--ux-accent),var(--ux-accent));
     display:flex; align-items:center; justify-content:center;
-    margin:0 auto 20px; box-shadow:0 8px 24px rgba(91,62,245,0.35);
+    margin:0 auto 20px; box-shadow:0 8px 24px rgba(79,43,232,0.35);
   }
   #send-plan-popup .spp-icon svg{ width:30px; height:30px; }
   #send-plan-popup .spp-title{
-    font-size:18px; font-weight:700; color:#0b1220;
+    font-size:18px; font-weight:700; color:var(--ux-text);
     margin-bottom:8px; letter-spacing:-0.2px;
   }
   #send-plan-popup .spp-sub{
-    font-size:13px; color:#667085; line-height:1.55;
+    font-size:13px; color:var(--ux-text3); line-height:1.55;
     margin-bottom:28px;
   }
   #send-plan-popup .spp-close{
-    background:#5B3EF5; color:#fff; border:none;
+    background:var(--ux-accent); color:#fff; border:none;
     padding:12px 36px; border-radius:12px;
     font-size:14px; font-weight:600; cursor:pointer;
     transition:background 0.15s, box-shadow 0.15s;
-    box-shadow:0 4px 14px rgba(91,62,245,0.35);
+    box-shadow:0 4px 14px rgba(79,43,232,0.35);
   }
   #send-plan-popup .spp-close:hover{
-    background:#4730d4;
-    box-shadow:0 6px 20px rgba(91,62,245,0.45);
+    background:var(--ux-accent-ink);
+    box-shadow:0 6px 20px rgba(79,43,232,0.45);
   }
 
   /* ===== CALC HISTORY ===== */
   #planner-widget .calc-history-toggle{
     display:inline-flex; align-items:center; gap:6px;
-    font-size:13px; font-weight:600; color:#5B3EF5;
+    font-size:13px; font-weight:600; color:var(--ux-accent);
     cursor:pointer; padding:4px 0; user-select:none;
   }
   #planner-widget .calc-history-list{
     display:flex; flex-direction:column; gap:6px; margin-top:8px;
   }
   #planner-widget .calc-history-item{
-    background:#f8f8ff; border:1.5px solid #e0d9ff;
+    background:var(--ux-accent-soft); border:1.5px solid var(--ux-accent-line);
     border-radius:10px; padding:8px 12px;
     cursor:pointer; font-size:13px;
     transition:border-color 0.15s, background 0.15s;
   }
   #planner-widget .calc-history-item:hover{
-    background:#eee9ff; border-color:#a78bfa;
+    background:var(--ux-line)9ff; border-color:var(--ux-accent-line);
   }
-  #planner-widget .calc-history-date{ font-size:11px; color:#6b7280; margin-bottom:2px; }
-  #planner-widget .calc-history-title{ font-weight:600; color:#0b1220; }
-  #planner-widget .calc-history-meta{ font-size:11px; color:#667085; margin-top:2px; }
+  #planner-widget .calc-history-date{ font-size:11px; color:var(--ux-text3); margin-bottom:2px; }
+  #planner-widget .calc-history-title{ font-weight:600; color:var(--ux-text); }
+  #planner-widget .calc-history-meta{ font-size:11px; color:var(--ux-text3); margin-top:2px; }
 
   /* ===== ЗАГОЛОВОК ШАГА ===== */
   /* Раньше шаг назывался «Настройки» и не говорил, что внутри. Теперь у каждого
@@ -1091,127 +1126,127 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .wiz-step-head{
     margin: 0 0 14px;
     padding-bottom: 10px;
-    border-bottom: 1px solid rgba(15,23,42,.08);
+    border-bottom: 1px solid var(--ux-line);
   }
   #planner-widget .wiz-step-title{
-    font-size: 16px; font-weight: 700; color: #0b1220; line-height: 1.25;
+    font-size: 16px; font-weight: 700; color: var(--ux-text); line-height: 1.25;
   }
   #planner-widget .wiz-step-sub{
-    margin-top: 3px; font-size:12px; color: #667085; line-height: 1.45;
+    margin-top: 3px; font-size:12px; color: var(--ux-text3); line-height: 1.45;
   }
 
   /* ===== ВАЛИДАЦИЯ ПОЛЕЙ (вместо alert) ===== */
   #planner-widget .fld-invalid,
   #planner-widget .fld-invalid:focus{
-    border-color:#e84444 !important;
-    box-shadow:0 0 0 3px rgba(232,68,68,.12) !important;
+    border-color:var(--ux-danger) !important;
+    box-shadow:0 0 0 3px var(--ux-danger-bg) !important;
   }
   /* Подсветка для блоков без собственной рамки (чипы расписания, список регионов) */
   #planner-widget .fld-invalid-box{
     border-radius:12px;
-    box-shadow:0 0 0 2px #e84444, 0 0 0 6px rgba(232,68,68,.12);
+    box-shadow:0 0 0 2px var(--ux-danger), 0 0 0 6px var(--ux-danger-bg);
   }
   #planner-widget .fld-err{
     display:flex; align-items:flex-start; gap:6px;
-    margin-top:6px; font-size:12px; line-height:1.4; color:#c62828;
+    margin-top:6px; font-size:12px; line-height:1.4; color:var(--ux-danger);
   }
   #planner-widget .fld-err::before{ content:"!"; flex-shrink:0;
-    width:15px; height:15px; border-radius:50%; background:#e84444; color:#fff;
+    width:15px; height:15px; border-radius:50%; background:var(--ux-danger); color:#fff;
     font-size:10px; font-weight:700; line-height:15px; text-align:center; }
 
   /* ===== ТОСТ ===== */
   #planner-toast{
     position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(8px);
     z-index:100000; max-width:min(440px, 92vw);
-    background:#0b1220; color:#fff; padding:11px 18px; border-radius:12px;
-    font-size:13px; line-height:1.45; box-shadow:0 10px 34px rgba(11,18,32,.32);
+    background:var(--ux-text); color:#fff; padding:11px 18px; border-radius:12px;
+    font-size:13px; line-height:1.45; box-shadow:0 10px 34px var(--ux-text3);
     opacity:0; pointer-events:none; transition:opacity .18s, transform .18s;
   }
   #planner-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
 
   /* ===== ПАНЕЛИ УПРАВЛЕНИЯ В РЕЗУЛЬТАТЕ ===== */
   #planner-widget .rc-card{
-    background: rgba(255,255,255,.62);
-    border: 1px solid rgba(15,23,42,.10);
+    background: var(--ux-bg);
+    border: 1px solid var(--ux-line);
     border-radius:12px;
     padding: 12px 14px;
     margin-bottom: 10px;
   }
   #planner-widget .rc-head{ display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; margin-bottom:10px; }
   #planner-widget .rc-head b{ font-size:13px; font-weight:700; }
-  #planner-widget .rc-head span{ font-size:12px; color:#667085; }
+  #planner-widget .rc-head span{ font-size:12px; color:var(--ux-text3); }
   #planner-widget .rc-tiers{ display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:7px; }
   @media (max-width: 720px){ #planner-widget .rc-tiers{ grid-template-columns: repeat(2, minmax(0,1fr)); } }
   #planner-widget .rc-tier{
     text-align:left; font:inherit; cursor:pointer; padding:8px 10px; border-radius:10px;
-    border:1.5px solid #e5e3f0; background:#fff; transition:.12s; min-width:0;
+    border:1.5px solid var(--ux-line); background:#fff; transition:.12s; min-width:0;
   }
-  #planner-widget .rc-tier:hover{ border-color:#c3b4f8; background:#faf8ff; }
-  #planner-widget .rc-tier[aria-pressed="true"]{ border-color:#5b3ef5; background:#f2effe; }
+  #planner-widget .rc-tier:hover{ border-color:var(--ux-accent-line); background:var(--ux-accent-soft); }
+  #planner-widget .rc-tier[aria-pressed="true"]{ border-color:var(--ux-accent); background:var(--ux-accent-soft); }
   #planner-widget .rc-tier .t{
     display:block; font-size:10px; font-weight:600; letter-spacing:.06em;
-    text-transform:uppercase; color:#8b83c5;
+    text-transform:uppercase; color:var(--ux-text3);
   }
-  #planner-widget .rc-tier[aria-pressed="true"] .t{ color:#5b3ef5; }
+  #planner-widget .rc-tier[aria-pressed="true"] .t{ color:var(--ux-accent); }
   #planner-widget .rc-tier .v{
     display:block; font-size:14px; font-weight:700; margin-top:3px; white-space:nowrap;
   }
   #planner-widget .rc-wi-row{ display:flex; align-items:center; gap:11px; flex-wrap:wrap; }
-  #planner-widget .rc-wi-row label{ font-size:12px; color:#4b5162; font-weight:500; white-space:nowrap; }
-  #planner-widget #rc-pph{ flex:1; min-width:150px; accent-color:#5b3ef5; }
+  #planner-widget .rc-wi-row label{ font-size:12px; color:var(--ux-text2); font-weight:500; white-space:nowrap; }
+  #planner-widget #rc-pph{ flex:1; min-width:150px; accent-color:var(--ux-accent); }
   #planner-widget #rc-pph-out{
-    font-size:15px; font-weight:700; color:#4930c7; min-width:34px; text-align:right;
+    font-size:15px; font-weight:700; color:var(--ux-accent-ink); min-width:34px; text-align:right;
   }
-  #planner-widget .rc-out{ margin-top:10px; font-size:12px; line-height:1.5; color:#4b5162; }
-  #planner-widget .rc-delta b{ font-size:16px; color:#0b1220; }
+  #planner-widget .rc-out{ margin-top:10px; font-size:12px; line-height:1.5; color:var(--ux-text2); }
+  #planner-widget .rc-delta b{ font-size:16px; color:var(--ux-text); }
   #planner-widget .rc-up{
-    font-size:12px; font-weight:600; color:#a81f28;
-    background:#fdeded; border-radius:6px; padding:2px 7px; margin-left:6px;
+    font-size:12px; font-weight:600; color:var(--ux-danger);
+    background:var(--ux-danger-bg); border-radius:6px; padding:2px 7px; margin-left:6px;
   }
   #planner-widget .rc-adv{
     margin-top:8px; padding:8px 10px; background:#fff;
-    border:1px solid rgba(15,23,42,.10); border-radius:8px; font-size:12px; line-height:1.5;
+    border:1px solid var(--ux-line); border-radius:8px; font-size:12px; line-height:1.5;
   }
   #planner-widget .rc-apply{
     margin-top:9px; font:600 12px Inter,Arial,sans-serif; border-radius:8px;
-    padding:7px 14px; cursor:pointer; border:1.5px solid #5b3ef5;
-    background:#5b3ef5; color:#fff;
+    padding:7px 14px; cursor:pointer; border:1.5px solid var(--ux-accent);
+    background:var(--ux-accent); color:#fff;
   }
-  #planner-widget .rc-apply:hover{ background:#4a2fe0; }
+  #planner-widget .rc-apply:hover{ background:var(--ux-accent-ink); }
 
   /* ===== СТРОКА БРИФА (фаза результата) ===== */
   #planner-widget .brief-bar{
     display:flex; flex-direction:column; gap:8px;
-    background: rgba(255,255,255,.72);
-    border: 1px solid rgba(15,23,42,.10);
+    background: var(--ux-bg);
+    border: 1px solid var(--ux-line);
     border-radius: 16px;
     padding: 10px 12px;
     margin-bottom: 14px;
   }
   #planner-widget .brief-row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-  #planner-widget .brief-row.second{ padding-top:8px; border-top:1px dashed rgba(15,23,42,.10); }
+  #planner-widget .brief-row.second{ padding-top:8px; border-top:1px dashed var(--ux-line); }
   #planner-widget .brief-lbl{
     font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
-    color: rgba(11,18,32,.45); margin-right:2px;
+    color: var(--ux-text3); margin-right:2px;
   }
   #planner-widget .brief-chip{
     display:inline-flex; align-items:center; gap:6px;
-    font-size:12px; font-weight:600; color:#3b2f7a;
-    background:#f2effe; border:1px solid #ddd5fb; border-radius:20px;
+    font-size:12px; font-weight:600; color:var(--ux-accent-ink);
+    background:var(--ux-accent-soft); border:1px solid var(--ux-accent-line); border-radius:20px;
     padding:5px 11px; cursor:pointer;
     transition: background .12s, border-color .12s;
   }
-  #planner-widget .brief-chip:hover{ background:#e7e1fd; border-color:#c3b4f8; }
-  #planner-widget .brief-chip .k{ color:#7c74a8; font-weight:500; }
+  #planner-widget .brief-chip:hover{ background:var(--ux-accent-line); border-color:var(--ux-accent-line); }
+  #planner-widget .brief-chip .k{ color:var(--ux-text3); font-weight:500; }
   #planner-widget .brief-chip.sm{
     font-size:12px; padding:4px 9px; font-weight:500;
-    background:#fff; border-color:#e7e4f5; color:#525a6b;
+    background:#fff; border-color:var(--ux-line); color:var(--ux-text2);
   }
   #planner-widget .brief-chip.sm.on{
-    background:#f2effe; border-color:#ddd5fb; color:#3b2f7a; font-weight:600;
+    background:var(--ux-accent-soft); border-color:var(--ux-accent-line); color:var(--ux-accent-ink); font-weight:600;
   }
   #planner-widget .brief-chip.edit{
-    margin-left:auto; background:#fff; border-color:#ddd5fb; color:#5b3ef5;
+    margin-left:auto; background:#fff; border-color:var(--ux-accent-line); color:var(--ux-accent);
   }
   @media (max-width: 560px){
     #planner-widget .brief-chip.edit{ margin-left:0; }
@@ -1236,44 +1271,41 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget{
     color: var(--ux-text);
     background: transparent;
+    font-family: var(--ux-font);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
     position: relative;
     isolation: isolate; /* свой stacking context, чтобы тултипы/слои предсказуемо */
   }
-  /* “фон под стекло” только внутри виджета */
+  #planner-widget button,
+  #planner-widget input,
+  #planner-widget select,
+  #planner-widget textarea{ font-family: inherit; }
+
+  /* Цифры, которые сравнивают взглядом по вертикали: деньги, выходы,
+     OTS, коды экранов. Табличные знаки ставят разряды столбиком. */
+  #planner-widget .ux-num{
+    font-family: var(--ux-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+  /* Ровный фон вместо трёх радиальных пятен, шума и наложения:
+     градиент был единственным местом, где акцент работал декоративно,
+     а фильтр saturate + mix-blend-mode перерисовывались на прокрутке. */
   #planner-widget::before{
     content:"";
     position:absolute;
     inset:-24px;
     z-index:-1;
-    border-radius: 32px;
-    background:
-    radial-gradient(900px 520px at 18% 0%, rgba(91,62,245,.16), transparent 55%),
-    radial-gradient(900px 520px at 82% 10%, rgba(139,92,246,.10), transparent 55%),
-    radial-gradient(900px 520px at 50% 100%, rgba(167,139,250,.08), transparent 55%),
-    linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,255,255,.72));
-    filter: saturate(1.05);
+    border-radius: 24px;
+    background: var(--ux-ground);
     pointer-events:none;
   }
-  /* лёгкий “noise” только внутри виджета */
-  #planner-widget::after{
-    content:"";
-    position:absolute;
-    inset:-24px;
-    z-index:-1;
-    border-radius: 32px;
-    pointer-events:none;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.16'/%3E%3C/svg%3E");
-    mix-blend-mode: overlay;
-    opacity:.18;
-  }
-  /* если у колонок всё ещё inline-style без класса ux-panel — можно мягко поддержать */
   #planner-widget > div[style*="grid-template-columns"] > div{
     border-radius: var(--ux-radius);
-    border: 1px solid var(--ux-glass-line);
-    background: linear-gradient(180deg, var(--ux-glass-strong), var(--ux-glass));
-    box-shadow: var(--ux-shadow-soft);
-    backdrop-filter: blur(var(--ux-blur)) saturate(160%);
-    -webkit-backdrop-filter: blur(var(--ux-blur)) saturate(160%);
+    border: 1px solid var(--ux-line);
+    background: var(--ux-bg);
     overflow: visible;
   }
   /* ========== inputs/selects (НЕ задаём width:90% глобально — это ломает компоновку) ========== */
@@ -1281,18 +1313,18 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget input[type="number"],
   #planner-widget input[type="date"],
   #planner-widget input[type="time"]{
-    border: 1px solid rgba(15,23,42,.10) !important;
+    border: 1px solid var(--ux-line) !important;
     border-radius: var(--ux-radius-sm) !important;
     padding: 10px 12px !important;
-    background: rgba(255,255,255,.70);
-    backdrop-filter: blur(10px) saturate(150%);
-    -webkit-backdrop-filter: blur(10px) saturate(150%);
+    background: var(--ux-bg);
+    
+    
     outline: 0;
     transition: box-shadow .12s ease, border-color .12s ease, background .12s ease;
   }
   #planner-widget input:focus,
   #planner-widget select:focus{
-    border-color: rgba(91,62,245,.45) !important;
+    border-color: rgba(79,43,232,.45) !important;
     box-shadow: var(--ux-ring);
   }
   /* ========== buttons ========== */
@@ -1319,8 +1351,8 @@ window.PLANNER_ASSET_BASE = (function () {
     cursor: pointer;
     font-weight: 800;
     color: #fff;
-    background: linear-gradient(180deg, rgba(91,62,245,.96), rgba(74,47,224,.98));
-    box-shadow: 0 18px 40px rgba(91,62,245,.22);
+    background: linear-gradient(180deg, rgba(79,43,232,.96), rgba(58,31,176,.98));
+    box-shadow: none;
     position: relative;
     overflow: hidden;
   }
@@ -1335,7 +1367,7 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   #planner-widget .ux-primary:focus-visible{
     outline: 0;
-    box-shadow: var(--ux-ring), 0 18px 40px rgba(91,62,245,.22);
+    box-shadow: var(--ux-ring);
   }
   #planner-widget .ux-primary:disabled{
     opacity:.55;
@@ -1347,11 +1379,11 @@ window.PLANNER_ASSET_BASE = (function () {
     margin-top: 10px;
     padding: 14px 16px;
     border-radius: var(--ux-radius);
-    border: 1px solid rgba(255,255,255,.26);
+    border: 1px solid var(--ux-line);
     background: linear-gradient(180deg, rgba(255,255,255,.76), rgba(255,255,255,.56));
-    box-shadow: 0 10px 26px rgba(16,24,40,.08);
-    backdrop-filter: blur(var(--ux-blur)) saturate(160%);
-    -webkit-backdrop-filter: blur(var(--ux-blur)) saturate(160%);
+    
+    
+    -webkit-
     font-size: 13px;
   }
   #planner-widget .wiz-inline-row{
@@ -1363,7 +1395,7 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .wiz-hint{
     margin-top:10px;
     font-size:12px;
-    color: rgba(11,18,32,.60);
+    color: var(--ux-text2);
   }
   /* ========== formats toolbar ========== */
   #planner-widget .fmt-toolbar{
@@ -1375,16 +1407,16 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .fmt-pill{
     padding: 8px 10px;
     border-radius: 999px;
-    border: 1px solid rgba(255,255,255,.26);
+    border: 1px solid var(--ux-line);
     background: rgba(255,255,255,.58);
     cursor: pointer;
     font-size: 13px;
     font-weight: 650;
-    backdrop-filter: blur(10px) saturate(150%);
-    -webkit-backdrop-filter: blur(10px) saturate(150%);
+    
+    
   }
   #planner-widget .fmt-pill:hover{
-    background: rgba(255,255,255,.70);
+    background: var(--ux-bg);
   }
   /* ========== formats grid/cards ========== */
   #planner-widget .fmt-grid{
@@ -1402,11 +1434,11 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .fmt-card{
     position: relative;
     border-radius: var(--ux-radius);
-    border: 1px solid rgba(255,255,255,.26);
-    background: rgba(255,255,255,.54);
-    box-shadow: 0 14px 34px rgba(16,24,40,.10);
-    backdrop-filter: blur(14px) saturate(160%);
-    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    border: 1px solid var(--ux-line);
+    background: var(--ux-bg);
+    
+    
+    -webkit-
     padding: 14px;
     cursor: pointer;
     user-select: none;
@@ -1416,14 +1448,14 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   #planner-widget .fmt-card:hover{
     transform: translateY(-1px);
-    border-color: rgba(91,62,245,.30);
-    box-shadow: 0 18px 44px rgba(16,24,40,.14);
+    border-color: rgba(79,43,232,.30);
+    
     z-index: 20;
   }
   #planner-widget .fmt-card.is-selected{
-    background: linear-gradient(180deg, rgba(255,255,255,.62), rgba(91,62,245,.10));
-    border-color: #5b3ef5;
-    box-shadow: inset 0 0 0 1px #5b3ef5, 0 20px 52px rgba(91,62,245,.14);
+    background: linear-gradient(180deg, var(--ux-bg), var(--ux-accent-soft));
+    border-color: var(--ux-accent);
+    box-shadow: inset 0 0 0 1px var(--ux-accent), 0 20px 52px rgba(79,43,232,.14);
     z-index: 25;
   }
   #planner-widget .fmt-card.is-disabled{
@@ -1455,7 +1487,7 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .fmt-card .sub{
     margin-top: 6px;
     font-size: 13px;
-    color: rgba(11,18,32,.60);
+    color: var(--ux-text2);
     line-height: 1.35;
   }
   /* правая колонка меты */
@@ -1467,15 +1499,15 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   #planner-widget .fmt-count{
     font-size: 12px;
-    color: rgba(11,18,32,.64);
-    border: 1px solid rgba(255,255,255,.26);
+    color: var(--ux-text2);
+    border: 1px solid var(--ux-line);
     background: rgba(255,255,255,.52);
     border-radius: 999px;
     padding: 6px 8px;
     min-width: 32px;
     text-align: center;
-    backdrop-filter: blur(10px) saturate(150%);
-    -webkit-backdrop-filter: blur(10px) saturate(150%);
+    
+    
   }
   /* empty state (если будешь добавлять класс is-empty из JS) */
   #planner-widget .fmt-card.is-empty{
@@ -1487,26 +1519,26 @@ window.PLANNER_ASSET_BASE = (function () {
     left: 14px;
     bottom: 12px;
     font-size: 11px;
-    color: rgba(11,18,32,.55);
+    color: var(--ux-text3);
   }
   /* ========== info icon ========== */
   #planner-widget .fmt-tip{
     width: 28px;
     height: 28px;
     border-radius: 999px;
-    border: 1px solid rgba(255,255,255,.26);
+    border: 1px solid var(--ux-line);
     background: rgba(255,255,255,.58);
     display:flex;
     align-items:center;
     justify-content:center;
     font-weight: 900;
-    color: rgba(11,18,32,.66);
+    color: var(--ux-text2);
     cursor: pointer;
     backdrop-filter: blur(10px) saturate(150%);
     -webkit-backdrop-filter: blur(10px) saturate(150%);
   }
   #planner-widget .fmt-tip:hover{
-    border-color: rgba(91,62,245,.28);
+    border-color: rgba(79,43,232,.28);
     box-shadow: 0 10px 22px rgba(16,24,40,.14);
   }
   /* ========== inline tooltip (если ты ещё используешь вложенный .fmt-tooltip внутри fmt-tip) ========== */
@@ -1638,7 +1670,7 @@ window.PLANNER_ASSET_BASE = (function () {
     margin-top: 6px;
     font-size: 12px;
     line-height: 1.25;
-    color: rgba(11,18,32,.55);
+    color: var(--ux-text3);
   }
   /* если нет инвентаря — слегка “приглушаем” карточку, но без налезания */
   #planner-widget .fmt-card.is-empty{
@@ -1687,7 +1719,7 @@ window.PLANNER_ASSET_BASE = (function () {
     margin-top: 6px;
     font-size: 12px;
     line-height: 1.25;
-    color: rgba(11,18,32,.55);
+    color: var(--ux-text3);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1734,13 +1766,13 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .fmt-countline{
     margin-top: 6px;
     font-size: 12px;
-    color: rgba(11,18,32,.62);
+    color: var(--ux-text2);
     line-height: 1.2;
   }
   #planner-widget .fmt-empty-note{
     margin-top: 6px;
     font-size: 12px;
-    color: rgba(11,18,32,.50);
+    color: var(--ux-text3);
   }
   /* иконка i справа */
   #planner-widget .fmt-tip{
@@ -1751,8 +1783,8 @@ window.PLANNER_ASSET_BASE = (function () {
     display:flex;
     align-items:center;
     justify-content:center;
-    border: 1px solid rgba(15,23,42,.10);
-    background: rgba(255,255,255,.55);
+    border: 1px solid var(--ux-line);
+    background: var(--ux-bg2);
     cursor: pointer;
   }
   /* 1) даём нормальный отступ вниз у live-сводки */
@@ -1780,7 +1812,7 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   .screens-photos-row > .photo-card{
     flex: 0 0 260px;           /* фикс-ширина карточки */
-    border:1px solid #eee;
+    border:1px solid var(--ux-line);
     border-radius:12px;
     overflow:hidden;
     background:#fff;
@@ -1801,7 +1833,7 @@ window.PLANNER_ASSET_BASE = (function () {
     margin-bottom:4px;
   }
   .photo-card .sub{
-    color:#666;
+    color:var(--ux-text3);
     font-size:12px;
   }
   #img-carousel{
@@ -1831,7 +1863,7 @@ window.PLANNER_ASSET_BASE = (function () {
     flex: 0 0 220px;      /* фикс ширину, не shrink */
   }
   #results-toggle:hover{
-    color: #0a5cff;
+    color: var(--ux-accent);
   }
   /* убираем дефолтную карусель от planner.js */
   #screens-photos{
@@ -1851,15 +1883,15 @@ window.PLANNER_ASSET_BASE = (function () {
   .sum-top{
     display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
     padding:14px; border-radius:16px;
-    border:1px solid rgba(15,23,42,.10);
-    background: rgba(255,255,255,.62);
-    backdrop-filter: blur(8px);
+    border:1px solid var(--ux-line);
+    background: var(--ux-bg);
+    
   }
   .sum-title{
     font-weight:900; font-size:14px;
   }
   .sum-sub{
-    margin-top:4px; font-size:12px; color: rgba(11,18,32,.62); line-height:1.35;
+    margin-top:4px; font-size:12px; color: var(--ux-text2); line-height:1.35;
   }
   .pill-row{
     display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;
@@ -1867,8 +1899,8 @@ window.PLANNER_ASSET_BASE = (function () {
   .pill{
     display:inline-flex; gap:6px; align-items:baseline;
     padding:6px 10px; border-radius:999px;
-    border:1px solid rgba(15,23,42,.10);
-    background: rgba(255,255,255,.55);
+    border:1px solid var(--ux-line);
+    background: var(--ux-bg2);
     font-size:12px;
   }
   .pill b{
@@ -1879,9 +1911,9 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   .sum-card{
     padding:14px; border-radius:16px;
-    border:1px solid rgba(15,23,42,.10);
-    background: rgba(255,255,255,.62);
-    backdrop-filter: blur(8px);
+    border:1px solid var(--ux-line);
+    background: var(--ux-bg);
+    
   }
   .sum-card-head{
     display:flex; align-items:flex-start; justify-content:space-between; gap:10px;
@@ -1890,7 +1922,7 @@ window.PLANNER_ASSET_BASE = (function () {
     font-weight:900; font-size:14px;
   }
   .sum-mini{
-    font-size:12px; color: rgba(11,18,32,.62); margin-top:4px;
+    font-size:12px; color: var(--ux-text2); margin-top:4px;
   }
   .kv-row{
     display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;
@@ -1898,11 +1930,11 @@ window.PLANNER_ASSET_BASE = (function () {
   .kv{
     flex:1 1 140px;
     padding:10px 12px; border-radius:12px;
-    border:1px solid rgba(15,23,42,.10);
-    background: rgba(255,255,255,.50);
+    border:1px solid var(--ux-line);
+    background: var(--ux-bg2);
   }
   .kv .k{
-    font-size:11px; color: rgba(11,18,32,.58);
+    font-size:11px; color: var(--ux-text2);
   }
   .kv .v{
     margin-top:4px; font-weight:900; font-size:14px;
@@ -1913,7 +1945,7 @@ window.PLANNER_ASSET_BASE = (function () {
   .fmt-item{
     display:flex; align-items:center; justify-content:space-between; gap:12px;
     padding:8px 10px; border-radius:12px;
-    border:1px solid rgba(15,23,42,.08);
+    border:1px solid var(--ux-line);
     background: rgba(255,255,255,.45);
     font-size:12px;
   }
@@ -1921,7 +1953,7 @@ window.PLANNER_ASSET_BASE = (function () {
     display:flex; gap:8px; align-items:center; min-width:0;
   }
   .dot{
-    width:8px; height:8px; border-radius:999px; background: rgba(59,130,246,.9); flex:0 0 auto;
+    width:8px; height:8px; border-radius:999px; background: var(--ux-accent); flex:0 0 auto;
   }
   .fmt-name{
     font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px;
@@ -1932,8 +1964,8 @@ window.PLANNER_ASSET_BASE = (function () {
   .sum-details{
     margin-top:2px;
     padding:12px 14px; border-radius:16px;
-    border:1px solid rgba(15,23,42,.10);
-    background: rgba(255,255,255,.55);
+    border:1px solid var(--ux-line);
+    background: var(--ux-bg2);
   }
   .sum-details summary{
     cursor:pointer; font-weight:800; font-size:13px;
@@ -1947,7 +1979,7 @@ window.PLANNER_ASSET_BASE = (function () {
     white-space:pre-wrap;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     font-size:12px;
-    color: rgba(11,18,32,.72);
+    color: var(--ux-text2);
   }
   .ps-region-left{
     display:flex;
@@ -1957,11 +1989,11 @@ window.PLANNER_ASSET_BASE = (function () {
   .ps-region-budget{
     font-size:13px;
     font-weight:600;
-    color:#111827;
+    color:var(--ux-text);
     padding:6px 10px;
     border-radius:999px;
-    border:1px solid rgba(15,23,42,.10);
-    background:rgba(255,255,255,.55);
+    border:1px solid var(--ux-line);
+    background:var(--ux-bg2);
     width:fit-content;
   }
   .ps-region-right{
@@ -1977,7 +2009,7 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   .ps-region-screens{
     font-size:13px;
-    color: rgba(11,18,32,.62);
+    color: var(--ux-text2);
     font-weight:600;
   }
   /* KPI в регионе — широкие */
@@ -1994,13 +2026,13 @@ window.PLANNER_ASSET_BASE = (function () {
     gap:12px;
     padding:12px 14px;
     border-radius:12px;
-    border:1px solid rgba(15,23,42,.10);
-    background: rgba(255,255,255,.55);
+    border:1px solid var(--ux-line);
+    background: var(--ux-bg2);
     min-width:0;
   }
   .ps-kpi-wide .k{
     font-size:12px;
-    color: rgba(11,18,32,.62);
+    color: var(--ux-text2);
     white-space:nowrap;
   }
   .ps-kpi-wide .v{
@@ -2016,7 +2048,7 @@ window.PLANNER_ASSET_BASE = (function () {
     min-height: 92px;          /* компактнее */
     border-radius: 16px;
     background: #fff;
-    box-shadow: 0 10px 30px rgba(17,23,42,.06);
+    
   }
   /* заголовок */
   #planner-widget .fmt-title{
@@ -2028,7 +2060,7 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .fmt-countline{
     margin-top: 4px;
     font-size: 13px;
-    color: #667085;
+    color: var(--ux-text3);
   }
   /* ===== Кнопка i ===== */
   #planner-widget .fmt-tip{
@@ -2039,19 +2071,19 @@ window.PLANNER_ASSET_BASE = (function () {
     height: 26px;
     padding: 0;
     border-radius: 50%;
-    border: 1px solid rgba(17,23,42,.12);
+    border: 1px solid var(--ux-line2);
     background: #fff;
     font-size: 13px;
     font-weight: 600;
     line-height: 26px;
     text-align: center;
     cursor: pointer;
-    color: #475467;
+    color: var(--ux-text2);
     transition: background .12s ease, box-shadow .12s ease;
   }
   #planner-widget .fmt-tip:hover{
-    background: #f2f4f7;
-    box-shadow: 0 4px 12px rgba(17,23,42,.12);
+    background: var(--ux-bg2);
+    box-shadow: 0 4px 12px var(--ux-line2);
   }
   #planner-widget .fmt-card{
     position: relative;
@@ -2059,7 +2091,7 @@ window.PLANNER_ASSET_BASE = (function () {
     min-height: 32px;          /* БЫЛО ~92 */
     border-radius: 16px;
     background: #fff;
-    box-shadow: 0 10px 30px rgba(17,23,42,.06);
+    
   }
   #planner-widget .fmt-title{
     font-size: 15px;     /* было 16 */
@@ -2094,13 +2126,435 @@ window.PLANNER_ASSET_BASE = (function () {
   }
 
 
+
+  /* ================================================================
+     ОФОРМЛЕНИЕ ПО УТВЕРЖДЁННОМУ МАКЕТУ (23.08.2026)
+     Идёт последним блоком: правила выше держат раскладку и поведение,
+     здесь — только вид. Специфичность та же, побеждает порядок,
+     поэтому менять достаточно тут, не разыскивая исходное правило.
+     ================================================================ */
+
+  /* ---- секция вместо коробки ----
+     Заголовок с волосяной линейкой группирует не хуже панели с фоном
+     и тенью, а коробок на экране становится втрое меньше. */
+  #planner-widget .planner-block{ margin: 0 0 24px; }
+  #planner-widget .planner-label{
+    display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
+    font-size:14px; font-weight:600; color:var(--ux-text);
+    padding-bottom:8px; margin-bottom:12px;
+    border-bottom:1px solid var(--ux-line);
+  }
+  #planner-widget .planner-note{
+    font-size:12.5px; color:var(--ux-text3); margin:0 0 12px; line-height:1.45;
+  }
+  #planner-widget .planner-block .planner-label + .planner-note{ margin-top:-6px; }
+
+  /* ---- счётчик пула: одна строка вместо плашки на две ---- */
+  #planner-widget .pool-preview-block{
+    display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
+    padding:10px 14px; margin-bottom:22px;
+    background:var(--ux-accent-soft);
+    border:1px solid var(--ux-accent-line);
+    border-radius:var(--ux-radius-sm);
+  }
+  #planner-widget .pool-preview-block > div:first-child{
+    display:flex; align-items:baseline; gap:9px; margin:0 !important; order:1;
+  }
+  #planner-widget .pool-preview-block .planner-label{
+    border:0; padding:0; margin:0; font-size:13px; font-weight:600;
+  }
+  #planner-widget #pool-count-badge{
+    font-family:var(--ux-mono); font-variant-numeric:tabular-nums;
+    font-size:19px !important; font-weight:600 !important;
+    color:var(--ux-accent-ink) !important;
+  }
+  #planner-widget #pool-preview-content{
+    order:2; margin:0 0 0 auto !important; font-size:12.5px;
+    color:var(--ux-text2) !important;
+  }
+  #planner-widget .pool-preview-row{ display:flex; gap:7px; flex-wrap:wrap; align-items:baseline; }
+  #planner-widget .pool-preview-base,
+  #planner-widget .pool-preview-filter{ font-family:var(--ux-mono); font-size:12px; }
+
+  /* ---- шаги ---- */
+  #planner-widget .wiz-steps{
+    background:transparent; backdrop-filter:none; -webkit-backdrop-filter:none;
+    padding:6px 0 10px; border-radius:0;
+  }
+  #planner-widget .wiz-chip{
+    font-size:13px; font-weight:500; padding:7px 13px; border-radius:999px;
+    border:1px solid var(--ux-line); background:var(--ux-bg); color:var(--ux-text2);
+  }
+  #planner-widget .wiz-chip:hover{ border-color:var(--ux-line2); background:var(--ux-bg); }
+  #planner-widget .wiz-chip.done{
+    background:var(--ux-ok-bg); border-color:var(--ux-ok-line); color:var(--ux-ok);
+  }
+  #planner-widget .wiz-chip.active,
+  #planner-widget .wiz-chip.done.active{
+    background:var(--ux-accent); border-color:var(--ux-accent); color:#fff; font-weight:600;
+  }
+
+  /* ---- кнопки ---- */
+  #planner-widget .wiz-btn{
+    font-size:13.5px; font-weight:600; padding:9px 18px;
+    border-radius:var(--ux-radius-xs);
+    border:1px solid var(--ux-accent); background:var(--ux-accent); color:#fff;
+  }
+  #planner-widget .wiz-btn:hover{ filter:brightness(1.08); background:var(--ux-accent); }
+  #planner-widget .wiz-btn.ghost{
+    background:var(--ux-bg); border-color:var(--ux-line2); color:var(--ux-text);
+  }
+  #planner-widget .wiz-btn.ghost:hover{ border-color:var(--ux-text3); filter:none; }
+
+  /* ---- карточки форматов: плоские, счётчик справа моноширинным ---- */
+  #planner-widget .fmt-grid{ gap:8px; }
+  #planner-widget .fmt-card{
+    display:grid; grid-template-columns:1fr auto; align-items:center; gap:2px 12px;
+    padding:11px 13px; border-radius:var(--ux-radius-sm);
+    border:1px solid var(--ux-line); background:var(--ux-bg);
+    transition:border-color .12s ease, background .12s ease;
+    transform:none !important;
+  }
+  #planner-widget .fmt-card:hover{ border-color:var(--ux-accent-line); }
+  #planner-widget .fmt-card.is-selected{
+    border-color:var(--ux-accent); background:var(--ux-accent-soft);
+    box-shadow:inset 0 0 0 1px var(--ux-accent);
+  }
+  #planner-widget .fmt-card.is-selected .fmt-title::before{ content:"\u2713\u00A0"; color:var(--ux-accent); }
+  #planner-widget .fmt-left{ grid-column:1; min-width:0; }
+  #planner-widget .fmt-title{ font-size:13.5px; font-weight:600; line-height:1.25; margin:0; }
+  #planner-widget .fmt-countline{
+    grid-column:2; grid-row:1;
+    font-family:var(--ux-mono); font-variant-numeric:tabular-nums;
+    font-size:13px; font-weight:600; color:var(--ux-text2);
+    white-space:nowrap; margin:0;
+  }
+  #planner-widget .fmt-card.is-selected .fmt-countline{ color:var(--ux-accent-ink); }
+  #planner-widget .fmt-tip{ position:static; grid-column:3; }
+  #planner-widget .fmt-card:has(.fmt-tip){ grid-template-columns:1fr auto auto; }
+  #planner-widget .fmt-toggle{ box-shadow:none; }
+  #planner-widget .fmt-toggle:hover,
+  #planner-widget .fmt-toggle:active{ box-shadow:none; }
+  #planner-widget .fmt-pill{ transform:none !important; }
+
+  /* ---- поля ввода ---- */
+  #planner-widget input[type="text"],
+  #planner-widget input[type="number"],
+  #planner-widget input[type="date"],
+  #planner-widget input[type="time"],
+  #planner-widget select,
+  #planner-widget textarea{
+    border-radius:var(--ux-radius-xs);
+    border:1px solid var(--ux-line);
+    background:var(--ux-bg);
+    color:var(--ux-text);
+    font-size:13.5px;
+  }
+  #planner-widget input:focus-visible,
+  #planner-widget select:focus-visible,
+  #planner-widget textarea:focus-visible{
+    border-color:var(--ux-accent); box-shadow:var(--ux-ring); outline:none;
+  }
+
+  /* ---- строка брифа ---- */
+  #planner-widget .brief-bar{
+    background:var(--ux-bg); border:1px solid var(--ux-line);
+    border-radius:var(--ux-radius-sm); padding:10px 12px; margin-bottom:12px; gap:8px;
+  }
+  #planner-widget .brief-chip{
+    font-size:12.5px; font-weight:500; color:var(--ux-text);
+    background:var(--ux-bg2); border:1px solid var(--ux-line);
+    border-radius:999px; padding:4px 10px;
+  }
+  #planner-widget .brief-chip:hover{
+    background:var(--ux-accent-soft); border-color:var(--ux-accent-line);
+  }
+  #planner-widget .brief-chip .k{ color:var(--ux-text3); font-weight:400; }
+  #planner-widget .brief-chip.sm{ font-size:12px; background:var(--ux-bg); }
+  #planner-widget .brief-chip.sm.on{
+    background:var(--ux-accent-soft); border-color:var(--ux-accent-line);
+    color:var(--ux-accent-ink); font-weight:600;
+  }
+  #planner-widget .brief-chip.edit{
+    background:var(--ux-bg); border-color:var(--ux-accent-line);
+    color:var(--ux-accent-ink); font-weight:600;
+  }
+  #planner-widget .brief-lbl{ color:var(--ux-text3); }
+
+  /* ---- метрики сводки: сплошная лента через волосяные линии ---- */
+  #planner-widget .ps-card{
+    background:var(--ux-bg); border:1px solid var(--ux-line);
+    border-radius:var(--ux-radius); padding:14px 16px; margin-bottom:12px;
+  }
+  #planner-widget .ps-title{ font-size:15px; font-weight:700; }
+  #planner-widget .ps-sub{ font-size:12.5px; color:var(--ux-text3); }
+  #planner-widget .ps-grid{ gap:8px; margin-top:12px; }
+  #planner-widget .ps-metrics{
+    display:grid; gap:1px; background:var(--ux-line);
+    border:1px solid var(--ux-line); border-radius:var(--ux-radius-sm); overflow:hidden;
+  }
+  #planner-widget .ps-metrics .ps-metric{
+    border:0; border-radius:0; background:var(--ux-bg); padding:10px 12px;
+  }
+  #planner-widget .ps-metric .k{ font-size:11px; color:var(--ux-text3); line-height:1.3; }
+  #planner-widget .ps-metric .v{
+    font-family:var(--ux-mono); font-variant-numeric:tabular-nums;
+    font-size:16px; font-weight:600; margin-top:4px; white-space:nowrap;
+  }
+  #planner-widget .ps-badge{
+    background:var(--ux-bg2); border-color:var(--ux-line); font-size:12px;
+  }
+  #planner-widget .ps-badge b{ font-weight:500; color:var(--ux-text3); }
+  #planner-widget .ps-region-chip,
+  #planner-widget .ps-fmt{ background:var(--ux-bg2); border-color:var(--ux-line); }
+
+  /* ---- предупреждения ---- */
+  #planner-widget .ps-warn{
+    border-color:var(--ux-warn-line); background:var(--ux-warn-bg);
+    border-radius:var(--ux-radius-sm); color:var(--ux-text2);
+  }
+  #planner-widget .ps-warn-h{ color:var(--ux-warn); }
+  #planner-widget .ps-warn-item{ border-top-color:var(--ux-warn-line); }
+  #planner-widget .ps-warn-item::before{ color:var(--ux-warn); }
+
+  /* ---- таблица (разбивка по форматам) ---- */
+  #planner-widget .ux-tbl-wrap{
+    overflow-x:auto; border:1px solid var(--ux-line);
+    border-radius:var(--ux-radius-sm); background:var(--ux-bg);
+  }
+  #planner-widget table.ux-tbl{
+    width:100%; border-collapse:collapse; font-size:13px; min-width:520px;
+  }
+  #planner-widget .ux-tbl th,
+  #planner-widget .ux-tbl td{
+    padding:9px 13px; text-align:right; border-bottom:1px solid var(--ux-line);
+  }
+  #planner-widget .ux-tbl th:first-child,
+  #planner-widget .ux-tbl td:first-child{ text-align:left; }
+  #planner-widget .ux-tbl thead th{
+    font-family:var(--ux-mono); font-size:10.5px; font-weight:600;
+    letter-spacing:.07em; text-transform:uppercase;
+    color:var(--ux-text3); background:var(--ux-bg2);
+  }
+  #planner-widget .ux-tbl tbody td{
+    font-family:var(--ux-mono); font-variant-numeric:tabular-nums; color:var(--ux-text2);
+  }
+  #planner-widget .ux-tbl tbody td:first-child{
+    font-family:var(--ux-font); color:var(--ux-text); font-weight:500;
+  }
+  #planner-widget .ux-tbl tbody tr:last-child td{ border-bottom:0; }
+  #planner-widget .ux-tbl tfoot td{
+    font-family:var(--ux-mono); font-weight:600; background:var(--ux-bg2);
+    font-variant-numeric:tabular-nums;
+  }
+  #planner-widget .ux-tbl tfoot td:first-child{ font-family:var(--ux-font); }
+  #planner-widget .ux-bar{
+    display:inline-block; vertical-align:middle; height:6px;
+    border-radius:2px; background:var(--ux-accent); margin-right:6px;
+  }
+
+  /* ---- свёрнутое уточнение ---- */
+  #planner-widget .ux-fold{
+    border:1px solid var(--ux-line); border-radius:var(--ux-radius-sm);
+    background:var(--ux-bg); margin-bottom:7px;
+  }
+  #planner-widget .ux-fold-sum{
+    display:flex; align-items:center; gap:11px; width:100%;
+    padding:11px 14px; font:inherit; text-align:left; cursor:pointer;
+    background:none; border:0; color:inherit; border-radius:var(--ux-radius-sm);
+    list-style:none;
+  }
+  #planner-widget .ux-fold-sum::-webkit-details-marker{ display:none; }
+  #planner-widget .ux-fold-sum:hover{ background:var(--ux-bg2); }
+  #planner-widget .ux-fold-sum .car{
+    color:var(--ux-text3); font-size:11px; transition:transform .12s;
+  }
+  #planner-widget .ux-fold[open] .ux-fold-sum .car{ transform:rotate(90deg); }
+  #planner-widget .ux-fold-t{ font-size:13.5px; font-weight:600; }
+  #planner-widget .ux-fold-v{
+    margin-left:auto; font-family:var(--ux-mono); font-size:12px;
+    color:var(--ux-text3); display:flex; align-items:center; gap:8px;
+  }
+  #planner-widget .ux-fold-v .on{
+    color:var(--ux-accent-ink); background:var(--ux-accent-soft);
+    border:1px solid var(--ux-accent-line); border-radius:999px;
+    padding:1px 8px; font-weight:600;
+  }
+  #planner-widget .ux-fold-body{
+    padding:13px 14px 15px; border-top:1px solid var(--ux-line);
+  }
+
+  /* ---- переключатели-чипы внутри уточнений ---- */
+  #planner-widget .sel-chip,
+  #planner-widget .cns-chip,
+  #planner-widget .vk-card,
+  #planner-widget .str-chip-body{
+    border-color:var(--ux-line); background:var(--ux-bg);
+    border-radius:var(--ux-radius-sm); border-width:1px;
+  }
+  #planner-widget .sel-chip:hover,
+  #planner-widget .cns-chip:hover,
+  #planner-widget .vk-card:hover,
+  #planner-widget .str-chip:hover .str-chip-body{
+    border-color:var(--ux-accent-line); background:var(--ux-bg);
+  }
+  #planner-widget .sel-chip.active,
+  #planner-widget .cns-chip.active,
+  #planner-widget .vk-card.active,
+  #planner-widget .str-chip input:checked + .str-chip-body{
+    border-color:var(--ux-accent); background:var(--ux-accent-soft);
+    color:var(--ux-accent-ink); box-shadow:inset 0 0 0 1px var(--ux-accent);
+  }
+  #planner-widget .str-chip-title{ font-size:13.5px; font-weight:600; }
+  #planner-widget .str-chip-desc{ font-size:11.5px; color:var(--ux-text3); }
+
+  /* ---- панель действий ---- */
+  #planner-widget .ux-tools{
+    display:flex; gap:8px; flex-wrap:wrap; align-items:center;
+    padding:13px 14px; margin-top:14px;
+    background:var(--ux-bg); border:1px solid var(--ux-line);
+    border-radius:var(--ux-radius-sm);
+  }
+  #planner-widget .ux-tools .sep{ flex:1 1 0; min-width:0; }
+  #planner-widget .ux-tools .ux-more{
+    font:inherit; font-size:13px; padding:8px 12px;
+    border-radius:var(--ux-radius-xs); cursor:pointer;
+    border:1px solid var(--ux-line); background:var(--ux-bg); color:var(--ux-text2);
+  }
+  #planner-widget .ux-tools .ux-more:hover{ border-color:var(--ux-line2); color:var(--ux-text); }
+  #planner-widget .ux-tools .ux-more:disabled{ opacity:.5; cursor:not-allowed; }
+
+  /* ---- карта ---- */
+  #planner-widget .ux-map-head{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:9px 13px; border:1px solid var(--ux-line); border-bottom:0;
+    border-radius:var(--ux-radius-sm) var(--ux-radius-sm) 0 0;
+    background:var(--ux-bg2);
+  }
+  #planner-widget .ux-map-lg{ display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--ux-text2); }
+  #planner-widget .ux-map-lg span{ display:inline-flex; align-items:center; gap:6px; }
+  #planner-widget .ux-map-lg i{ width:9px; height:9px; border-radius:999px; display:inline-block; }
+  #planner-widget .ux-map-head .ux-more{ margin-left:auto; }
+  #planner-widget .ux-map-head + .planner-map,
+  #planner-widget .ux-map-head + #planner-map{
+    border-radius:0 0 var(--ux-radius-sm) var(--ux-radius-sm) !important;
+    border:1px solid var(--ux-line) !important;
+  }
+
+  /* ---- рейка ёмкости ----
+     Геометрия задана явно: подпись 0..14, штырь 28..48 по центру
+     дорожки 34..42, сумма с 56. Высота 76 — на меньшей суммы
+     наезжают на подпись под рейкой. */
+  #planner-widget .rc-card{
+    background:var(--ux-bg); border:1px solid var(--ux-line);
+    border-radius:var(--ux-radius-sm); padding:16px 18px; margin-bottom:12px;
+  }
+  #planner-widget .rc-head{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+  #planner-widget .rc-head b{ font-size:14px; font-weight:600; }
+  #planner-widget .rc-head span{ font-size:12px; color:var(--ux-text3); }
+  #planner-widget .rc-now{
+    margin-left:auto; font-family:var(--ux-mono); font-variant-numeric:tabular-nums;
+    font-size:19px; font-weight:600; white-space:nowrap;
+  }
+  #planner-widget .rail{ position:relative; height:76px; margin:0 2px; }
+  #planner-widget .rail-track{
+    position:absolute; left:0; right:0; top:34px; height:8px; border-radius:999px;
+    background:var(--ux-bg2); border:1px solid var(--ux-line);
+  }
+  #planner-widget .rail-fill{
+    position:absolute; left:0; top:34px; height:8px; border-radius:999px;
+    background:var(--ux-accent);
+  }
+  #planner-widget .rail-stop{ position:absolute; top:0; transform:translateX(-50%); text-align:center; }
+  #planner-widget .rail-stop:last-of-type{ transform:translateX(-100%); text-align:right; }
+  #planner-widget .rail-stop .hit{
+    display:block; width:100%; font:inherit; background:none; border:0;
+    cursor:pointer; padding:0; color:inherit;
+  }
+  #planner-widget .rail-stop .lb{
+    display:block; font-family:var(--ux-mono); font-size:10px; font-weight:600;
+    letter-spacing:.07em; text-transform:uppercase; color:var(--ux-text3);
+    line-height:14px; white-space:nowrap;
+  }
+  #planner-widget .rail-stop .pip{
+    display:block; width:3px; height:20px; border-radius:2px;
+    background:var(--ux-line2); margin:14px auto 0;
+  }
+  #planner-widget .rail-stop:last-of-type .pip{ margin-right:0; margin-left:auto; }
+  #planner-widget .rail-stop .sm{
+    display:block; font-family:var(--ux-mono); font-variant-numeric:tabular-nums;
+    font-size:11.5px; color:var(--ux-text2); margin-top:8px; white-space:nowrap;
+  }
+  #planner-widget .rail-stop.on .pip{ background:var(--ux-accent); width:5px; }
+  #planner-widget .rail-stop.on .lb{ color:var(--ux-accent-ink); }
+  #planner-widget .rail-stop.on .sm{ color:var(--ux-text); font-weight:600; }
+  #planner-widget .rail-stop .hit:hover .pip{ background:var(--ux-accent-line); }
+  #planner-widget .rail-stop.on .hit:hover .pip{ background:var(--ux-accent); }
+  #planner-widget .rail-cap{
+    margin-top:12px; font-size:12px; color:var(--ux-text3);
+    display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
+  }
+  #planner-widget .rc-freq{
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    padding-top:15px; margin-top:15px; border-top:1px solid var(--ux-line);
+  }
+  #planner-widget .rc-freq label{ font-size:13px; color:var(--ux-text2); white-space:nowrap; }
+  #planner-widget #rc-pph{ flex:1; min-width:170px; accent-color:var(--ux-accent); }
+  #planner-widget #rc-pph-out{
+    font-family:var(--ux-mono); font-variant-numeric:tabular-nums;
+    font-size:16px; font-weight:600; color:var(--ux-accent-ink);
+    min-width:42px; text-align:right;
+  }
+  #planner-widget .rc-out{ flex-basis:100%; margin:0; font-size:12.5px; color:var(--ux-text2); line-height:1.5; }
+  #planner-widget .rc-up{
+    font-family:var(--ux-mono); font-size:12.5px; font-weight:600;
+    color:var(--ux-danger); background:var(--ux-danger-bg);
+    border-radius:6px; padding:2px 7px; margin-left:6px;
+  }
+  #planner-widget .rc-adv{
+    margin-top:8px; padding:8px 10px; background:var(--ux-bg2);
+    border:1px solid var(--ux-line); border-radius:var(--ux-radius-xs);
+    font-size:12.5px; line-height:1.5;
+  }
+  #planner-widget .rc-apply{
+    margin-top:9px; font:inherit; font-size:12.5px; font-weight:600;
+    border-radius:var(--ux-radius-xs); padding:7px 14px; cursor:pointer;
+    border:1px solid var(--ux-accent); background:var(--ux-accent); color:#fff;
+  }
+  #planner-widget .rc-apply:hover{ filter:brightness(1.08); }
+
+  /* ---- сетка экранов с постраничностью ---- */
+  #planner-widget .ux-ph-head{
+    display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:12px;
+  }
+  #planner-widget .ux-ph-n{ font-family:var(--ux-mono); font-size:12px; color:var(--ux-text3); }
+  #planner-widget .ux-pg{ margin-left:auto; display:flex; gap:4px; align-items:center; }
+  #planner-widget .ux-pg button{
+    font:inherit; font-family:var(--ux-mono); font-size:12px; min-width:28px;
+    padding:4px 7px; border-radius:var(--ux-radius-xs); cursor:pointer;
+    border:1px solid var(--ux-line); background:var(--ux-bg); color:var(--ux-text2);
+  }
+  #planner-widget .ux-pg button:hover{ border-color:var(--ux-line2); }
+  #planner-widget .ux-pg button[aria-current="page"]{
+    background:var(--ux-accent); border-color:var(--ux-accent); color:#fff; font-weight:600;
+  }
+  #planner-widget .ux-pg button:disabled{ opacity:.4; cursor:default; }
+
+  /* ---- моноширинные числа в перенесённых блоках ---- */
+  #planner-widget .ps-region-budget,
+  #planner-widget .ps-region-screens,
+  #planner-widget .bar-val,
+  #planner-widget .cns-chip-badge{
+    font-family:var(--ux-mono); font-variant-numeric:tabular-nums;
+  }
+
   /* ===== ДОСТУПНОСТЬ ===== */
   /* «Импорт городов из файла» — это <label> вокруг input[type=file].
      Инпут спрятан визуально (не display:none), чтобы он остался в табуляции;
      рамку фокуса рисует сама метка. */
   #planner-widget .file-import-label{ position: relative; }
   #planner-widget .file-import-label:focus-within{
-    outline: 3px solid rgba(91,62,245,.45);
+    outline: 3px solid rgba(79,43,232,.45);
     outline-offset: 2px;
   }
 
@@ -3037,18 +3491,17 @@ window.PLANNER_ASSET_BASE = (function () {
     <div class="ux-panel planner-right">
       <!-- raw summary from planner.js (оставляем как источник истины) -->
 <pre id="summary" class="summary-pre"></pre>
+<!-- Рейка ёмкости и частота. Стоят над сводкой: это рычаги, а числа
+     ниже — их показание. Видны только после расчёта, обе шкалы
+     считаются от зафиксированной адресной программы. -->
+<div id="result-controls" style="display:none; margin-top:12px;"></div>
 <!-- КРАСИВАЯ СВОДКА (карточки) -->
 <div id="pretty-summary" style="margin-top:12px;"></div>
-<!-- Переключатель уровня бюджета и «что если крутить чаще». Видны только
-     после расчёта: обе цифры считаются от отобранной адресной программы. -->
-<div id="result-controls" style="display:none; margin-top:12px;"></div>
 <!-- CHARTS -->
 <div id="charts" style="margin-top:12px;"></div>
-<div class="download-row">
-  <button id="download-csv" class="wiz-btn" disabled>Скачать GIDы</button>
-  <button id="download-pool-gids" class="wiz-btn ghost" style="display:none;" title="Скачать все экраны пула (до ограничений бюджета)">Скачать все экраны пула</button>
+<div class="download-row ux-tools">
   <div style="position:relative;display:inline-flex;align-items:center;gap:4px;">
-    <button id="download-plan-xlsx" class="wiz-btn ghost" disabled>Скачать план</button>
+    <button id="download-plan-xlsx" class="wiz-btn" disabled>Скачать медиаплан</button>
     <button id="dl-settings-btn" class="dl-settings-gear" title="Настройки скачивания" disabled>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>
@@ -3072,15 +3525,28 @@ window.PLANNER_ASSET_BASE = (function () {
       </label>
     </div>
   </div>
-  <button id="download-poi-csv" class="wiz-btn ghost" disabled>Скачать POI (CSV)</button>
-  <button id="download-poi-xlsx" class="wiz-btn ghost" disabled>Скачать POI (XLSX)</button>
+  <button id="download-csv" class="ux-more" disabled>GIDы</button>
+  <button id="download-pool-gids" class="ux-more" style="display:none;" title="Скачать все экраны пула (до ограничений бюджета)">Весь пул</button>
+  <button id="download-poi-csv" class="ux-more" disabled>POI (CSV)</button>
+  <button id="download-poi-xlsx" class="ux-more" disabled>POI (XLSX)</button>
+  <span class="sep"></span>
   <button id="send-plan-btn">🚀 Передать менеджеру</button>
 </div>
 <div id="poi-results" style="margin-top:12px;"></div>
 <!-- это твоя таблица "первые 10 экранов" — оставляем -->
 <div id="results" style="margin-top:14px;"></div>
 <div id="img-carousel" style="margin-top:16px;"></div>
-<div id="planner-map" class="planner-map" style="display:none; margin-top:14px;"></div>
+<!-- Карта идёт сразу за сеткой экранов: это один и тот же список,
+     показанный двумя способами — сетка отвечает «какие», карта «где». -->
+<div id="planner-map-head" class="ux-map-head" style="display:none; margin-top:16px;">
+  <div class="ux-map-lg">
+    <span><i style="background:var(--ux-accent)"></i> Экран программы</span>
+    <span><i style="background:var(--ux-warn)"></i> Медиафасад</span>
+    <span><i style="background:var(--ux-danger)"></i> Подозрительная ставка</span>
+  </div>
+  <button type="button" id="map-download-btn" class="ux-more">Скачать карту</button>
+</div>
+<div id="planner-map" class="planner-map" style="display:none; margin-top:0;"></div>
     </div>
   </div>
     </div>
@@ -3310,14 +3776,35 @@ window.PLANNER_ASSET_BASE = (function () {
     let active = null;
     for (const x of items) if (Math.abs(x.v - now) <= Math.max(1, x.v * 0.005)) active = x.k;
     if (!active && now > 0) items.push({ k: "now", t: "Сейчас", v: now });
+    items.sort((a, b) => a.v - b.v);
     if (!active) active = "now";
-    return '<div class="rc-card"><div class="rc-head"><b>Уровень бюджета</b>' +
-      '<span>пересобирает в пределах отобранной адрески — новых экранов не добавит</span></div>' +
-      '<div class="rc-tiers">' + items.map(x =>
-        '<button type="button" class="rc-tier" data-sum="' + Math.round(x.v) + '"' +
-        ' aria-pressed="' + (x.k === active) + '">' +
-        '<span class="t">' + x.t + '</span><span class="v">' + money(x.v) + '</span></button>'
-      ).join("") + '</div></div>';
+    // Позиция засечки — доля от максимума: он и есть полная ёмкость.
+    const max = t.max || 0;
+    const pct = (v) => max > 0 ? Math.max(0, Math.min(100, v / max * 100)) : 0;
+    const nowPct = pct(now);
+    const tierName = t.tier ? (" \u00B7 тир " + t.tier) : "";
+
+    const stops = items.map(x => {
+      const on = (x.k === active);
+      return '<div class="rail-stop' + (on ? ' on' : '') + '" style="left:' + pct(x.v).toFixed(2) + '%">' +
+        '<button type="button" class="hit rc-tier" data-sum="' + Math.round(x.v) + '"' +
+        ' aria-pressed="' + on + '">' +
+        '<span class="lb">' + x.t + '</span><span class="pip"></span>' +
+        '<span class="sm">' + money(x.v) + '</span></button></div>';
+    }).join("");
+
+    return '<div class="rc-card">' +
+      '<div class="rc-head"><b>Уровень бюджета</b>' +
+      '<span>' + tierName.replace(/^ \u00B7 /, "") +
+      (tierName ? ' \u00B7 ' : '') + 'пересобирает в пределах отобранной адрески</span>' +
+      '<span class="rc-now">' + money(now) + '</span></div>' +
+      '<div class="rail"><div class="rail-track"></div>' +
+      '<div class="rail-fill" style="width:' + nowPct.toFixed(2) + '%"></div>' +
+      stops + '</div>' +
+      '<p class="rail-cap"><span>Шкала \u2014 ёмкость отобранных ' + RU(pl ? pl.screens : 0) +
+      ' экранов: 30 выходов в час, 8 у медиафасадов.</span>' +
+      '<span>Занято ' + Math.round(nowPct) + '\u00A0%</span></p>' +
+      '</div>';
   }
 
   // Частота текущего плана округляется до сотых, а не до десятых: при большой
@@ -3329,11 +3816,9 @@ window.PLANNER_ASSET_BASE = (function () {
 
   function renderWhatIf(pl){
     const pph = planPph(pl);
-    return '<div class="rc-card"><div class="rc-head"><b>Что если крутить чаще</b>' +
-      '<span>даты и расписание не трогаем — показываем, во что обойдётся частота</span></div>' +
-      '<div class="rc-wi-row"><label for="rc-pph">Выходов в час на экран</label>' +
+    return '<div class="rc-freq"><label for="rc-pph">Выходов в час на экран</label>' +
       '<input id="rc-pph" type="range" min="0.1" max="60" step="0.1" value="' + pph + '">' +
-      '<output id="rc-pph-out">' + String(pph).replace(".", ",") + '</output></div>' +
+      '<output id="rc-pph-out">' + String(pph).replace(".", ",") + '</output>' +
       '<div class="rc-out" id="rc-out"></div></div>';
   }
 
@@ -3371,7 +3856,12 @@ window.PLANNER_ASSET_BASE = (function () {
     const pl = plan();
     if (!pl){ host.style.display = "none"; return; }
     host.style.display = "block";
-    host.innerHTML = renderTiers(host) + renderWhatIf(pl);
+    // Частота — вторая шкала того же рычага, поэтому вкладываем её
+    // внутрь карточки рейки, а не ставим отдельной панелью.
+    const html = renderTiers(host);
+    host.innerHTML = html
+      ? html.replace(/<\/div>$/, renderWhatIf(pl) + "</div>")
+      : renderWhatIf(pl);
     paint(planPph(pl));
   };
 
@@ -5592,20 +6082,15 @@ window.PLANNER_ASSET_BASE = (function () {
   }
 
   function ensureMapHeader(){
-    const existing = el("planner-map-header");
-    if(existing){ existing.style.display = "flex"; return; }
-
-    const box = el("planner-map");
-    if(!box) return;
-
-    const header = document.createElement("div");
-    header.id = "planner-map-header";
-    header.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;";
-    header.innerHTML = \`
-      <div style="font-weight:700;font-size:14px;color:#111827;">Карта экранов</div>
-    \`;
-    box.parentNode.insertBefore(header, box);
+    const head = el("planner-map-head");
+    if (head) head.style.display = "flex";
   }
+
+  document.addEventListener("click", (e) => {
+    if (e.target.closest && e.target.closest("#map-download-btn")) {
+      if (window.PLANNER?.downloadMapHtml) window.PLANNER.downloadMapHtml();
+    }
+  });
 
   function ensureMap(){
     const box = el("planner-map");
@@ -6741,25 +7226,35 @@ window.PLANNER_ASSET_BASE = (function () {
     // Per-format breakdown
     const fs = detail?.formatStats || {};
 
-    const formatRows = Object.entries(fs)
-      .sort((a,b) => b[1].screens - a[1].screens)
-      .map(([fmtName, fd]) => {
+    const esc = s => String(s||"").replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+    // Доля бюджета формата пропорциональна «экраны x стоимость выхода» —
+    // тому же произведению, по которому бюджет и раскладывается в расчёте.
+    const fmtEntries = Object.entries(fs).map(([fmtName, fd]) => ({
+      fmtName, fd, w: (Number(fd.screens) || 0) * (Number(fd.costPerPlay) || 0)
+    }));
+    const wSum = fmtEntries.reduce((a, x) => a + x.w, 0);
+
+    const formatRows = fmtEntries
+      .sort((a,b) => (b.w - a.w) || (b.fd.screens - a.fd.screens))
+      .map(({ fmtName, fd, w }) => {
         // Слева форматы называются по-человечески (FORMAT_LABELS), а сюда
         // приходил сырой код из данных: «PVZ_SCREEN» вместо «Экраны в ПВЗ».
         const fmtLabel = (window.FORMAT_LABELS?.[fmtName]?.label) || fmtName;
-        const otsPerPlay  = fd.otsPerPlay  != null
-          ? fmtInt(fd.otsPerPlay)  + "\u202fOTS" : "\\u2014";
+        const DASH = String.fromCharCode(8212);
+        const NBSP = String.fromCharCode(160);
+        const otsPerPlay  = fd.otsPerPlay  != null ? fmtInt(fd.otsPerPlay) : DASH;
         const costPerPlay = fd.costPerPlay != null
-          ? fmtInt(fd.costPerPlay) + "\u202f\\u20BD"   : "\\u2014";
-        const esc = s => String(s||"").replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-        return \`<div class="ps-metric">
-          <div class="k">\${esc(fmtLabel)}</div>
-          <div class="v" style="font-size:15px;">\${fmtInt(fd.screens)}\u202f<span style="font-size:12px;font-weight:500;color:#667085;">экр.</span></div>
-          <div style="margin-top:6px;font-size:12px;color:#667085;line-height:1.5;">
-            OTS/выход:&nbsp;<b style="color:#0b1220;">\${otsPerPlay}</b><br>
-            Стоимость выхода:&nbsp;<b style="color:#0b1220;">\${costPerPlay}</b>
-          </div>
-        </div>\`;
+          ? Number(fd.costPerPlay).toLocaleString("ru-RU", { maximumFractionDigits: 2 })
+          : DASH;
+        const share = wSum > 0 ? (w / wSum * 100) : 0;
+        const shareTxt = share >= 1 ? Math.round(share) + NBSP + "%" : "<1" + NBSP + "%";
+        const barW = Math.max(1, Math.round(share * 0.8));
+        return "<tr><td>" + esc(fmtLabel) + "</td>"
+          + "<td>" + fmtInt(fd.screens) + "</td>"
+          + "<td><span class=\"ux-bar\" style=\"width:" + barW + "px\"></span>" + shareTxt + "</td>"
+          + "<td>" + costPerPlay + "</td>"
+          + "<td>" + otsPerPlay + "</td></tr>";
       }).join("");
 
     root.innerHTML = \`
@@ -6777,9 +7272,9 @@ window.PLANNER_ASSET_BASE = (function () {
           </div>
 
           <div class="ps-grid ps-metrics">
+            <div class="ps-metric"><div class="k">Экранов</div><div class="v">\${fmtInt(totalScreens)}</div></div>
             <div class="ps-metric"><div class="k">Выходов всего</div><div class="v">\${fmtInt(totalPlays)}</div></div>
             <div class="ps-metric"><div class="k">Стоимость выхода</div><div class="v">\${(totalBudget > 0 && totalPlays > 0) ? Math.round(totalBudget / totalPlays).toLocaleString("ru-RU") + "\u202f\\u20BD" : "\\u2014"}</div></div>
-            <div class="ps-metric"><div class="k">Выходов в день</div><div class="v">\${playsPerDay == null ? "\\u2014" : fmtInt(playsPerDay)}</div></div>
             <div class="ps-metric"><div class="k">OTS всего</div><div class="v">\${otsTotal == null ? "\\u2014" : fmtInt(otsTotal)}</div></div>
             <div class="ps-metric"><div class="k">Выходов / час на экран</div><div class="v">\${(playsPerHour != null && totalScreens > 0) ? (playsPerHour / totalScreens).toFixed(1) : "\\u2014"}</div></div>
             <div class="ps-metric"><div class="k">CPM (стоимость 1\u202f000 OTS)</div><div class="v">\${(totalBudget > 0 && otsTotal > 0) ? Math.round(totalBudget / otsTotal * 1000).toLocaleString("ru-RU") + "\u202f\\u20BD" : "\\u2014"}</div></div>
@@ -6791,8 +7286,25 @@ window.PLANNER_ASSET_BASE = (function () {
         \${formatRows ? \`
         <div class="ps-card">
           <div class="ps-title">По форматам</div>
-          <div class="ps-sub">Экраны, OTS за выход и средняя ставка по каждому формату</div>
-          <div class="ps-grid" style="margin-top:12px;">\${formatRows}</div>
+          <div class="ps-sub">Доля бюджета, стоимость выхода и охват</div>
+          <div class="ux-tbl-wrap" style="margin-top:12px;">
+            <table class="ux-tbl">
+              <thead><tr>
+                <th>Формат</th><th>Экр.</th><th>Доля бюджета</th>
+                <th>Выход, \u20BD</th><th>OTS / выход</th>
+              </tr></thead>
+              <tbody>\${formatRows}</tbody>
+              <tfoot><tr>
+                <td>Итого</td>
+                <td>\${fmtInt(totalScreens)}</td>
+                <td>\${fmtMoney(totalBudget)}</td>
+                <td>\${(totalBudget > 0 && totalPlays > 0)
+                     ? (totalBudget / totalPlays).toLocaleString("ru-RU", { maximumFractionDigits: 2 })
+                     : "\u2014"}</td>
+                <td>\${(otsTotal && totalPlays) ? fmtInt(otsTotal / totalPlays) : "\u2014"}</td>
+              </tr></tfoot>
+            </table>
+          </div>
         </div>\` : ""}
 
         <div class="ps-card">

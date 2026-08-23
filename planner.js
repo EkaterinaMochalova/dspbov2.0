@@ -6990,6 +6990,7 @@ function computeRecoBudgetTiers() {
   const manualFormats = new Set(Array.isArray(brief.formats?.selected) ? brief.formats.selected : []);
 
   let totalMin = 0, totalOpt = 0, totalMax = 0;
+  const tiersUsed = new Set();
 
   for (const region of regions) {
     const regionKey = typeof region === "string" ? region : (region?.city || region?.region || "");
@@ -7024,6 +7025,7 @@ function computeRecoBudgetTiers() {
     const capBudget = computeCapacity(capBase, days * hpd, brief.bidMode, bidUpliftFactor(brief))?.budget;
     if (!Number.isFinite(capBudget) || capBudget <= 0) continue;
 
+    tiersUsed.add(tier);
     const share   = TIER_SHARE[tier] || TIER_SHARE.C;
     const max     = Math.floor(capBudget);
     const optimal = Math.floor(capBudget * share.opt);
@@ -7035,7 +7037,12 @@ function computeRecoBudgetTiers() {
   }
 
   if (totalOpt === 0) return null;
-  return { min: totalMin, optimal: totalOpt, max: totalMax };
+  // Тир отдаём только когда он один на весь план: при нескольких регионах
+  // доли смешаны и называть одну буквой было бы враньём.
+  return {
+    min: totalMin, optimal: totalOpt, max: totalMax,
+    tier: tiersUsed.size === 1 ? [...tiersUsed][0] : null,
+  };
 }
 
 window.PLANNER = window.PLANNER || {};
