@@ -2266,7 +2266,13 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .wiz-btn.ghost:hover{ border-color:var(--ux-text3); filter:none; }
 
   /* ---- карточки форматов: плоские, счётчик справа моноширинным ---- */
-  #planner-widget .fmt-grid{ gap:8px; }
+  #planner-widget .fmt-grid{
+    gap:8px;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  }
+  #planner-widget .fmt-countline::after{
+    content:" экр."; font-weight:500; color:var(--ux-text3); white-space:pre;
+  }
   #planner-widget .fmt-card{
     display:grid; grid-template-columns:1fr auto; align-items:center; gap:2px 12px;
     padding:11px 13px; border-radius:var(--ux-radius-sm);
@@ -2418,7 +2424,7 @@ window.PLANNER_ASSET_BASE = (function () {
     background:var(--ux-bg); margin-bottom:7px;
   }
   #planner-widget .ux-fold-sum{
-    display:flex; align-items:center; gap:11px; width:100%;
+    display:flex; align-items:center; gap:11px; width:100%; box-sizing:border-box;
     padding:11px 14px; font:inherit; text-align:left; cursor:pointer;
     background:none; border:0; color:inherit; border-radius:var(--ux-radius-sm);
     list-style:none;
@@ -5730,8 +5736,8 @@ window.PLANNER_ASSET_BASE = (function () {
       card.innerHTML = \`
         <div class="fmt-left">
           <div class="fmt-title">\${escapeHtml(label)}</div>
-          <div class="fmt-countline">\${count.toLocaleString("ru-RU")} экранов</div>
         </div>
+        <div class="fmt-countline">\${count.toLocaleString("ru-RU")}</div>
         <button type="button"
           class="fmt-tip"
           data-title="\${escapeHtml(label)}"
