@@ -4322,18 +4322,26 @@ window.PLANNER_ASSET_BASE = (function () {
       return { lb, sm, w, c, x: c };
     });
 
-    for (const it of items){
-      it.x = Math.min(Math.max(it.x, it.w / 2), Math.max(it.w / 2, W - it.w / 2));
-    }
-    // Слева направо расталкиваем, справа налево возвращаем внутрь дорожки.
-    for (let i = 1; i < items.length; i++){
-      const need = items[i-1].x + items[i-1].w / 2 + items[i].w / 2 + GAP;
+    // Слева направо расталкиваем и держим левый край.
+    for (let i = 0; i < items.length; i++){
+      const need = i
+        ? items[i-1].x + items[i-1].w / 2 + items[i].w / 2 + GAP
+        : items[i].w / 2;
       if (items[i].x < need) items[i].x = need;
+      if (items[i].x < items[i].w / 2) items[i].x = items[i].w / 2;
     }
-    for (let i = items.length - 2; i >= 0; i--){
-      const lim = items[i+1].x - items[i+1].w / 2 - items[i].w / 2 - GAP;
+    // Справа налево возвращаем внутрь дорожки. Правый край проверяем на
+    // каждом шаге: первый проход мог вытолкнуть за него крайнюю подпись,
+    // а она тянет за собой всю цепочку.
+    for (let i = items.length - 1; i >= 0; i--){
+      let lim = W - items[i].w / 2;
+      if (i < items.length - 1){
+        lim = Math.min(lim, items[i+1].x - items[i+1].w / 2 - items[i].w / 2 - GAP);
+      }
       if (items[i].x > lim) items[i].x = lim;
     }
+    // Если подписи не помещаются даже впритык, жертвуем правым краем:
+    // обрезанное начало суммы читается хуже, чем обрезанный хвост.
     for (const it of items) it.x = Math.max(it.x, it.w / 2);
 
     for (const it of items){
