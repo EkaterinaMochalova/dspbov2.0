@@ -4037,10 +4037,6 @@ window.PLANNER_ASSET_BASE = (function () {
   // Поэтому число появляется только после первого расчёта.
   function tiersAreReal(){ return !!(window.PLANNER && window.PLANNER.lastCalc); }
 
-  function setBudgetMode(mode){
-    const r = document.querySelector('input[name="budget_mode"][value="' + mode + '"]');
-    if (r && !r.checked){ r.checked = true; r.dispatchEvent(new Event("change", { bubbles: true })); }
-  }
 
   function render(){
     const host = el("budget-tier-btns");
@@ -4100,7 +4096,6 @@ window.PLANNER_ASSET_BASE = (function () {
       inp.dispatchEvent(new Event("input", { bubbles: true }));
       inp.dispatchEvent(new Event("change", { bubbles: true }));
     }
-    setBudgetMode("fixed");
     host.dataset.pending = "";
   }, true);
 
@@ -4114,15 +4109,15 @@ window.PLANNER_ASSET_BASE = (function () {
     if (!tiersAreReal()){
       // Второй клик по выбранному уровню снимает выбор и отпускает поле.
       host.dataset.pending = (host.dataset.pending === b.dataset.k) ? "" : b.dataset.k;
-      inp.value = "";
-      setBudgetMode(host.dataset.pending ? "recommendation" : "fixed");
+      inp.value = host.dataset.pending ? String(b.dataset.sum) : "";
+      inp.dispatchEvent(new Event("input", { bubbles: true }));
+      inp.dispatchEvent(new Event("change", { bubbles: true }));
       render();
       if (typeof window.renderProgress === "function") window.renderProgress();
       return;
     }
 
     host.dataset.pending = "";
-    setBudgetMode("fixed");
     inp.value = b.dataset.sum;
     inp.dispatchEvent(new Event("input", { bubbles: true }));
     inp.dispatchEvent(new Event("change", { bubbles: true }));
