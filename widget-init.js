@@ -4081,7 +4081,7 @@ window.PLANNER_ASSET_BASE = (function () {
 
   // Отложенный выбор доезжает до расчёта: перехватываем клик по кнопке
   // на фазе перехвата — обработчик самого расчёта висит на всплытии.
-  document.addEventListener("click", (e) => {
+  ["pointerdown", "click"].forEach(ev => document.addEventListener(ev, (e) => {
     const btn = e.target.closest && e.target.closest("#calc-btn");
     if (!btn) return;
     const host = el("budget-tier-btns");
@@ -4096,8 +4096,11 @@ window.PLANNER_ASSET_BASE = (function () {
       inp.dispatchEvent(new Event("input", { bubbles: true }));
       inp.dispatchEvent(new Event("change", { bubbles: true }));
     }
-    host.dataset.pending = "";
-  }, true);
+    // pointerdown только подставляет сумму — до чтения брифа; снимаем
+    // выбор уже по клику, иначе нажатие с уводом мимо кнопки сбросило бы
+    // уровень, хотя расчёт так и не начался.
+    if (e.type === "click") host.dataset.pending = "";
+  }, true));
 
   document.addEventListener("click", (e) => {
     const b = e.target.closest && e.target.closest("#budget-tier-btns .ux-tierbtn");
@@ -4108,8 +4111,16 @@ window.PLANNER_ASSET_BASE = (function () {
 
     if (!tiersAreReal()){
       // Второй клик по выбранному уровню снимает выбор и отпускает поле.
-      host.dataset.pending = (host.dataset.pending === b.dataset.k) ? "" : b.dataset.k;
-      inp.value = host.dataset.pending ? String(b.dataset.sum) : "";
+      const wasPending = host.dataset.pending;
+      host.dataset.pending = (wasPending === b.dataset.k) ? "" : b.dataset.k;
+      if (host.dataset.pending) {
+        // Запоминаем введённое руками ровно один раз — при первом выборе
+        // уровня. Переключение между уровнями своё значение не затирает.
+        if (!wasPending) host.dataset.own = inp.value || "";
+        inp.value = "";
+      } else {
+        inp.value = host.dataset.own || "";
+      }
       inp.dispatchEvent(new Event("input", { bubbles: true }));
       inp.dispatchEvent(new Event("change", { bubbles: true }));
       render();
@@ -6250,17 +6261,17 @@ window.PLANNER_ASSET_BASE = (function () {
   // CITY_FORMAT_RD и CITY_FORMAT_WD неразличимыми — все три превращались
   // в «CITY_F». Пишем то, чем они друг от друга отличаются.
   const FMT_SHORT = {
-    BILLBOARD: "Билборды",
-    SUPERSITE: "Суперсайты",
-    CITY_BOARD: "City Board",
-    CITY_FORMAT: "Ситиформаты",
+    BILLBOARD: "ББ",
+    SUPERSITE: "СС",
+    CITY_BOARD: "СБ",
+    CITY_FORMAT: "СФ",
     CITY_FORMAT_RC: "СФ \u00B7 МЦК",
     CITY_FORMAT_RD: "СФ \u00B7 вокзалы",
     CITY_FORMAT_WD: "СФ \u00B7 метро",
     RW_PLATFORM: "СФ \u00B7 МЦД",
-    METRO_SCREEN_3X1: "Метро, гориз.",
-    METRO_LIGHTBOX: "Metro Lightbox",
-    MEDIAFACADE: "Медиафасады",
+    METRO_SCREEN_3X1: "Метро гориз.",
+    METRO_LIGHTBOX: "Лайтбокс метро",
+    MEDIAFACADE: "МФ",
     PVZ_SCREEN: "ПВЗ",
     SKY_DIGITAL: "Аэропорты",
     OTHER: "Indoor",
@@ -6344,7 +6355,7 @@ window.PLANNER_ASSET_BASE = (function () {
         const cnt = document.createElement("b");
         cnt.textContent = String(inCity.get(fmt));
         chip.appendChild(cnt);
-        chip.title = fmt;
+        chip.title = (window.FORMAT_LABELS?.[fmt]?.label) || fmt;
         chip.addEventListener("click", ()=>{
           if(!st.cityFormats) st.cityFormats = {};
           if(!st.cityFormats[region]) st.cityFormats[region] = new Set();
@@ -8351,8 +8362,13 @@ window.PLANNER_ASSET_BASE = (function () {
     const block = el("duration-by-format");
     if (!wrap || !block) return;
     const st = window.PLANNER?.state;
-    const fmts = (Array.isArray(st?.formatsAll) ? st.formatsAll : [])
+    const all = (Array.isArray(st?.formatsAll) ? st.formatsAll : [])
       .map(x => String(x||"").trim()).filter(Boolean);
+    // Пустой выбор означает «берём все», поэтому и список тогда полный.
+    const picked = st?.selectedFormats;
+    const fmts = (picked && picked.size)
+      ? all.filter(f => picked.has(f))
+      : all;
     if (!fmts.length){ block.style.display = "none"; return; }
     block.style.display = "";
     if (wrap.style.display === "none") return;
@@ -8436,6 +8452,7 @@ window.PLANNER_ASSET_BASE = (function () {
   });
 
   window.addEventListener("planner:screens-ready", () => renderDurFmtRows());
+  window.addEventListener("planner:filters-changed", () => renderDurFmtRows());
 
   // Подпись под чипами: при нескольких роликах правило неочевидно, и его надо
   // проговорить прямо в интерфейсе, а не оставлять на догадки.

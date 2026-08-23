@@ -165,7 +165,7 @@ const CITY_REGIONS_URL =
 // ===== Labels =====
 const FORMAT_LABELS = {
   BILLBOARD: { label: "Билборды", desc: "экраны 3×6 м вдоль трасс" },
-  CITY_BOARD: { label: "City Board", desc: "небольшие экраны в центре города, видимые и авто-, и пешеходному траффику" },
+  CITY_BOARD: { label: "Сити-борды", desc: "небольшие экраны в центре города, видимые и авто-, и пешеходному траффику" },
   CITY_FORMAT: { label: "Ситиформаты", desc: "вертикальные экраны, остановки/пешеходные зоны" },
   CITY_FORMAT_RC: { label: "Ситиформаты на МЦК", desc: "экраны на МЦК" },
   CITY_FORMAT_RD: { label: "Ситиформаты на вокзалах", desc: "экраны на вокзале" },
@@ -173,7 +173,7 @@ const FORMAT_LABELS = {
   RW_PLATFORM: { label: "Ситиформаты на МЦД", desc: "экраны на МЦД" },
   METRO_SCREEN_3X1: { label: "Горизонтальные экраны в метро", desc: "экраны в метро" },
   MEDIAFACADE: { label: "Медиафасады", desc: "огромные экраны на стенах домов" },
-  METRO_LIGHTBOX: { label: "Metro Lightbox", desc: "экраны в метро, горизонтальные" },
+  METRO_LIGHTBOX: { label: "Лайтбоксы в метро", desc: "экраны в метро, горизонтальные" },
   OTHER: { label: "Indoor-экраны", desc: "экраны внутри БЦ, ТЦ и иных помещений" },
   PVZ_SCREEN: { label: "Экраны в ПВЗ", desc: "экраны в пунктах выдачи заказов" },
   SKY_DIGITAL: { label: "Аэропорты", desc: "экраны в аэропортах" },
