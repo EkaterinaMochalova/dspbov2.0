@@ -3300,12 +3300,17 @@ window.PLANNER_ASSET_BASE = (function () {
       ).join("") + '</div></div>';
   }
 
+  // Частота текущего плана округляется до сотых, а не до десятых: при большой
+  // адресной программе она бывает 0,2 вых/час, и округление до 1 увело бы
+  // ползунок с фактического значения — подпись разошлась бы с положением.
+  function planPph(pl){ return Math.max(0.1, Math.round(pl.pph * 100) / 100); }
+
   function renderWhatIf(pl){
-    const pph = Math.max(1, Math.round(pl.pph * 10) / 10);
+    const pph = planPph(pl);
     return '<div class="rc-card"><div class="rc-head"><b>Что если крутить чаще</b>' +
       '<span>даты и расписание не трогаем — показываем, во что обойдётся частота</span></div>' +
       '<div class="rc-wi-row"><label for="rc-pph">Выходов в час на экран</label>' +
-      '<input id="rc-pph" type="range" min="0.5" max="60" step="0.1" value="' + pph + '">' +
+      '<input id="rc-pph" type="range" min="0.1" max="60" step="0.1" value="' + pph + '">' +
       '<output id="rc-pph-out">' + String(pph).replace(".", ",") + '</output></div>' +
       '<div class="rc-out" id="rc-out"></div></div>';
   }
@@ -3317,7 +3322,7 @@ window.PLANNER_ASSET_BASE = (function () {
     const plays = pl.plays * k, budget = plays * pl.costPerPlay, ots = pl.ots * k;
     const base = pl.budget;
     if (Math.abs(target - pl.pph) < 0.05){
-      out.innerHTML = 'Текущий план — <b>' + String(Math.round(pl.pph * 10) / 10).replace(".", ",") +
+      out.innerHTML = 'Текущий план — <b>' + String(planPph(pl)).replace(".", ",") +
         ' вых/час</b>, ' + RU(pl.plays) + ' выходов, ' + money(pl.budget);
       return;
     }
@@ -3345,7 +3350,7 @@ window.PLANNER_ASSET_BASE = (function () {
     if (!pl){ host.style.display = "none"; return; }
     host.style.display = "block";
     host.innerHTML = renderTiers(host) + renderWhatIf(pl);
-    paint(Math.round(pl.pph * 10) / 10);
+    paint(planPph(pl));
   };
 
   document.addEventListener("input", function(e){
