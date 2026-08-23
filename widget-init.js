@@ -172,26 +172,11 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget[data-phase="result"] #progress-checklist{ display:none; }
 
   /* ===== РЕЗУЛЬТАТ ВО ВСЮ ШИРИНУ ===== */
-  /* Фото были горизонтальной лентой на две карточки со скроллом на 107 штук —
-     это следствие колонки в 390 px, а не решение. На всей ширине кладём сеткой. */
-  #planner-widget[data-phase="result"] .screens-photos-row{
-    display:grid;
-    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-    overflow-x: visible;
-    scroll-snap-type: none;
-  }
-  #planner-widget[data-phase="result"] .screens-photos-row > .photo-card{
-    flex: initial;
-    width: auto;
-    min-width: 0;
-  }
-  #planner-widget[data-phase="result"] #img-carousel .img-row{
-    display:grid;
-    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-    gap:10px;
-    overflow-x: visible;
-  }
-  #planner-widget[data-phase="result"] #img-carousel .img-card{ flex: initial; width:auto; }
+  /* Ленту фотографий сеткой НЕ раскладываем: карточек бывает 600+, и сетка по
+     четыре растянет страницу на десятки тысяч пикселей. Лента для такого
+     количества уместнее, а от смены фазы она и так выигрывает вдвое — в 940 px
+     помещается 4 карточки вместо 2 в прежней колонке 390 px.
+     Сетка имеет смысл только вместе с пагинацией — это правка рендера. */
   #planner-widget[data-phase="result"] .ps-grid{
     grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   }
