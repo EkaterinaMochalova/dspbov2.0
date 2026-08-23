@@ -1975,15 +1975,85 @@ async function loadTiers() {
 }
 
 // Форматы, по числу которых регион относят к тиру (правило из tiers_v1.json).
-const TIER_COUNT_FORMATS = new Set(["BILLBOARD", "SUPERSITE", "CITY_BOARD"]);
+// Форматы, по числу которых регион получает тир: билборды, суперсайты,
+// сити-борды и ситиформаты. Считаются только они — «популярный» инвентарь
+// показывает, насколько в городе есть куда разложить размещение. ПВЗ и Indoor
+// в счёт не идут: их много там, где наружки нет вовсе.
+const TIER_COUNT_FORMATS = new Set(["BILLBOARD", "SUPERSITE", "CITY_BOARD", "CITY_FORMAT"]);
 
-// Порог тира по количеству щитов в регионе — то же правило, что зашито в
-// tiers_v1.json ("A: >=300, B: 100..299, C: 50..99, D: <50").
+// ===== МОДЕЛЬ БЮДЖЕТНЫХ ТИРОВ =====
+// Максимум = 100% ёмкости отобранной адресной программы (30 вых/час, 8 для
+// медиафасадов — CAPACITY_PPH_*), по выбранной пользователем ставке.
+// Оптимум и минимум — доли от этого максимума, зависят от тира города.
+// Пороги заданы по живому инвентарю на 23.08.2026 (13 249 популярных экранов
+// в 336 городах): A — только Москва и Питер, B — Екб/НН/Ростов/Омск,
+// C — 15 крупных региональных, D — всё остальное.
+// Держим числа одним блоком: менять их будут чаще, чем остальной код.
+const TIER_THRESHOLDS = { A: 1000, B: 300, C: 100 };   // >= порога → этот тир, иначе D
+const TIER_SHARE = {
+  M: { opt: 0.15, min: 0.02 },   // Москва и МО — экраны дороже, доля меньше
+  A: { opt: 0.20, min: 0.05 },
+  B: { opt: 0.40, min: 0.10 },
+  C: { opt: 0.50, min: 0.25 },
+  D: { opt: 0.67, min: 0.33 },
+};
+
+// Названия городов в инвентаре приходят в нескольких формах: «Сочи» и
+// «городской округ Сочи», «Волгоград» и «город-герой Волгоград». Для счёта
+// тира их надо считать одним городом, иначе половина щитов теряется и город
+// проваливается в младший тир.
+const CITY_PREFIX_RE = /^(городской округ|городское поселение|муниципальный округ|сельское поселение|городской|город-герой|поселение|посёлок городского типа|рабочий посёлок|посёлок|поселок|город|пгт|село|деревня|станица|зато|район)\s+/i;
+const CITY_SUFFIX_RE = /\s+(городской округ|муниципальный округ|городское поселение|сельское поселение|поселение|сельсовет|поссовет|район|округ)$/i;
+
+// Срезаем только служебные приставки, окончания не трогаем: «Первомайский»,
+// «Первомайское» и «Первомайск» — разные места, и стемминг слепил бы их вместе.
+function normalizeCityName(name) {
+  let x = String(name || "").trim().toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ");
+  let prev;
+  do { prev = x; x = x.replace(CITY_PREFIX_RE, "").replace(CITY_SUFFIX_RE, ""); } while (x !== prev);
+  return x.trim();
+}
+
+const REGION_UNSET_RE = /^не назначено$/i;
+
+// Ключ для склейки дублей. Сливаем только внутри одного региона: одинаковые
+// названия в разных областях — разные города. В «Не назначено» не сливаем
+// вовсе: там семь разных «Первомайских», и объединять их наугад нельзя.
+function cityMergeKey(screen) {
+  const city = String(screen?.city || "").trim();
+  const region = String(screen?.region || "").trim();
+  if (!city) return "";
+  return REGION_UNSET_RE.test(region)
+    ? "RAW|" + city.toLowerCase()
+    : normalizeCityName(region) + "|" + normalizeCityName(city);
+}
+
+// Порог тира по количеству популярных экранов в регионе (см. TIER_THRESHOLDS).
 function tierFromBillboardCount(n) {
-  if (n >= 300) return "A";
-  if (n >= 100) return "B";
-  if (n >= 50)  return "C";
+  if (n >= TIER_THRESHOLDS.A) return "A";
+  if (n >= TIER_THRESHOLDS.B) return "B";
+  if (n >= TIER_THRESHOLDS.C) return "C";
   return "D";
+}
+
+// Москва и область считаются одним рынком, но только когда они в одном плане:
+// цены и конкуренция там общие. Отдельная кампания по одному Щёлкову — это
+// не московский рынок, и ронять ей рекомендацию в шесть раз незачем.
+const MOSCOW_OBLAST_RE = /^московская область$/i;
+
+function planIncludesMoscow() {
+  const regions = Array.isArray(state?.selectedRegions) ? state.selectedRegions : [];
+  return regions.some(r => normalizeCityName(typeof r === "string" ? r : (r?.city || r?.region || "")) === "москва");
+}
+
+function isMoscowMarket(regionKey, regionScreens) {
+  const key = normalizeCityName(regionKey);
+  if (key === "москва") return true;
+  if (!planIncludesMoscow()) return false;
+  if (MOSCOW_OBLAST_RE.test(String(regionKey || "").trim())) return true;
+  // регион экрана надёжнее названия: «Химки» сами по себе не говорят, что это МО
+  return Array.isArray(regionScreens) && regionScreens.length > 0 &&
+    regionScreens.every(s => MOSCOW_OBLAST_RE.test(String(s?.region || "").trim()));
 }
 
 // Тир региона. По возможности считается по живому инвентарю DSP, который уже
@@ -1998,14 +2068,27 @@ function getTierForGeo(name, regionScreens) {
   const key = String(name || "").trim();
   const fromFile = window.PLANNER?.tiers?.[key];
 
-  // Мегаполисы заданы в правиле явно, а не порогом по количеству, — их
-  // считать по инвентарю нельзя (Москва по числу щитов попала бы в обычный A).
-  if (fromFile === "M" || fromFile === "SP") return fromFile;
+  // Москва и — когда она в плане — Подмосковье идут по отдельному тиру M.
+  // Спецтир SP из справочника больше не нужен: при пороге 1000 Питер и так
+  // единственный, кто попадает в A вместе с Москвой.
+  if (isMoscowMarket(key, regionScreens)) return "M";
 
   if (Array.isArray(regionScreens) && regionScreens.length) {
-    let n = 0;
+    // «Химки» и «городской округ Химки» — один город, но в выборку попадает
+    // только выбранное написание. Поэтому берём ключи слияния выбранных
+    // экранов и досчитываем по всему инвентарю всё, что схлопывается в те же
+    // ключи, — иначе половина щитов теряется и город проваливается в D.
+    const keys = new Set();
     for (const s of regionScreens) {
-      if (TIER_COUNT_FORMATS.has(String(s.format || "").trim())) n++;
+      const k = cityMergeKey(s);
+      if (k) keys.add(k);
+    }
+    const all = Array.isArray(state.screensAll) && state.screensAll.length
+      ? state.screensAll : regionScreens;
+    let n = 0;
+    for (const s of all) {
+      if (!TIER_COUNT_FORMATS.has(String(s.format || "").trim())) continue;
+      if (keys.has(cityMergeKey(s))) n++;
     }
     return tierFromBillboardCount(n);
   }
@@ -6821,9 +6904,6 @@ function restoreBriefToUI(brief) {
 }
 
 function computeRecoBudgetTiers() {
-  const BASE_MONTHLY = { M: 2_000_000, SP: 1_500_000, A: 1_000_000, B: 500_000, C: 300_000, D: 100_000 };
-  const MAX_MONTHLY  = { M: 30_000_000, SP: 15_000_000, A: 5_000_000, B: 2_000_000, C: 1_000_000, D: 300_000 };
-
   const sourceScreens = (Array.isArray(state.screensAll) && state.screensAll.length)
     ? state.screensAll : (Array.isArray(state.screens) ? state.screens : []);
   if (!sourceScreens.length) return null;
@@ -6863,14 +6943,23 @@ function computeRecoBudgetTiers() {
     if (!pool.length) continue;
 
     const tier = getTierForGeo(regionKey, regionAll);
-    // Тот же потолок, что и в onCalcClick: плановая ёмкость, а не SC_MAX × 12 ч.
-    const capBudget = computeCapacity(pool, days * hpd, brief.bidMode, bidUpliftFactor(brief))?.budget ?? Infinity;
 
-    const optRaw  = Math.floor((BASE_MONTHLY[tier] ?? BASE_MONTHLY.C) * (days / 30));
-    const maxRaw  = Math.floor((MAX_MONTHLY[tier]  ?? MAX_MONTHLY.C)  * (days / 30));
-    const optimal = Math.min(optRaw, capBudget);
-    const max     = Math.min(maxRaw, capBudget);
-    const min     = Math.round(optimal * 0.35);
+    // Максимум — это вся ёмкость адресной программы: 30 вых/час на экран
+    // (8 для медиафасадов) по выбранной ставке. Если расчёт уже был, берём
+    // отобранную АП; до расчёта её ещё нет, и считаем по доступному пулу.
+    const chosen = Array.isArray(state.lastChosen) ? state.lastChosen : null;
+    const apForRegion = chosen
+      ? chosen.filter(s => screenMatchesGeoChoice(s, region))
+      : null;
+    const capBase = (apForRegion && apForRegion.length) ? apForRegion : pool;
+
+    const capBudget = computeCapacity(capBase, days * hpd, brief.bidMode, bidUpliftFactor(brief))?.budget;
+    if (!Number.isFinite(capBudget) || capBudget <= 0) continue;
+
+    const share   = TIER_SHARE[tier] || TIER_SHARE.C;
+    const max     = Math.floor(capBudget);
+    const optimal = Math.floor(capBudget * share.opt);
+    const min     = Math.floor(capBudget * share.min);
 
     totalMin += min;
     totalOpt += optimal;
