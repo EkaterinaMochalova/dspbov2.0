@@ -2629,13 +2629,17 @@ window.PLANNER_ASSET_BASE = (function () {
      Узел модалки переносится в тело ката как есть, чтобы не переписывать
      рисование полигонов; здесь снимаем с него всё оверлейное. */
   #poly-modal.is-inline{
-    display:block !important; position:static; inset:auto;
-    background:none; backdrop-filter:none; padding:0; z-index:auto;
+    display:block !important; position:static !important; inset:auto !important;
+    background:none !important; backdrop-filter:none !important;
+    padding:0 !important; z-index:auto !important;
   }
   #poly-modal.is-inline > div{
-    width:100%; max-width:none; height:440px; border-radius:var(--ux-radius-sm);
-    border:1px solid var(--ux-line); box-shadow:none;
+    width:100% !important; max-width:none !important; height:420px !important;
+    border-radius:var(--ux-radius-sm) !important;
+    border:1px solid var(--ux-line) !important; box-shadow:none !important;
   }
+  /* Заголовок модалки повторяет заголовок ката. */
+  #poly-modal.is-inline > div > div:first-child > div:first-child{ display:none; }
   #poly-modal.is-inline #poly-modal-cancel{ display:none; }
   #planner-widget .ux-fold[data-fold-for="step4-map-zone-block"] #poly-draw-btn{ display:none; }
 
