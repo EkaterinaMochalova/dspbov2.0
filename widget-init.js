@@ -2607,6 +2607,48 @@ window.PLANNER_ASSET_BASE = (function () {
     font-family:var(--ux-mono); font-variant-numeric:tabular-nums;
   }
 
+
+  /* ---- ось «охват или частота» ---- */
+  #planner-widget .ux-axis{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  @media (max-width:620px){ #planner-widget .ux-axis{ grid-template-columns:1fr; } }
+  #planner-widget .ux-ax{
+    text-align:left; font:inherit; cursor:pointer; padding:12px 14px;
+    border:1px solid var(--ux-line); background:var(--ux-bg);
+    border-radius:var(--ux-radius-sm); color:var(--ux-text);
+  }
+  #planner-widget .ux-ax:hover{ border-color:var(--ux-accent-line); }
+  #planner-widget .ux-ax[aria-pressed="true"]{
+    border-color:var(--ux-accent); background:var(--ux-accent-soft);
+    box-shadow:inset 0 0 0 1px var(--ux-accent);
+  }
+  #planner-widget .ux-ax .t{ display:block; font-size:14px; font-weight:600; }
+  #planner-widget .ux-ax[aria-pressed="true"] .t::before{ content:"✓ "; color:var(--ux-accent); }
+  #planner-widget .ux-ax .d{ display:block; font-size:12px; color:var(--ux-text3); margin-top:2px; }
+  #planner-widget .ux-ax .p{
+    display:block; margin-top:9px; padding-top:8px; border-top:1px solid var(--ux-line);
+    font-family:var(--ux-mono); font-variant-numeric:tabular-nums;
+    font-size:12px; color:var(--ux-text2);
+  }
+  #planner-widget .ux-ax[aria-pressed="true"] .p{
+    border-top-color:var(--ux-accent-line); color:var(--ux-accent-ink); font-weight:600;
+  }
+  #planner-widget .ux-exact{
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    margin-top:10px; padding:11px 14px; border-radius:var(--ux-radius-sm);
+    border:1px dashed var(--ux-line2); background:var(--ux-bg);
+  }
+  #planner-widget .ux-exact .lb{ font-size:13px; color:var(--ux-text2); }
+  #planner-widget .ux-exact .fld{ display:flex; align-items:center; gap:7px; }
+  #planner-widget .ux-exact input{
+    font-family:var(--ux-mono); font-size:13px; width:82px;
+    padding:6px 9px; background:var(--ux-bg2);
+  }
+  #planner-widget .ux-exact .u{ font-size:12px; color:var(--ux-text3); }
+  #planner-widget .ux-exact .off{ margin-left:auto; font-size:12.5px; color:var(--ux-text3); }
+
+  /* ---- моноширинная частота в подписи региона ---- */
+  #planner-widget .ps-mini span{ background:var(--ux-bg2); border-color:var(--ux-line); }
+
   /* ===== ДОСТУПНОСТЬ ===== */
   /* «Импорт городов из файла» — это <label> вокруг input[type=file].
      Инпут спрятан визуально (не display:none), чтобы он остался в табуляции;
@@ -3539,6 +3581,37 @@ window.PLANNER_ASSET_BASE = (function () {
     <div class="wiz-step-title">Настраиваем адресную программу</div>
     <div class="wiz-step-sub">Сколько экранов брать, как часто крутить и где именно они стоят.</div>
   </div>
+  <!-- Ось «охват или частота». Три прежних блока — «Стратегия подбора»,
+       «Количество экранов» и «Частота показов» — описывали один и тот же
+       компромисс, а между ними стоял ползунок, не работавший без двух
+       переключателей в соседних блоках. Сами блоки остаются в DOM и
+       остаются источником истины для расчёта: отсюда мы просто их ставим. -->
+  <div class="planner-block" id="axis-block">
+    <div class="planner-label">Охват или частота
+      <span class="grp-d" style="font-weight:400;">одно за счёт другого — бюджет один</span>
+    </div>
+    <div class="ux-axis" id="axis-chips">
+      <button type="button" class="ux-ax" data-mode="max_reach" aria-pressed="true">
+        <span class="t">Охват</span><span class="d">больше точек, реже показы</span>
+        <span class="p" data-p="max_reach"></span>
+      </button>
+      <button type="button" class="ux-ax" data-mode="balanced" aria-pressed="false">
+        <span class="t">Баланс</span><span class="d">середина между тем и другим</span>
+        <span class="p" data-p="balanced"></span>
+      </button>
+      <button type="button" class="ux-ax" data-mode="max_freq" aria-pressed="false">
+        <span class="t">Частота</span><span class="d">меньше точек, чаще показы</span>
+        <span class="p" data-p="max_freq"></span>
+      </button>
+    </div>
+    <div class="ux-exact" id="axis-exact">
+      <span class="lb">Или задать точно:</span>
+      <span class="fld"><input type="number" id="axis-screens" min="1" step="1" placeholder="—" aria-label="Экранов"><span class="u">экранов</span></span>
+      <span class="fld"><input type="number" id="axis-pph" min="1" max="60" step="1" placeholder="—" aria-label="Выходов в час"><span class="u">вых/час</span></span>
+      <span class="off" id="axis-exact-note">пока пусто — считает стратегия</span>
+    </div>
+    <div class="planner-note" id="reach-mode-hint-proxy" style="margin-top:10px;"></div>
+  </div>
   <div id="wiz-step-5-body"></div>
   <div class="wiz-nav" style="margin-top:12px;">
     <button type="button" class="wiz-btn ghost" id="wiz-back-5">← Экраны</button>
@@ -3788,6 +3861,109 @@ window.PLANNER_ASSET_BASE = (function () {
     const step = Number(c.dataset.step || 1);
     if (typeof window.setStep === "function") window.setStep(step);
   });
+})();
+`);
+
+  // ===== ОСЬ «ОХВАТ ИЛИ ЧАСТОТА» =====
+  runScript(`
+(function(){
+  const el = (id) => document.getElementById(id);
+
+  // Те же числа, что и в расчёте (targetPlaysPerHourPerScreen):
+  // выдумывать вторую таблицу нельзя, разъедется на первой же правке.
+  const PPH = { max_reach: 2, balanced: 15, max_freq: 30 };
+
+  function poolSize(){
+    const pv = window.PLANNER && window.PLANNER.computePoolPreview
+      ? window.PLANNER.computePoolPreview() : null;
+    return pv ? (pv.countFinal != null ? pv.countFinal : pv.countBase) : null;
+  }
+
+  // Сколько экранов получится — производная от бюджета, а его на этом шаге
+  // может ещё не быть. Тогда честнее показать одну частоту, чем выдумать
+  // второе число: пул тут ни при чём, он только потолок.
+  function predict(mode){
+    const pph = PPH[mode];
+    const pool = poolSize();
+    const lc = window.PLANNER && window.PLANNER.lastCalc;
+    let screens = null;
+    if (lc && lc.meta && lc.meta.totalPlays && lc.meta.days && lc.meta.hpd) {
+      // Уже считали: держим выходы постоянными и пересчитываем на новую частоту.
+      const total = lc.meta.totalPlays;
+      screens = Math.round(total / (pph * lc.meta.days * lc.meta.hpd));
+      if (pool) screens = Math.min(screens, pool);
+    }
+    const f = String(pph).replace(".", ",");
+    return screens && screens > 0
+      ? "~" + screens.toLocaleString("ru-RU") + " экр \u00B7 " + f + " вых/час"
+      : "до " + f + " вых/час на экран";
+  }
+
+  function currentMode(){
+    const r = document.querySelector('input[name="reach_mode"]:checked');
+    return r ? r.value : "max_reach";
+  }
+
+  function paintAxis(){
+    const mode = currentMode();
+    document.querySelectorAll("#axis-chips .ux-ax").forEach(b => {
+      b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
+    });
+    document.querySelectorAll("#axis-chips .p").forEach(sp => {
+      sp.textContent = predict(sp.dataset.p);
+    });
+
+    // Подсказку стратегии показываем на своём месте: исходный блок свёрнут.
+    const src = el("reach-mode-hint"), dst = el("reach-mode-hint-proxy");
+    if (src && dst) dst.textContent = src.textContent || "";
+
+    const manual = !!(el("constructions-enabled") && el("constructions-enabled").checked);
+    const note = el("axis-exact-note");
+    if (note) note.textContent = manual
+      ? "задано вручную — стратегия не вмешивается"
+      : "пока пусто — считает стратегия";
+    const sc = el("axis-screens"), pp = el("axis-pph");
+    if (sc && document.activeElement !== sc) {
+      sc.value = manual ? ((el("constructions-count") || {}).value || "") : "";
+    }
+    if (pp && document.activeElement !== pp) {
+      pp.value = manual ? ((el("constructions-ppm") || {}).value || "") : "";
+    }
+  }
+  window.paintAxis = paintAxis;
+
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest && e.target.closest("#axis-chips .ux-ax");
+    if (!b) return;
+    const r = document.querySelector('input[name="reach_mode"][value="' + b.dataset.mode + '"]');
+    if (r && !r.checked) { r.checked = true; r.dispatchEvent(new Event("change", { bubbles: true })); }
+    // Стратегия и ручной режим взаимоисключающи: иначе выбор стратегии
+    // выглядит нажатым, а считает всё равно ручное число.
+    const cb = el("constructions-enabled"), chip = el("constructions-chip");
+    if (cb && cb.checked && chip) chip.click();
+    paintAxis();
+  });
+
+  // Ввод в поля «задать точно» включает ручной режим и правит исходные
+  // контролы — они остаются источником истины для расчёта.
+  document.addEventListener("input", (e) => {
+    const t = e.target;
+    if (!t || (t.id !== "axis-screens" && t.id !== "axis-pph")) return;
+    const cb = el("constructions-enabled"), chip = el("constructions-chip");
+    if (cb && !cb.checked && chip) chip.click();
+    const dstId = (t.id === "axis-screens") ? "constructions-count" : "constructions-ppm";
+    const dst = el(dstId);
+    if (dst) {
+      dst.value = t.value;
+      dst.dispatchEvent(new Event("input", { bubbles: true }));
+      dst.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  });
+
+  ["change", "input"].forEach(ev => document.addEventListener(ev, () => setTimeout(paintAxis, 0)));
+  window.addEventListener("planner:pool-updated", () => paintAxis());
+  window.addEventListener("planner:calc-done", () => setTimeout(paintAxis, 60));
+  setTimeout(paintAxis, 300);
 })();
 `);
 
@@ -4078,6 +4254,119 @@ window.PLANNER_ASSET_BASE = (function () {
     ],
   };
 
+  // ===== СВЁРНУТЫЕ УТОЧНЕНИЯ =====
+  // На обоих шагах отбора обязателен ровно один блок, остальные ничего не
+  // ограничивают, пока их не тронешь. Они сворачиваются, а текущее значение
+  // выносится в заголовок — «Любая», «все 14», «обе». Раскрывать, чтобы
+  // убедиться, что ничего не задано, больше не нужно.
+  const FOLDABLE = [
+    { id: "step4-strategy-block", t: "Стратегия подбора", v: () => {
+        const m = document.querySelector('input[name="reach_mode"]:checked')?.value;
+        const map = { max_reach: "Охват", balanced: "Баланс", max_freq: "Частота" };
+        return [map[m] || "Охват", false];
+      } },
+    { id: "constructions-block", t: "Количество экранов", v: () => {
+        const on = !!el("constructions-enabled")?.checked;
+        return on ? [(el("constructions-count")?.value || "?") + " экр", true] : ["по стратегии", false];
+      } },
+    { id: "frequency-block", t: "Частота показов", v: () => {
+        const on = !!el("constructions-enabled")?.checked;
+        return on ? [(el("constructions-ppm")?.value || "?") + " вых/час", true] : ["по стратегии", false];
+      } },
+    { id: "duration-block", t: "Длительность ролика", v: () => {
+        const list = window.PLANNER?.state?.selectedDurationsMs;
+        if (!Array.isArray(list) || !list.length) return ["Любая", false];
+        if (list.length === 1 && list[0] === 0) return ["Любая", false];
+        const txt = list.map(ms => Math.round(ms / 1000) + " сек").join(", ");
+        return [txt, true];
+      } },
+    { id: "owners-block", t: "Операторы", v: () => {
+        const n = window.PLANNER?.state?.selectedOwners?.size || 0;
+        const all = window.PLANNER?.state?.ownersAll?.length || 0;
+        return n ? ["выбрано " + n, true] : ["все" + (all ? " " + all : ""), false];
+      } },
+    { id: "side-block", t: "Сторона экрана", v: () => {
+        const n = window.PLANNER?.state?.selectedSides?.size || 0;
+        return n ? [n === 1 ? "одна" : "обе", true] : ["обе", false];
+      } },
+    { id: "grp-block", t: "GRP", v: () => {
+        const on = !!el("grp-enabled")?.checked;
+        if (!on) return ["без фильтра", false];
+        return [(el("grp-min")?.value || "0") + "\u2013" + (el("grp-max")?.value || ""), true];
+      } },
+    { id: "step4-map-zone-block", t: "Зона на карте", v: () => {
+        const poly = window.PLANNER?.state?.polygon;
+        return (Array.isArray(poly) && poly.length) ? ["задана", true] : ["весь город", false];
+      } },
+    { id: "step4-selection-block", t: "Как раскладываем по городу", v: () => {
+        const m = el('selection-mode')?.value;
+        return m === "near_address" ? ["Рядом с адресом", true] : ["Равномерно", false];
+      } },
+    { id: "audience-block", t: "Аудитория VK", v: () => {
+        return el("audience-enabled")?.checked ? ["включена", true] : ["выключена", false];
+      } },
+    { id: "yandex-geo-block", t: "Яндекс Геоаналитика", v: () => {
+        const on = el("yandex-geo-card")?.classList.contains("active");
+        return on ? ["включена", true] : ["выключена", false];
+      } },
+  ];
+
+  function foldOptionalBlocks(){
+    for (const item of FOLDABLE) {
+      const block = el(item.id);
+      if (!block || block.closest(".ux-fold")) continue;
+
+      const d = document.createElement("details");
+      d.className = "ux-fold";
+      d.dataset.foldFor = item.id;
+
+      const sum = document.createElement("summary");
+      sum.className = "ux-fold-sum";
+      sum.innerHTML = "<span class=car>\u25B6</span><span class=ux-fold-t></span>"
+        + "<span class=ux-fold-v></span>";
+      sum.querySelector(".ux-fold-t").textContent = item.t;
+
+      const body = document.createElement("div");
+      body.className = "ux-fold-body";
+
+      block.parentNode.insertBefore(d, block);
+      d.appendChild(sum);
+      d.appendChild(body);
+      body.appendChild(block);
+
+      // Заголовок блока внутри уже назван в шапке — второй раз не нужен.
+      block.querySelector(".planner-label")?.remove();
+      block.style.marginBottom = "0";
+    }
+    refreshFoldValues();
+  }
+
+  function refreshFoldValues(){
+    for (const item of FOLDABLE) {
+      const d = document.querySelector('.ux-fold[data-fold-for="' + item.id + '"]');
+      if (!d) continue;
+      const slot = d.querySelector(".ux-fold-v");
+      if (!slot) continue;
+      let txt = "", on = false;
+      try { [txt, on] = item.v() || ["", false]; } catch (e) { continue; }
+      slot.innerHTML = "";
+      const span = document.createElement("span");
+      if (on) span.className = "on";
+      span.textContent = txt;
+      slot.appendChild(span);
+      // Блок скрыт целиком (например, длительность до загрузки инвентаря) —
+      // прячем и обёртку, иначе остаётся пустая строка-заголовок.
+      const block = el(item.id);
+      d.style.display = (block && block.style.display === "none") ? "none" : "";
+    }
+  }
+  window.refreshFoldValues = refreshFoldValues;
+
+  ["planner:filters-changed", "planner:pool-updated", "change", "input"].forEach(ev => {
+    const target = ev.startsWith("planner:") ? window : document;
+    target.addEventListener(ev, () => refreshFoldValues());
+  });
+
   function applyStepLayout(){
     for (const [hostId, ids] of Object.entries(STEP_LAYOUT)) {
       const host = el(hostId);
@@ -4088,6 +4377,8 @@ window.PLANNER_ASSET_BASE = (function () {
         else console.warn("[layout] блок не найден:", id);
       }
     }
+    foldOptionalBlocks();
+
     // «Доступный инвентарь» — над шагами, чтобы пул было видно и на отборе
     // экранов, и на настройке адрески, а не только внутри одного шага.
     const pool = el("pool-preview-block");
