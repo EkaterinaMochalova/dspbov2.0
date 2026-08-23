@@ -179,6 +179,12 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget[data-phase="result"] .ps-grid{
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   }
+  #planner-widget[data-phase="result"] .ps-metrics{
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  @media (max-width: 900px){
+    #planner-widget[data-phase="result"] .ps-metrics{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
   #planner-widget[data-phase="result"] #planner-map.planner-map{ height: 520px; }
 
   @media (max-width: 920px){
@@ -3284,17 +3290,21 @@ window.PLANNER_ASSET_BASE = (function () {
   function renderTiers(host){
     const t = window.PLANNER && window.PLANNER.computeRecoBudgetTiers
       ? window.PLANNER.computeRecoBudgetTiers() : null;
-    const own = Number(el("budget-input") && el("budget-input").value) || 0;
+    const pl = plan();
+    const now = pl ? pl.budget : (Number(el("budget-input") && el("budget-input").value) || 0);
     if (!t) return "";
     const items = [
-      { k: "min", t: "Минимум",    v: t.min },
+      { k: "min", t: "Минимум",     v: t.min },
       { k: "opt", t: "Оптимальный", v: t.optimal },
-      { k: "max", t: "Максимум",   v: t.max },
-      { k: "own", t: "Свой",       v: own }
+      { k: "max", t: "Максимум",    v: t.max }
     ].filter(x => x.v > 0);
-    // активен тот, чья сумма совпала с текущим бюджетом
-    let active = "own";
-    for (const x of items) if (x.k !== "own" && Math.abs(x.v - own) < 1) active = x.k;
+    // Активен уровень, на который лёг текущий план. Совпадение считаем с
+    // допуском в полпроцента: программа собирается по целым выходам и
+    // ровно в сумму почти никогда не попадает.
+    let active = null;
+    for (const x of items) if (Math.abs(x.v - now) <= Math.max(1, x.v * 0.005)) active = x.k;
+    if (!active && now > 0) items.push({ k: "now", t: "Сейчас", v: now });
+    if (!active) active = "now";
     return '<div class="rc-card"><div class="rc-head"><b>Уровень бюджета</b>' +
       '<span>пересобирает программу на месте — прогноз ставок уже в кэше</span></div>' +
       '<div class="rc-tiers">' + items.map(x =>
@@ -3370,6 +3380,8 @@ window.PLANNER_ASSET_BASE = (function () {
   document.addEventListener("click", function(e){
     const tier = e.target.closest && e.target.closest("#result-controls .rc-tier");
     if (tier){
+      const fixed = document.querySelector('input[name="budget_mode"][value="fixed"]');
+      if (fixed && !fixed.checked){ fixed.checked = true; fixed.dispatchEvent(new Event("change", { bubbles: true })); }
       const b = el("budget-input");
       if (b){
         b.value = tier.dataset.sum;
@@ -5458,10 +5470,7 @@ window.PLANNER_ASSET_BASE = (function () {
       \`;
     }).join("");
 
-    box.innerHTML = \`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-      <div style="font-weight:700;font-size:14px;color:#111827;">Фото экранов</div>
-      \${mapBtn}
-    </div>\` + sectionsHtml;
+    box.innerHTML = sectionsHtml;
     box.style.display = "block";
 
     el("carousel-map-download-btn")?.addEventListener("click", () => {
@@ -6761,7 +6770,7 @@ window.PLANNER_ASSET_BASE = (function () {
             </div>
           </div>
 
-          <div class="ps-grid">
+          <div class="ps-grid ps-metrics">
             <div class="ps-metric"><div class="k">Выходов всего</div><div class="v">\${fmtInt(totalPlays)}</div></div>
             <div class="ps-metric"><div class="k">Стоимость выхода</div><div class="v">\${(totalBudget > 0 && totalPlays > 0) ? Math.round(totalBudget / totalPlays).toLocaleString("ru-RU") + "\u202f\\u20BD" : "\\u2014"}</div></div>
             <div class="ps-metric"><div class="k">Выходов в день</div><div class="v">\${playsPerDay == null ? "\\u2014" : fmtInt(playsPerDay)}</div></div>
