@@ -2548,6 +2548,8 @@ window.PLANNER_ASSET_BASE = (function () {
     font-size:19px; font-weight:600; white-space:nowrap;
   }
   #planner-widget .rail{ position:relative; height:76px; margin:0 2px; }
+  /* Сумма подставлена по уровню — показывать её мы не обещали. */
+  #planner-widget #budget-input[data-from-tier="1"]{ color:transparent; }
   #planner-widget .rail-track{
     position:absolute; left:0; right:0; top:34px; height:8px; border-radius:999px;
     background:var(--ux-bg2); border:1px solid var(--ux-line);
@@ -2557,7 +2559,6 @@ window.PLANNER_ASSET_BASE = (function () {
     background:var(--ux-accent);
   }
   #planner-widget .rail-stop{ position:absolute; top:0; transform:translateX(-50%); text-align:center; }
-  #planner-widget .rail-stop:last-of-type{ transform:translateX(-100%); text-align:right; }
   #planner-widget .rail-stop .hit{
     display:block; width:100%; font:inherit; background:none; border:0;
     cursor:pointer; padding:0; color:inherit;
@@ -2571,11 +2572,13 @@ window.PLANNER_ASSET_BASE = (function () {
     display:block; width:3px; height:20px; border-radius:2px;
     background:var(--ux-line2); margin:14px auto 0;
   }
-  #planner-widget .rail-stop:last-of-type .pip{ margin-right:0; margin-left:auto; }
   #planner-widget .rail-stop .sm{
     display:block; font-family:var(--ux-mono); font-variant-numeric:tabular-nums;
     font-size:11.5px; color:var(--ux-text2); margin-top:8px; white-space:nowrap;
   }
+  /* Подписи двигает layoutRailStops, когда уровни стоят слишком близко. */
+  #planner-widget .rail-stop .lb,
+  #planner-widget .rail-stop .sm{ will-change:transform; }
   #planner-widget .rail-stop.on .pip{ background:var(--ux-accent); width:5px; }
   #planner-widget .rail-stop.on .lb{ color:var(--ux-accent-ink); }
   #planner-widget .rail-stop.on .sm{ color:var(--ux-text); font-weight:600; }
@@ -4090,6 +4093,14 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   window.renderBudgetTiers = render;
 
+  // Ввод руками возвращает сумме видимость. Только настоящий ввод:
+  // события, которые мы рассылаем сами, метку снимать не должны.
+  document.addEventListener("input", (e) => {
+    if (e.isTrusted && e.target && e.target.id === "budget-input"){
+      delete e.target.dataset.fromTier;
+    }
+  }, true);
+
   // Отложенный выбор доезжает до расчёта: перехватываем клик по кнопке
   // на фазе перехвата — обработчик самого расчёта висит на всплытии.
   ["pointerdown", "click"].forEach(ev => document.addEventListener(ev, (e) => {
@@ -4103,6 +4114,9 @@ window.PLANNER_ASSET_BASE = (function () {
     const inp = el("budget-input");
     if (v > 0 && inp){
       inp.disabled = false;
+      // Сумму прячем, но не стираем: бриф читает её из поля, и не однажды
+      // за расчёт. Метку снимает либо ввод руками, либо отжатие уровня.
+      inp.dataset.fromTier = "1";
       inp.value = String(Math.round(v));
       inp.dispatchEvent(new Event("input", { bubbles: true }));
       inp.dispatchEvent(new Event("change", { bubbles: true }));
@@ -4131,6 +4145,7 @@ window.PLANNER_ASSET_BASE = (function () {
         inp.value = "";
       } else {
         inp.value = host.dataset.own || "";
+        delete inp.dataset.fromTier;
       }
       inp.dispatchEvent(new Event("input", { bubbles: true }));
       inp.dispatchEvent(new Event("change", { bubbles: true }));
@@ -4283,6 +4298,52 @@ window.PLANNER_ASSET_BASE = (function () {
     };
   }
 
+  // Засечки стоят по значению, и когда два уровня близки, их подписи
+  // перекрываются, а крайняя левая ещё и уезжает за край дорожки.
+  // Двигаем только текст: риска обязана остаться на своём значении.
+  function layoutRailStops(rail){
+    if (!rail) return;
+    const stops = Array.prototype.slice.call(rail.querySelectorAll(".rail-stop"));
+    if (!stops.length) return;
+    const railBox = rail.getBoundingClientRect();
+    const W = railBox.width;
+    if (!W) return;
+    const GAP = 10;
+
+    const items = stops.map(st => {
+      const lb = st.querySelector(".lb"), sm = st.querySelector(".sm");
+      lb.style.transform = ""; sm.style.transform = "";
+      const lbB = lb.getBoundingClientRect(), smB = sm.getBoundingClientRect();
+      const w = Math.max(lbB.width, smB.width);
+      // Точка отсчёта — центр самой широкой из двух подписей: сдвиг
+      // применяем к обеим, и уехать они должны одинаково.
+      const wide = lbB.width >= smB.width ? lbB : smB;
+      const c = wide.left + wide.width / 2 - railBox.left;
+      return { lb, sm, w, c, x: c };
+    });
+
+    for (const it of items){
+      it.x = Math.min(Math.max(it.x, it.w / 2), Math.max(it.w / 2, W - it.w / 2));
+    }
+    // Слева направо расталкиваем, справа налево возвращаем внутрь дорожки.
+    for (let i = 1; i < items.length; i++){
+      const need = items[i-1].x + items[i-1].w / 2 + items[i].w / 2 + GAP;
+      if (items[i].x < need) items[i].x = need;
+    }
+    for (let i = items.length - 2; i >= 0; i--){
+      const lim = items[i+1].x - items[i+1].w / 2 - items[i].w / 2 - GAP;
+      if (items[i].x > lim) items[i].x = lim;
+    }
+    for (const it of items) it.x = Math.max(it.x, it.w / 2);
+
+    for (const it of items){
+      const d = Math.round(it.x - it.c);
+      const tr = d ? "translateX(" + d + "px)" : "";
+      it.lb.style.transform = tr;
+      it.sm.style.transform = tr;
+    }
+  }
+
   function renderTiers(host){
     const t = window.PLANNER && window.PLANNER.computeRecoBudgetTiers
       ? window.PLANNER.computeRecoBudgetTiers() : null;
@@ -4392,8 +4453,15 @@ window.PLANNER_ASSET_BASE = (function () {
     host.innerHTML = html
       ? html.slice(0, -CLOSE.length) + renderWhatIf(pl) + CLOSE
       : renderWhatIf(pl);
+    layoutRailStops(host.querySelector("#rc-rail"));
     paint(planPph(pl));
   };
+
+  let railResizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(railResizeTimer);
+    railResizeTimer = setTimeout(() => layoutRailStops(el("rc-rail")), 120);
+  });
 
   // Сумма в шапке — поле ввода. Применяем по Enter и по уходу фокуса,
   // а не на каждый символ: пересчёт занимает секунды.
