@@ -4315,9 +4315,9 @@ window.PLANNER_ASSET_BASE = (function () {
       applyBudget(Math.max(t.max * 0.01, Math.min(t.max, pl.budget + step)));
     }
   }, true);
-  document.addEventListener("focusout", function(e){
+  ["focusout", "change"].forEach(ev => document.addEventListener(ev, function(e){
     if (e.target && e.target.id === "rc-now-input") commitNowInput(e.target);
-  });
+  }));
 
   document.addEventListener("input", function(e){
     if (e.target && e.target.id === "rc-pph"){
