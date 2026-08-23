@@ -159,8 +159,47 @@ window.PLANNER_ASSET_BASE = (function () {
     font-size: inherit;
   }
   #planner-widget .planner-title{ margin:0 0 12px 0; }
-  #planner-widget .planner-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
-  @media (max-width: 920px){ #planner-widget .planner-grid{ grid-template-columns:1fr; } }
+  /* ===== ДВЕ ФАЗЫ ВМЕСТО ДВУХ КОЛОНОК =====
+     Сетка 50/50 неверна на обоих концах: до расчёта пустует правая половина,
+     после — левая, а результат (108 карточек с фото, карта, разбивка по
+     форматам) ужат в 390 px. Разводим по фазам: бриф во всю ширину, потом
+     результат во всю ширину. */
+  #planner-widget .planner-grid{ display:grid; grid-template-columns: 1fr; gap:16px; }
+
+  #planner-widget[data-phase="brief"]  .planner-right{ display:none; }
+  #planner-widget[data-phase="result"] .planner-left,
+  #planner-widget[data-phase="result"] #wiz-progress,
+  #planner-widget[data-phase="result"] #progress-checklist{ display:none; }
+
+  /* ===== РЕЗУЛЬТАТ ВО ВСЮ ШИРИНУ ===== */
+  /* Фото были горизонтальной лентой на две карточки со скроллом на 107 штук —
+     это следствие колонки в 390 px, а не решение. На всей ширине кладём сеткой. */
+  #planner-widget[data-phase="result"] .screens-photos-row{
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    overflow-x: visible;
+    scroll-snap-type: none;
+  }
+  #planner-widget[data-phase="result"] .screens-photos-row > .photo-card{
+    flex: initial;
+    width: auto;
+    min-width: 0;
+  }
+  #planner-widget[data-phase="result"] #img-carousel .img-row{
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap:10px;
+    overflow-x: visible;
+  }
+  #planner-widget[data-phase="result"] #img-carousel .img-card{ flex: initial; width:auto; }
+  #planner-widget[data-phase="result"] .ps-grid{
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  }
+  #planner-widget[data-phase="result"] #planner-map.planner-map{ height: 520px; }
+
+  @media (max-width: 920px){
+    #planner-widget[data-phase="result"] #planner-map.planner-map{ height: 380px; }
+  }
 
   #planner-widget .planner-kicker{ font-weight:700; margin-bottom:6px; }
   #planner-widget .planner-sub{ font-size:14px; color:rgba(11,18,32,.62); margin-bottom:12px; }
@@ -1075,6 +1114,44 @@ window.PLANNER_ASSET_BASE = (function () {
     opacity:0; pointer-events:none; transition:opacity .18s, transform .18s;
   }
   #planner-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  /* ===== СТРОКА БРИФА (фаза результата) ===== */
+  #planner-widget .brief-bar{
+    display:flex; flex-direction:column; gap:8px;
+    background: rgba(255,255,255,.72);
+    border: 1px solid rgba(15,23,42,.10);
+    border-radius: 16px;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+  }
+  #planner-widget .brief-row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  #planner-widget .brief-row.second{ padding-top:8px; border-top:1px dashed rgba(15,23,42,.10); }
+  #planner-widget .brief-lbl{
+    font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+    color: rgba(11,18,32,.45); margin-right:2px;
+  }
+  #planner-widget .brief-chip{
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:12.5px; font-weight:600; color:#3b2f7a;
+    background:#f2effe; border:1px solid #ddd5fb; border-radius:20px;
+    padding:5px 11px; cursor:pointer;
+    transition: background .12s, border-color .12s;
+  }
+  #planner-widget .brief-chip:hover{ background:#e7e1fd; border-color:#c3b4f8; }
+  #planner-widget .brief-chip .k{ color:#7c74a8; font-weight:500; }
+  #planner-widget .brief-chip.sm{
+    font-size:11.5px; padding:4px 9px; font-weight:500;
+    background:#fff; border-color:#e7e4f5; color:#525a6b;
+  }
+  #planner-widget .brief-chip.sm.on{
+    background:#f2effe; border-color:#ddd5fb; color:#3b2f7a; font-weight:600;
+  }
+  #planner-widget .brief-chip.edit{
+    margin-left:auto; background:#fff; border-color:#ddd5fb; color:#5b3ef5;
+  }
+  @media (max-width: 560px){
+    #planner-widget .brief-chip.edit{ margin-left:0; }
+  }
 
   /* ===================================================================
      ПЕРЕНЕСЕНО ИЗ БЛОКА ТИЛЬДЫ 22.08.2026
@@ -1996,6 +2073,21 @@ window.PLANNER_ASSET_BASE = (function () {
 `;
   document.head.appendChild(style);
 
+  // Фаза виджета: brief — заполняем бриф, result — работаем с программой.
+  // Переключается по planner:calc-done и по кнопке «Править бриф».
+  window.PLANNER_UI = window.PLANNER_UI || {};
+  window.PLANNER_UI.setPhase = function(phase){
+    const w = document.getElementById("planner-widget");
+    if (!w) return;
+    w.dataset.phase = (phase === "result") ? "result" : "brief";
+    const bar = document.getElementById("brief-bar");
+    if (bar) bar.style.display = (phase === "result") ? "flex" : "none";
+    if (typeof window.renderBriefBar === "function") window.renderBriefBar();
+    const top = w.getBoundingClientRect().top + window.scrollY - 20;
+    window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+  };
+  window.addEventListener("planner:calc-done", () => window.PLANNER_UI.setPhase("result"));
+
   // Карточки форматов/операторов и четыре тумблера — это <div> с onclick.
   // role/tabindex проставлены в разметке и генераторах; здесь один делегированный
   // обработчик повторяет клик по Enter/Space, чтобы не дублировать его в шести местах.
@@ -2080,6 +2172,8 @@ window.PLANNER_ASSET_BASE = (function () {
     <div class="meta" id="wiz-meta">0/4</div>
   </div>
   <div id="progress-checklist" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;"></div>
+  <!-- Строка брифа: видна только в фазе результата, собирается из состояния. -->
+  <div id="brief-bar" class="brief-bar" style="display:none;"></div>
   <div class="planner-grid">
   <!-- Left -->
   <div class="ux-panel planner-left">
@@ -3014,6 +3108,109 @@ window.PLANNER_ASSET_BASE = (function () {
 <!-- ===================== PRETTY SUMMARY (SINGLE IMPLEMENTATION, NO BROKEN PARSERS) ===================== -->
 <!-- ===================== BID MODE HINT TOGGLE ===================== -->
 <!-- ===================== POOL PREVIEW ===================== -->`;
+
+  // Стартуем в фазе брифа: правая колонка скрыта, форма во всю ширину.
+  document.getElementById("planner-widget")?.setAttribute("data-phase", "brief");
+
+  // ===== СТРОКА БРИФА =====
+  // В фазе результата условия сжимаются в чипы над программой. Каждый чип —
+  // кнопка: возвращает в бриф на нужный шаг. Показываем только то, что
+  // отличается от дефолта: если фильтр не трогали, чипа нет вовсе, иначе
+  // строка распухнет — переключателей в инструменте полтора десятка.
+  runScript(`
+(function(){
+  const el = (id) => document.getElementById(id);
+  const RU = (n) => Math.round(n).toLocaleString("ru-RU");
+
+  function esc(v){
+    return String(v == null ? "" : v)
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  function chip(step, key, val, cls){
+    return '<button type="button" class="brief-chip ' + (cls || "") + '" data-step="' + step + '">'
+      + (key ? '<span class="k">' + esc(key) + '</span> ' : '')
+      + esc(val) + '</button>';
+  }
+
+  function fmtDate(v){
+    if (!v) return "";
+    const p = String(v).split("-");
+    return p.length === 3 ? p[2] + "." + p[1] : v;
+  }
+
+  function scheduleLabel(){
+    const r = document.querySelector('input[name="schedule"]:checked');
+    const map = { all_day:"весь день", peak:"часы пик", custom:"свои часы", weekly:"по дням" };
+    return map[r && r.value] || "";
+  }
+
+  window.renderBriefBar = function renderBriefBar(){
+    const bar = el("brief-bar");
+    if (!bar) return;
+    const st = window.PLANNER && window.PLANNER.state ? window.PLANNER.state : {};
+
+    // --- первая строка: то, без чего расчёта не бывает ---
+    const main = [];
+    const regions = Array.isArray(st.selectedRegions) ? st.selectedRegions : [];
+    if (regions.length){
+      main.push(chip(1, "Где", regions.length > 2
+        ? regions[0] + " и ещё " + (regions.length - 1)
+        : regions.join(", ")));
+    }
+    const ds = el("date-start") && el("date-start").value;
+    const de = el("date-end") && el("date-end").value;
+    if (ds && de){
+      const sch = scheduleLabel();
+      main.push(chip(2, "Когда", fmtDate(ds) + "–" + fmtDate(de) + (sch ? " · " + sch : "")));
+    }
+    const budget = el("budget-input") && Number(el("budget-input").value);
+    if (budget > 0) main.push(chip(5, "Бюджет", RU(budget) + " \u20BD"));
+
+    const reach = document.querySelector('input[name="reach_mode"]:checked');
+    const reachMap = { reach:"Охват", balance:"Баланс", frequency:"Частота" };
+    if (reach && reachMap[reach.value]) main.push(chip(4, "Стратегия", reachMap[reach.value]));
+
+    const bid = document.querySelector('input[name="bid_mode"]:checked');
+    if (bid) main.push(chip(5, "Ставка", bid.value === "min" ? "Минимальная" : "Рекомендованная"));
+
+    main.push('<button type="button" class="brief-chip edit" data-step="1">Править бриф</button>');
+
+    // --- вторая строка: что из необязательного включено ---
+    const extra = [];
+    const fmtsAuto = el("formats-auto") && el("formats-auto").checked;
+    const nFmt = st.selectedFormats && st.selectedFormats.size ? st.selectedFormats.size : 0;
+    extra.push(chip(3, "", fmtsAuto || !nFmt ? "Форматы: все" : "Форматы: " + nFmt, "sm" + (nFmt ? " on" : "")));
+
+    const nOwn = st.selectedOwners && st.selectedOwners.size ? st.selectedOwners.size : 0;
+    extra.push(chip(3, "", nOwn ? "Операторы: " + nOwn : "Операторы: все", "sm" + (nOwn ? " on" : "")));
+
+    if (el("audience-enabled") && el("audience-enabled").checked)
+      extra.push(chip(4, "", "Аудитория VK", "sm on"));
+    if (el("yandex-geo-card") && el("yandex-geo-card").classList.contains("active"))
+      extra.push(chip(4, "", "Яндекс Гео", "sm on"));
+    if (Array.isArray(st.polygon) && st.polygon.length)
+      extra.push(chip(4, "", "Зона на карте", "sm on"));
+    if (el("constructions-enabled") && el("constructions-enabled").checked)
+      extra.push(chip(4, "", "Экранов вручную: " + ((el("constructions-count") && el("constructions-count").value) || "?"), "sm on"));
+    if (el("bid-uplift-enabled") && el("bid-uplift-enabled").checked)
+      extra.push(chip(5, "", "Надбавка +" + ((el("bid-uplift-pct") && el("bid-uplift-pct").value) || 0) + "%", "sm on"));
+
+    bar.innerHTML =
+      '<div class="brief-row">' + main.join("") + '</div>' +
+      '<div class="brief-row second"><span class="brief-lbl">Применено</span>' + extra.join("") + '</div>';
+  };
+
+  // Делегирование: чипы перерисовываются целиком, свои слушатели вешать некуда.
+  document.addEventListener("click", function(e){
+    const c = e.target.closest && e.target.closest("#brief-bar .brief-chip");
+    if (!c) return;
+    if (window.PLANNER_UI && window.PLANNER_UI.setPhase) window.PLANNER_UI.setPhase("brief");
+    const step = Number(c.dataset.step || 1);
+    if (typeof window.setStep === "function") window.setStep(step);
+  });
+})();
+`);
 
   // 5. Run all inline script blocks in order
   // Script block 1
@@ -6347,13 +6544,16 @@ window.PLANNER_ASSET_BASE = (function () {
     const formatRows = Object.entries(fs)
       .sort((a,b) => b[1].screens - a[1].screens)
       .map(([fmtName, fd]) => {
+        // Слева форматы называются по-человечески (FORMAT_LABELS), а сюда
+        // приходил сырой код из данных: «PVZ_SCREEN» вместо «Экраны в ПВЗ».
+        const fmtLabel = (window.FORMAT_LABELS?.[fmtName]?.label) || fmtName;
         const otsPerPlay  = fd.otsPerPlay  != null
           ? fmtInt(fd.otsPerPlay)  + "\u202fOTS" : "\\u2014";
         const costPerPlay = fd.costPerPlay != null
           ? fmtInt(fd.costPerPlay) + "\u202f\\u20BD"   : "\\u2014";
         const esc = s => String(s||"").replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
         return \`<div class="ps-metric">
-          <div class="k">\${esc(fmtName)}</div>
+          <div class="k">\${esc(fmtLabel)}</div>
           <div class="v" style="font-size:15px;">\${fmtInt(fd.screens)}\u202f<span style="font-size:12px;font-weight:500;color:#667085;">экр.</span></div>
           <div style="margin-top:6px;font-size:12px;color:#667085;line-height:1.5;">
             OTS/выход:&nbsp;<b style="color:#0b1220;">\${otsPerPlay}</b><br>
@@ -7869,7 +8069,13 @@ window.PLANNER_ASSET_BASE = (function () {
   // ниже всей формы. После calc-done подтягиваем её в вид.
   // window.scrollTo, а не scrollIntoView: в Tilda виджет лежит во вложенных
   // скролл-контейнерах, и scrollIntoView промахивается (см. setStep выше).
+  // Автоскролл нужен был, потому что сводка жила в правой колонке и к моменту
+  // клика уезжала за экран. Теперь фаза результата открывается на всю ширину и
+  // сама прокручивает к началу виджета — этот обработчик оставлен как запасной
+  // на случай, если фаза почему-то не переключилась.
   window.addEventListener("planner:calc-done", () => {
+    const w = document.getElementById("planner-widget");
+    if (w && w.dataset.phase === "result") return;
     const target = document.querySelector("#planner-widget .planner-right");
     if (!target) return;
     // Ждём, пока остальные calc-done подписчики дорисуют сводку и графики,
