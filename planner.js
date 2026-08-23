@@ -318,8 +318,27 @@ function capacityPphForScreen(s) {
 
 // hoursTotal — суммарные часы размещения за период (дней × часов/день).
 // Возвращает null, если считать не из чего: вызывающий код тогда просто не проверяет.
+// Потолок правдоподобной ставки за выход. В инвентаре встречаются строки с
+// ценой на четыре порядка выше рынка: на 23.08.2026 это четыре Indoor-экрана
+// «Шоколадницы» в Москве по 16 800 000 ₽ при медиане по городу 3 ₽ и p99 294 ₽.
+// Средняя ставка по Москве из-за них вырастает с ~6 ₽ до ~9 900 ₽, и ёмкость
+// города превращается в 1,6 трлн вместо полумиллиарда. Раньше это не всплывало:
+// бюджеты брались из таблицы с потолком. Считаем такие строки браком данных и
+// не пускаем в расчёт ёмкости; максимум легальной ставки в базе — сотни рублей.
+const MAX_PLAUSIBLE_BID = 10000;
+
+function isImplausibleBid(s) {
+  const b = Number(s?.minBid);
+  return Number.isFinite(b) && b > MAX_PLAUSIBLE_BID;
+}
+
 function computeCapacity(screens, hoursTotal, bidMode, uplift = 1) {
-  const list = Array.isArray(screens) ? screens : [];
+  const all = Array.isArray(screens) ? screens : [];
+  const list = all.filter(s => !isImplausibleBid(s));
+  if (list.length !== all.length) {
+    console.warn("[capacity] исключены экраны с неправдоподобной ставкой:",
+      all.filter(isImplausibleBid).map(s => ({ id: s.screen_id, city: s.city, minBid: s.minBid })));
+  }
   if (!list.length || !Number.isFinite(hoursTotal) || hoursTotal <= 0) return null;
 
   const pphSum = list.reduce((sum, s) => sum + capacityPphForScreen(s), 0);
