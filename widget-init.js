@@ -1100,6 +1100,56 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   #planner-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
 
+  /* ===== ПАНЕЛИ УПРАВЛЕНИЯ В РЕЗУЛЬТАТЕ ===== */
+  #planner-widget .rc-card{
+    background: rgba(255,255,255,.62);
+    border: 1px solid rgba(15,23,42,.10);
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+  #planner-widget .rc-head{ display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; margin-bottom:10px; }
+  #planner-widget .rc-head b{ font-size:13.5px; font-weight:700; }
+  #planner-widget .rc-head span{ font-size:11.5px; color:#667085; }
+  #planner-widget .rc-tiers{ display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:7px; }
+  @media (max-width: 720px){ #planner-widget .rc-tiers{ grid-template-columns: repeat(2, minmax(0,1fr)); } }
+  #planner-widget .rc-tier{
+    text-align:left; font:inherit; cursor:pointer; padding:8px 10px; border-radius:10px;
+    border:1.5px solid #e5e3f0; background:#fff; transition:.12s; min-width:0;
+  }
+  #planner-widget .rc-tier:hover{ border-color:#c3b4f8; background:#faf8ff; }
+  #planner-widget .rc-tier[aria-pressed="true"]{ border-color:#5b3ef5; background:#f2effe; }
+  #planner-widget .rc-tier .t{
+    display:block; font-size:10px; font-weight:600; letter-spacing:.06em;
+    text-transform:uppercase; color:#8b83c5;
+  }
+  #planner-widget .rc-tier[aria-pressed="true"] .t{ color:#5b3ef5; }
+  #planner-widget .rc-tier .v{
+    display:block; font-size:14px; font-weight:700; margin-top:3px; white-space:nowrap;
+  }
+  #planner-widget .rc-wi-row{ display:flex; align-items:center; gap:11px; flex-wrap:wrap; }
+  #planner-widget .rc-wi-row label{ font-size:12px; color:#4b5162; font-weight:500; white-space:nowrap; }
+  #planner-widget #rc-pph{ flex:1; min-width:150px; accent-color:#5b3ef5; }
+  #planner-widget #rc-pph-out{
+    font-size:15px; font-weight:700; color:#4930c7; min-width:34px; text-align:right;
+  }
+  #planner-widget .rc-out{ margin-top:10px; font-size:12.5px; line-height:1.5; color:#4b5162; }
+  #planner-widget .rc-delta b{ font-size:16px; color:#0b1220; }
+  #planner-widget .rc-up{
+    font-size:12.5px; font-weight:600; color:#a81f28;
+    background:#fdeded; border-radius:6px; padding:2px 7px; margin-left:6px;
+  }
+  #planner-widget .rc-adv{
+    margin-top:8px; padding:8px 10px; background:#fff;
+    border:1px solid rgba(15,23,42,.10); border-radius:9px; font-size:12px; line-height:1.5;
+  }
+  #planner-widget .rc-apply{
+    margin-top:9px; font:600 12px Inter,Arial,sans-serif; border-radius:9px;
+    padding:7px 14px; cursor:pointer; border:1.5px solid #5b3ef5;
+    background:#5b3ef5; color:#fff;
+  }
+  #planner-widget .rc-apply:hover{ background:#4a2fe0; }
+
   /* ===== СТРОКА БРИФА (фаза результата) ===== */
   #planner-widget .brief-bar{
     display:flex; flex-direction:column; gap:8px;
@@ -2973,6 +3023,9 @@ window.PLANNER_ASSET_BASE = (function () {
 <pre id="summary" class="summary-pre"></pre>
 <!-- КРАСИВАЯ СВОДКА (карточки) -->
 <div id="pretty-summary" style="margin-top:12px;"></div>
+<!-- Переключатель уровня бюджета и «что если крутить чаще». Видны только
+     после расчёта: обе цифры считаются от отобранной адресной программы. -->
+<div id="result-controls" style="display:none; margin-top:12px;"></div>
 <!-- CHARTS -->
 <div id="charts" style="margin-top:12px;"></div>
 <div class="download-row">
@@ -3194,6 +3247,148 @@ window.PLANNER_ASSET_BASE = (function () {
     const step = Number(c.dataset.step || 1);
     if (typeof window.setStep === "function") window.setStep(step);
   });
+})();
+`);
+
+  // ===== УПРАВЛЕНИЕ ПРЯМО В РЕЗУЛЬТАТЕ =====
+  runScript(`
+(function(){
+  const el = (id) => document.getElementById(id);
+  const RU = (n) => Math.round(n).toLocaleString("ru-RU");
+  const money = (n) => RU(n) + " \u20BD";
+
+  // Пересчёт после смены уровня бюджета сети не стоит: прогноз ставок лежит
+  // в памяти час и при неизменном пуле dspFetchForecastBids выходит сразу.
+  function recalc(){ const b = el("calc-btn"); if (b && !b.disabled) b.click(); }
+
+  function plan(){
+    const lc = window.PLANNER && window.PLANNER.lastCalc;
+    if (!lc || !lc.meta) return null;
+    const m = lc.meta;
+    const screens = (lc.chosen || []).length;
+    if (!screens || !m.days || !m.hpd || !m.totalPlays) return null;
+    return {
+      screens, days: m.days, hpd: m.hpd,
+      plays: m.totalPlays,
+      budget: m.totalBudget || 0,
+      ots: m.totalOts || 0,
+      pph: m.totalPlays / m.days / m.hpd / screens,
+      costPerPlay: (m.totalBudget || 0) / m.totalPlays
+    };
+  }
+
+  function renderTiers(host){
+    const t = window.PLANNER && window.PLANNER.computeRecoBudgetTiers
+      ? window.PLANNER.computeRecoBudgetTiers() : null;
+    const own = Number(el("budget-input") && el("budget-input").value) || 0;
+    if (!t) return "";
+    const items = [
+      { k: "min", t: "Минимум",    v: t.min },
+      { k: "opt", t: "Оптимальный", v: t.optimal },
+      { k: "max", t: "Максимум",   v: t.max },
+      { k: "own", t: "Свой",       v: own }
+    ].filter(x => x.v > 0);
+    // активен тот, чья сумма совпала с текущим бюджетом
+    let active = "own";
+    for (const x of items) if (x.k !== "own" && Math.abs(x.v - own) < 1) active = x.k;
+    return '<div class="rc-card"><div class="rc-head"><b>Уровень бюджета</b>' +
+      '<span>пересобирает программу на месте — прогноз ставок уже в кэше</span></div>' +
+      '<div class="rc-tiers">' + items.map(x =>
+        '<button type="button" class="rc-tier" data-sum="' + Math.round(x.v) + '"' +
+        ' aria-pressed="' + (x.k === active) + '">' +
+        '<span class="t">' + x.t + '</span><span class="v">' + money(x.v) + '</span></button>'
+      ).join("") + '</div></div>';
+  }
+
+  function renderWhatIf(pl){
+    const pph = Math.max(1, Math.round(pl.pph * 10) / 10);
+    return '<div class="rc-card"><div class="rc-head"><b>Что если крутить чаще</b>' +
+      '<span>даты и расписание не трогаем — показываем, во что обойдётся частота</span></div>' +
+      '<div class="rc-wi-row"><label for="rc-pph">Выходов в час на экран</label>' +
+      '<input id="rc-pph" type="range" min="0.5" max="60" step="0.1" value="' + pph + '">' +
+      '<output id="rc-pph-out">' + String(pph).replace(".", ",") + '</output></div>' +
+      '<div class="rc-out" id="rc-out"></div></div>';
+  }
+
+  function paint(target){
+    const pl = plan(); if (!pl) return;
+    const out = el("rc-out"); if (!out) return;
+    const k = target / pl.pph;
+    const plays = pl.plays * k, budget = plays * pl.costPerPlay, ots = pl.ots * k;
+    const base = pl.budget;
+    if (Math.abs(target - pl.pph) < 0.05){
+      out.innerHTML = 'Текущий план — <b>' + String(Math.round(pl.pph * 10) / 10).replace(".", ",") +
+        ' вых/час</b>, ' + RU(pl.plays) + ' выходов, ' + money(pl.budget);
+      return;
+    }
+    const diff = budget - base;
+    let html = '<div class="rc-delta"><b>' + money(budget) + '</b>' +
+      (diff > 0 ? '<span class="rc-up">+' + money(diff) + '</span>' : '') +
+      ' &nbsp;<span style="color:#667085">' + RU(plays) + ' выходов · OTS ' + RU(ots) + '</span></div>';
+    if (diff > 0){
+      const ratio = base / budget;
+      const d = Math.floor(pl.days * ratio), h = Math.floor(pl.hpd * ratio);
+      html += (d < 1 || h < 1)
+        ? '<div class="rc-adv">В ' + money(base) + ' такая частота не укладывается даже за один день: ' +
+          'сутки стоят <b>' + money(budget / pl.days) + '</b>. Резать период бесполезно, нужна меньшая частота.</div>'
+        : '<div class="rc-adv">Не увеличивать бюджет можно двумя способами, оба режут охват по времени:' +
+          '<br>— период <b>' + d + ' дн.</b> вместо ' + pl.days + ' при том же расписании;' +
+          '<br>— расписание <b>' + h + ' ч/день</b> вместо ' + Math.round(pl.hpd) + ' при том же периоде.</div>';
+    }
+    html += '<button type="button" class="rc-apply" data-pph="' + target + '">Пересобрать по этой частоте</button>';
+    out.innerHTML = html;
+  }
+
+  window.renderResultControls = function(){
+    const host = el("result-controls"); if (!host) return;
+    const pl = plan();
+    if (!pl){ host.style.display = "none"; return; }
+    host.style.display = "block";
+    host.innerHTML = renderTiers(host) + renderWhatIf(pl);
+    paint(Math.round(pl.pph * 10) / 10);
+  };
+
+  document.addEventListener("input", function(e){
+    if (e.target && e.target.id === "rc-pph"){
+      const v = parseFloat(e.target.value);
+      const o = el("rc-pph-out"); if (o) o.textContent = String(v).replace(".", ",");
+      paint(v);
+    }
+  });
+
+  document.addEventListener("click", function(e){
+    const tier = e.target.closest && e.target.closest("#result-controls .rc-tier");
+    if (tier){
+      const b = el("budget-input");
+      if (b){
+        b.value = tier.dataset.sum;
+        b.dispatchEvent(new Event("input", { bubbles: true }));
+        b.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      recalc();
+      return;
+    }
+    const apply = e.target.closest && e.target.closest("#result-controls .rc-apply");
+    if (apply){
+      // Частоту можно задать руками только в связке «Задать вручную» +
+      // «Подскажите бюджет»: при фиксированном бюджете она производная —
+      // бюджет ÷ ставка. Поэтому переключаем режим, иначе слайдер ни на что
+      // не влияет и пользователь получит тот же план.
+      const rec = document.querySelector('input[name="budget_mode"][value="recommendation"]');
+      if (rec && !rec.checked){ rec.checked = true; rec.dispatchEvent(new Event("change", { bubbles: true })); }
+      const cb = el("constructions-enabled"), chip = el("constructions-chip");
+      if (cb && !cb.checked && chip) chip.click();
+      const sl = el("constructions-ppm");
+      if (sl){
+        sl.value = String(Math.max(1, Math.round(Number(apply.dataset.pph))));
+        sl.dispatchEvent(new Event("input", { bubbles: true }));
+        sl.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      setTimeout(recalc, 0);
+    }
+  });
+
+  window.addEventListener("planner:calc-done", () => setTimeout(() => window.renderResultControls(), 60));
 })();
 `);
 

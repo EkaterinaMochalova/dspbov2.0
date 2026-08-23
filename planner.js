@@ -2010,7 +2010,7 @@ const TIER_COUNT_FORMATS = new Set(["BILLBOARD", "SUPERSITE", "CITY_BOARD", "CIT
 // Держим числа одним блоком: менять их будут чаще, чем остальной код.
 const TIER_THRESHOLDS = { A: 1000, B: 300, C: 100 };   // >= порога → этот тир, иначе D
 const TIER_SHARE = {
-  M: { opt: 0.15, min: 0.02 },   // Москва и МО — экраны дороже, доля меньше
+  M: { opt: 0.10, min: 0.015 },  // Москва и МО — экраны дороже, доля меньше
   A: { opt: 0.20, min: 0.05 },
   B: { opt: 0.40, min: 0.10 },
   C: { opt: 0.50, min: 0.25 },
