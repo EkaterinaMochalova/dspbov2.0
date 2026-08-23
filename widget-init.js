@@ -2614,6 +2614,14 @@ window.PLANNER_ASSET_BASE = (function () {
   }
 
 
+  /* Ось наверху повторяет «Стратегию подбора» и «Частоту показов»
+     целиком. Прячем правилом, а не через style.display: блоки заново
+     показывает refreshVisibility, который ходит по ним по таймеру.
+     Из DOM не убираем — расчёт читает reach_mode и constructions-ppm
+     именно оттуда, ось только выставляет им значения. */
+  #planner-widget #step4-strategy-block,
+  #planner-widget #frequency-block{ display:none !important; }
+
   /* ---- ось «охват или частота» ---- */
   #planner-widget .ux-axis{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
   @media (max-width:620px){ #planner-widget .ux-axis{ grid-template-columns:1fr; } }
@@ -4374,12 +4382,6 @@ window.PLANNER_ASSET_BASE = (function () {
         else console.warn("[layout] блок не найден:", id);
       }
     }
-    // Ось наверху повторяет эти два блока целиком. Прячем, но не удаляем:
-    // расчёт читает reach_mode и constructions-ppm именно отсюда.
-    ["step4-strategy-block", "frequency-block"].forEach(id => {
-      const b = el(id);
-      if (b) b.style.display = "none";
-    });
     foldOptionalBlocks();
 
     // «Доступный инвентарь» — над шагами, чтобы пул было видно и на отборе
