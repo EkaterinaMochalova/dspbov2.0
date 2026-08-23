@@ -2653,6 +2653,77 @@ window.PLANNER_ASSET_BASE = (function () {
   }
   #planner-widget .ux-fold-hint{ margin:0 0 12px; }
 
+
+  /* ---- переключатель области у таблицы ---- */
+  #planner-widget .ux-seg{
+    display:inline-flex; border:1px solid var(--ux-line);
+    border-radius:var(--ux-radius-xs); overflow:hidden; background:var(--ux-bg2);
+  }
+  #planner-widget .ux-seg button{
+    font:inherit; font-size:12.5px; padding:5px 12px; cursor:pointer;
+    border:0; background:none; color:var(--ux-text2); white-space:nowrap;
+  }
+  #planner-widget .ux-seg button:hover{ color:var(--ux-text); }
+  #planner-widget .ux-seg button[aria-pressed="true"]{
+    background:var(--ux-accent); color:#fff; font-weight:600;
+  }
+  /* Одно из двух тел таблицы прячем целиком — данные для обоих уже в DOM. */
+  #planner-widget #fmt-table[data-scope="all"] .scope-region,
+  #planner-widget #fmt-table[data-scope="region"] .scope-all{ display:none; }
+  #planner-widget .ux-tbl-group td{
+    background:var(--ux-bg2); font-family:var(--ux-font) !important;
+    font-weight:600 !important; color:var(--ux-text) !important;
+    text-align:left !important; padding-top:11px; padding-bottom:8px;
+  }
+  #planner-widget .ux-tbl-group td span{
+    font-family:var(--ux-mono); font-variant-numeric:tabular-nums;
+    font-weight:500; font-size:11.5px; color:var(--ux-text3); margin-left:10px;
+  }
+
+  /* ---- сумма плана правится прямо в шапке рейки ---- */
+  #planner-widget input.rc-now{
+    margin-left:auto; width:auto; max-width:190px; text-align:right;
+    font-family:var(--ux-mono); font-variant-numeric:tabular-nums;
+    font-size:19px !important; font-weight:600;
+    padding:2px 8px; border:1px solid transparent; background:transparent;
+    border-radius:var(--ux-radius-xs); color:var(--ux-text);
+  }
+  #planner-widget input.rc-now:hover{ border-color:var(--ux-line); background:var(--ux-bg2); }
+  #planner-widget input.rc-now:focus{
+    border-color:var(--ux-accent); background:var(--ux-bg); box-shadow:var(--ux-ring); outline:none;
+  }
+  /* По шкале можно кликнуть в любое место — курсор об этом говорит. */
+  #planner-widget #rc-rail{ cursor:pointer; }
+  #planner-widget #rc-rail:focus-visible{
+    outline:2px solid var(--ux-accent); outline-offset:6px; border-radius:6px;
+  }
+  #planner-widget #rc-rail .rail-stop{ cursor:pointer; }
+
+  /* ---- кнопки уровней на шаге «Цели» ---- */
+  #planner-widget .ux-tierbtns{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:8px;
+  }
+  @media (max-width:520px){ #planner-widget .ux-tierbtns{ grid-template-columns:1fr; } }
+  #planner-widget .ux-tierbtn{
+    text-align:left; font:inherit; cursor:pointer; padding:8px 11px;
+    border:1px solid var(--ux-line); background:var(--ux-bg);
+    border-radius:var(--ux-radius-xs); color:var(--ux-text); min-width:0;
+  }
+  #planner-widget .ux-tierbtn:hover{ border-color:var(--ux-accent-line); }
+  #planner-widget .ux-tierbtn[aria-pressed="true"]{
+    border-color:var(--ux-accent); background:var(--ux-accent-soft);
+    box-shadow:inset 0 0 0 1px var(--ux-accent);
+  }
+  #planner-widget .ux-tierbtn .t{
+    display:block; font-family:var(--ux-mono); font-size:10px; font-weight:600;
+    letter-spacing:.06em; text-transform:uppercase; color:var(--ux-text3);
+  }
+  #planner-widget .ux-tierbtn[aria-pressed="true"] .t{ color:var(--ux-accent-ink); }
+  #planner-widget .ux-tierbtn .v{
+    display:block; font-family:var(--ux-mono); font-variant-numeric:tabular-nums;
+    font-size:13.5px; font-weight:600; margin-top:2px; white-space:nowrap;
+  }
+
   /* ---- ось «охват или частота» ---- */
   #planner-widget .ux-axis{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
   @media (max-width:620px){ #planner-widget .ux-axis{ grid-template-columns:1fr; } }
@@ -3063,16 +3134,16 @@ window.PLANNER_ASSET_BASE = (function () {
   <label class="str-chip">
     <input type="radio" name="budget_mode" value="fixed" checked>
     <div class="str-chip-body">
-      <div class="str-chip-title">💰 Есть бюджет</div>
-      <div class="str-chip-desc">Укажу сумму — подберёте программу</div>
+      <div class="str-chip-title">💰 Бюджет</div>
+      <div class="str-chip-desc">Сумма целиком или по городам</div>
     </div>
   </label>
-  <label class="str-chip">
+  <!-- Режим «Подскажите бюджет» остался в расчёте: на него переключаемся,
+       если поле пустое и уровни ещё не посчитаны. Отдельным пунктом он не
+       нужен — кнопки уровней это он и есть, только с видимыми суммами. -->
+  <label class="str-chip" style="display:none;">
     <input type="radio" name="budget_mode" value="recommendation">
-    <div class="str-chip-body">
-      <div class="str-chip-title">✨ Подскажите бюджет</div>
-      <div class="str-chip-desc">Планировщик рассчитает оптимальную сумму</div>
-    </div>
+    <div class="str-chip-body"><div class="str-chip-title">Подскажите бюджет</div></div>
   </label>
   <label class="str-chip">
     <input type="radio" name="budget_mode" value="goal_ots">
@@ -3091,6 +3162,9 @@ window.PLANNER_ASSET_BASE = (function () {
 </div>
 <!-- fixed -->
 <div id="budget-input-wrap" style="margin-top:10px;">
+  <!-- Уровни от ёмкости отобранной адрески: те же три числа, что и на
+       рейке в результате. Клик подставляет сумму в поле. -->
+  <div class="ux-tierbtns" id="budget-tier-btns" style="display:none;"></div>
   <input id="budget-input" type="number" class="ux-input" placeholder="Введите бюджет, ₽" min="0" step="1000">
   <input id="budget-total-abs" type="number" style="display:none;">
   <div class="planner-note" style="margin-top:6px;" id="budget-distrib-note">
@@ -3909,6 +3983,73 @@ window.PLANNER_ASSET_BASE = (function () {
 })();
 `);
 
+  // ===== ОБЛАСТЬ РАЗБИВКИ ПО ФОРМАТАМ =====
+  // Общая ставка по формату отвечает на вопрос «сколько стоит билборд»,
+  // а клиент чаще спрашивает «сколько стоит билборд в Казани».
+  runScript(`
+(function(){
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest && e.target.closest("#fmt-scope button");
+    if (!b) return;
+    const seg = b.parentNode;
+    const table = document.getElementById("fmt-table");
+    if (!table) return;
+    seg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    table.dataset.scope = b.dataset.scope;
+  });
+})();
+`);
+
+  // ===== УРОВНИ БЮДЖЕТА НА ШАГЕ «ЦЕЛИ» =====
+  // Отдельного режима «подскажите бюджет» больше нет: три кнопки с живыми
+  // суммами и есть подсказка, только видно, из чего она сложилась.
+  runScript(`
+(function(){
+  const el = (id) => document.getElementById(id);
+  const money = (v) => Math.round(v).toLocaleString("ru-RU") + " \u20BD";
+
+  function render(){
+    const host = el("budget-tier-btns");
+    if (!host) return;
+    const t = window.PLANNER?.computeRecoBudgetTiers?.();
+    if (!t || !t.max){ host.style.display = "none"; return; }
+
+    const own = Number(el("budget-input")?.value || 0);
+    const items = [
+      { k: "min", t: "Минимум",     v: t.min },
+      { k: "opt", t: "Оптимальный", v: t.optimal },
+      { k: "max", t: "Максимум",    v: t.max },
+    ].filter(x => x.v > 0);
+    if (!items.length){ host.style.display = "none"; return; }
+
+    host.style.display = "grid";
+    host.innerHTML = items.map(x => {
+      const on = own > 0 && Math.abs(x.v - own) <= Math.max(1, x.v * 0.005);
+      return '<button type="button" class="ux-tierbtn" data-sum="' + Math.round(x.v)
+        + '" aria-pressed="' + on + '"><span class="t">' + x.t
+        + '</span><span class="v">' + money(x.v) + '</span></button>';
+    }).join("");
+  }
+  window.renderBudgetTiers = render;
+
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest && e.target.closest("#budget-tier-btns .ux-tierbtn");
+    if (!b) return;
+    const inp = el("budget-input");
+    if (!inp) return;
+    inp.value = b.dataset.sum;
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+    inp.dispatchEvent(new Event("change", { bubbles: true }));
+    render();
+  });
+
+  ["change", "input"].forEach(ev => document.addEventListener(ev, () => setTimeout(render, 0)));
+  window.addEventListener("planner:pool-updated", () => render());
+  window.addEventListener("planner:calc-done", () => setTimeout(render, 60));
+  setTimeout(render, 400);
+})();
+`);
+
   // ===== ОСЬ «ОХВАТ ИЛИ ЧАСТОТА» =====
   runScript(`
 (function(){
@@ -4075,8 +4216,13 @@ window.PLANNER_ASSET_BASE = (function () {
       '<div class="rc-head"><b>Уровень бюджета</b>' +
       '<span>' + tierName.replace(/^ \u00B7 /, "") +
       (tierName ? ' \u00B7 ' : '') + 'пересобирает в пределах отобранной адрески</span>' +
-      '<span class="rc-now">' + money(now) + '</span></div>' +
-      '<div class="rail"><div class="rail-track"></div>' +
+      '<input class="rc-now" id="rc-now-input" inputmode="numeric" ' +
+        'aria-label="Бюджет плана" value="' + money(now) + '">' +
+      '</div>' +
+      '<div class="rail" id="rc-rail" role="slider" tabindex="0" ' +
+        'aria-label="Бюджет: доля от полной ёмкости" aria-valuemin="0" ' +
+        'aria-valuemax="' + Math.round(max) + '" aria-valuenow="' + Math.round(now) + '">' +
+      '<div class="rail-track"></div>' +
       '<div class="rail-fill" style="width:' + nowPct.toFixed(2) + '%"></div>' +
       stops + '</div>' +
       '<p class="rail-cap"><span>Шкала \u2014 ёмкость отобранных ' + RU(pl ? pl.screens : 0) +
@@ -4146,6 +4292,33 @@ window.PLANNER_ASSET_BASE = (function () {
     paint(planPph(pl));
   };
 
+  // Сумма в шапке — поле ввода. Применяем по Enter и по уходу фокуса,
+  // а не на каждый символ: пересчёт занимает секунды.
+  function commitNowInput(inp){
+    const v = Number(String(inp.value).replace(/[^0-9]/g, ""));
+    const pl = plan();
+    if (!v || (pl && Math.abs(v - pl.budget) < 1)) { window.renderResultControls?.(); return; }
+    applyBudget(v);
+  }
+  document.addEventListener("keydown", function(e){
+    if (e.target && e.target.id === "rc-now-input"){
+      if (e.key === "Enter"){ e.preventDefault(); e.target.blur(); }
+      if (e.key === "Escape"){ window.renderResultControls?.(); }
+    }
+    // Шкала с клавиатуры: шаг в пять процентов ёмкости.
+    if (e.target && e.target.id === "rc-rail" && (e.key === "ArrowLeft" || e.key === "ArrowRight")){
+      const t = window.PLANNER?.computeRecoBudgetTiers?.();
+      const pl = plan();
+      if (!t || !t.max || !pl) return;
+      e.preventDefault();
+      const step = t.max * 0.05 * (e.key === "ArrowRight" ? 1 : -1);
+      applyBudget(Math.max(t.max * 0.01, Math.min(t.max, pl.budget + step)));
+    }
+  }, true);
+  document.addEventListener("focusout", function(e){
+    if (e.target && e.target.id === "rc-now-input") commitNowInput(e.target);
+  });
+
   document.addEventListener("input", function(e){
     if (e.target && e.target.id === "rc-pph"){
       const v = parseFloat(e.target.value);
@@ -4154,7 +4327,42 @@ window.PLANNER_ASSET_BASE = (function () {
     }
   });
 
+  // Общий путь для любой суммы: перевести режим в «свой бюджет»,
+  // записать её в поле шага «Цели» и пересчитать. Уровни, клик по шкале
+  // и ручной ввод в шапке приходят сюда все трое.
+  function applyBudget(sum){
+    const v = Math.max(0, Math.round(Number(sum) || 0));
+    if (!v) return;
+    const fixed = document.querySelector('input[name="budget_mode"][value="fixed"]');
+    if (fixed && !fixed.checked){ fixed.checked = true; fixed.dispatchEvent(new Event("change", { bubbles: true })); }
+    const b = el("budget-input");
+    if (b){
+      b.value = String(v);
+      b.dispatchEvent(new Event("input", { bubbles: true }));
+      b.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    recalc();
+  }
+  window.plannerApplyBudget = applyBudget;
+
+  // Клик по шкале = доля от полной ёмкости. Округляем до тысячи: точность
+  // до рубля по пикселю всё равно ничего не значит, а число читается хуже.
+  function budgetFromRail(rail, clientX){
+    const t = window.PLANNER && window.PLANNER.computeRecoBudgetTiers
+      ? window.PLANNER.computeRecoBudgetTiers() : null;
+    if (!t || !t.max) return 0;
+    const r = rail.getBoundingClientRect();
+    const share = Math.max(0.01, Math.min(1, (clientX - r.left) / r.width));
+    return Math.round(t.max * share / 1000) * 1000;
+  }
+
   document.addEventListener("click", function(e){
+    // Засечка перехватывает клик сама — на пустом месте шкалы берём долю.
+    const rail = e.target.closest && e.target.closest("#rc-rail");
+    if (rail && !e.target.closest(".rail-stop")){
+      applyBudget(budgetFromRail(rail, e.clientX));
+      return;
+    }
     const tier = e.target.closest && e.target.closest("#result-controls .rc-tier");
     if (tier){
       const fixed = document.querySelector('input[name="budget_mode"][value="fixed"]');
@@ -7736,36 +7944,62 @@ window.PLANNER_ASSET_BASE = (function () {
 
     // Per-format breakdown
     const fs = detail?.formatStats || {};
+    const fsByRegion = detail?.formatStatsByRegion || {};
 
     const esc = s => String(s||"").replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+    const DASH = String.fromCharCode(8212);
+    const NBSP = String.fromCharCode(160);
 
     // Доля бюджета формата пропорциональна «экраны x стоимость выхода» —
     // тому же произведению, по которому бюджет и раскладывается в расчёте.
-    const fmtEntries = Object.entries(fs).map(([fmtName, fd]) => ({
-      fmtName, fd, w: (Number(fd.screens) || 0) * (Number(fd.costPerPlay) || 0)
-    }));
-    const wSum = fmtEntries.reduce((a, x) => a + x.w, 0);
+    function fmtRows(stats){
+      const entries = Object.entries(stats).map(([fmtName, fd]) => ({
+        fmtName, fd, w: (Number(fd.screens) || 0) * (Number(fd.costPerPlay) || 0)
+      }));
+      const wSum = entries.reduce((acc, x) => acc + x.w, 0);
+      return entries
+        .sort((x, y) => (y.w - x.w) || (y.fd.screens - x.fd.screens))
+        .map(({ fmtName, fd, w }) => {
+          // Слева форматы называются по-человечески (FORMAT_LABELS), а сюда
+          // приходил сырой код из данных: «PVZ_SCREEN» вместо «Экраны в ПВЗ».
+          const label = (window.FORMAT_LABELS?.[fmtName]?.label) || fmtName;
+          const ots  = fd.otsPerPlay  != null ? fmtInt(fd.otsPerPlay) : DASH;
+          const cost = fd.costPerPlay != null
+            ? Number(fd.costPerPlay).toLocaleString("ru-RU", { maximumFractionDigits: 2 })
+            : DASH;
+          const share = wSum > 0 ? (w / wSum * 100) : 0;
+          const shareTxt = share >= 1 ? Math.round(share) + NBSP + "%" : "<1" + NBSP + "%";
+          const barW = Math.max(1, Math.round(share * 0.8));
+          return "<tr><td>" + esc(label) + "</td>"
+            + "<td>" + fmtInt(fd.screens) + "</td>"
+            + "<td><span class='ux-bar' style='width:" + barW + "px'></span>" + shareTxt + "</td>"
+            + "<td>" + cost + "</td>"
+            + "<td>" + ots + "</td></tr>";
+        }).join("");
+    }
 
-    const formatRows = fmtEntries
-      .sort((a,b) => (b.w - a.w) || (b.fd.screens - a.fd.screens))
-      .map(({ fmtName, fd, w }) => {
-        // Слева форматы называются по-человечески (FORMAT_LABELS), а сюда
-        // приходил сырой код из данных: «PVZ_SCREEN» вместо «Экраны в ПВЗ».
-        const fmtLabel = (window.FORMAT_LABELS?.[fmtName]?.label) || fmtName;
-        const DASH = String.fromCharCode(8212);
-        const NBSP = String.fromCharCode(160);
-        const otsPerPlay  = fd.otsPerPlay  != null ? fmtInt(fd.otsPerPlay) : DASH;
-        const costPerPlay = fd.costPerPlay != null
-          ? Number(fd.costPerPlay).toLocaleString("ru-RU", { maximumFractionDigits: 2 })
-          : DASH;
-        const share = wSum > 0 ? (w / wSum * 100) : 0;
-        const shareTxt = share >= 1 ? Math.round(share) + NBSP + "%" : "<1" + NBSP + "%";
-        const barW = Math.max(1, Math.round(share * 0.8));
-        return "<tr><td>" + esc(fmtLabel) + "</td>"
-          + "<td>" + fmtInt(fd.screens) + "</td>"
-          + "<td><span class='ux-bar' style='width:" + barW + "px'></span>" + shareTxt + "</td>"
-          + "<td>" + costPerPlay + "</td>"
-          + "<td>" + otsPerPlay + "</td></tr>";
+    // Итоговая строка: та же арифметика, что и в ленте метрик.
+    function fmtFoot(label, screens, budget, plays, ots){
+      const cost = (budget > 0 && plays > 0)
+        ? (budget / plays).toLocaleString("ru-RU", { maximumFractionDigits: 2 }) : DASH;
+      return "<tr><td>" + esc(label) + "</td><td>" + fmtInt(screens) + "</td>"
+        + "<td>" + fmtMoney(budget) + "</td><td>" + cost + "</td>"
+        + "<td>" + ((ots && plays) ? fmtInt(ots / plays) : DASH) + "</td></tr>";
+    }
+
+    const formatRows = fmtRows(fs);
+
+    // Тот же вид, но по городам: клиент спрашивает не «сколько стоит
+    // билборд вообще», а «сколько стоит билборд в Казани».
+    const regionNames = Object.keys(fsByRegion);
+    const formatRowsByRegion = regionNames.length < 2 ? "" : regionNames
+      .sort((x, y) => (fsByRegion[y].budget || 0) - (fsByRegion[x].budget || 0))
+      .map(rn => {
+        const r = fsByRegion[rn];
+        return "<tr class='ux-tbl-group'><td colspan=5>" + esc(rn)
+          + "<span>" + fmtInt(r.screens) + " экр. " + String.fromCharCode(183) + " "
+          + fmtMoney(r.budget) + "</span></td></tr>"
+          + fmtRows(r.formats);
       }).join("");
 
     root.innerHTML = \`
@@ -7793,24 +8027,25 @@ window.PLANNER_ASSET_BASE = (function () {
 
         \${formatRows ? \`
         <div class="ps-card">
-          <div class="ps-title">По форматам</div>
-          <div class="ps-sub">Доля бюджета, стоимость выхода и охват</div>
+          <div class="ps-head">
+            <div>
+              <div class="ps-title">По форматам</div>
+              <div class="ps-sub">Доля бюджета, стоимость выхода и охват</div>
+            </div>
+            \${formatRowsByRegion ? \`<div class="ux-seg" id="fmt-scope">
+              <button type="button" data-scope="all" aria-pressed="true">Все города</button>
+              <button type="button" data-scope="region" aria-pressed="false">По городам</button>
+            </div>\` : ""}
+          </div>
           <div class="ux-tbl-wrap" style="margin-top:12px;">
-            <table class="ux-tbl">
+            <table class="ux-tbl" id="fmt-table" data-scope="all">
               <thead><tr>
                 <th>Формат</th><th>Экр.</th><th>Доля бюджета</th>
                 <th>Выход, \u20BD</th><th>OTS / выход</th>
               </tr></thead>
-              <tbody>\${formatRows}</tbody>
-              <tfoot><tr>
-                <td>Итого</td>
-                <td>\${fmtInt(totalScreens)}</td>
-                <td>\${fmtMoney(totalBudget)}</td>
-                <td>\${(totalBudget > 0 && totalPlays > 0)
-                     ? (totalBudget / totalPlays).toLocaleString("ru-RU", { maximumFractionDigits: 2 })
-                     : "\u2014"}</td>
-                <td>\${(otsTotal && totalPlays) ? fmtInt(otsTotal / totalPlays) : "\u2014"}</td>
-              </tr></tfoot>
+              <tbody class="scope-all">\${formatRows}</tbody>
+              <tbody class="scope-region">\${formatRowsByRegion}</tbody>
+              <tfoot class="scope-all">\${fmtFoot("Итого", totalScreens, totalBudget, totalPlays, otsTotal)}</tfoot>
             </table>
           </div>
         </div>\` : ""}

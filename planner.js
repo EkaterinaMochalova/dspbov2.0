@@ -5534,8 +5534,9 @@ async function onCalcClick() {
   //            = бюджет × кол-во_ф / Σ(кол-во × ставка)
   // и в сумме по форматам это бюджет / средняя ставка, то есть ровно тот общий
   // объём выходов, который посчитан выше.
+  function buildFormatStats(screens, budgetTotal, playsTotal) {
   const formatStats = {};
-  for (const s of chosenAll) {
+  for (const s of screens) {
     const fmt = s.format || "—";
     if (!formatStats[fmt]) {
       formatStats[fmt] = {
@@ -5574,15 +5575,33 @@ async function onCalcClick() {
     for (const f of fmtKeys) {
       const fd = formatStats[f];
       if (bidWeight > 0 && fd.avgBid > 0) {
-        fd.budget   = totalBudgetFinal * (fd.screens * fd.avgBid) / bidWeight;
+        fd.budget   = budgetTotal * (fd.screens * fd.avgBid) / bidWeight;
         fd.playsEst = fd.budget / fd.avgBid;
       } else {
         // Ни у одного формата нет ставки — делим поровну по экранам, как раньше.
-        const share = chosenAll.length > 0 ? fd.screens / chosenAll.length : 0;
-        fd.budget   = totalBudgetFinal * share;
-        fd.playsEst = totalPlaysEffectiveAll * share;
+        const share = screens.length > 0 ? fd.screens / screens.length : 0;
+        fd.budget   = budgetTotal * share;
+        fd.playsEst = playsTotal * share;
       }
     }
+  }
+  return formatStats;
+  }
+
+  const formatStats = buildFormatStats(chosenAll, totalBudgetFinal, totalPlaysEffectiveAll);
+
+  // То же самое внутри каждого города: бюджет и выходы берём из строки
+  // региона, чтобы столбцы сходились с тем, что показано «По регионам».
+  const formatStatsByRegion = {};
+  for (const row of perRegionRows) {
+    const scr = chosenAll.filter(x => screenMatchesGeoChoice(x, row.region));
+    if (!scr.length) continue;
+    formatStatsByRegion[row.region] = {
+      screens: scr.length,
+      budget: row.budget,
+      plays: row.plays,
+      formats: buildFormatStats(scr, row.budget, row.plays),
+    };
   }
 
   window.PLANNER = window.PLANNER || {};
@@ -5592,6 +5611,7 @@ async function onCalcClick() {
     perRegion: perRegionRows,
     warnings: warnings || [],
     formatStats,
+    formatStatsByRegion,
     meta: {
       days,
       hpd,
@@ -5696,7 +5716,7 @@ ${perRegionText}`
 
   window.dispatchEvent(new CustomEvent("planner:calc-done", {
     detail: { chosen: chosenAll, perRegion: perRegionRows, warnings, inputBudget: brief.budget.amount,
-              formatStats, meta: window.PLANNER.lastCalc.meta, unmatchedGids }
+              formatStats, formatStatsByRegion, meta: window.PLANNER.lastCalc.meta, unmatchedGids }
   }));
 
   setStatus("");
