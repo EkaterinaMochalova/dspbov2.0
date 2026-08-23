@@ -628,7 +628,7 @@ window.PLANNER_ASSET_BASE = (function () {
     margin-bottom: 16px;
     position: sticky;
     top: 12px;
-    z-index: 20;
+    z-index: 60;
     background: rgba(255,255,255,0.94);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
@@ -2130,6 +2130,12 @@ window.PLANNER_ASSET_BASE = (function () {
     const w = document.getElementById("planner-widget");
     if (!w) return;
     w.dataset.phase = (phase === "result") ? "result" : "brief";
+    // Состав программы фиксируется на выходе из брифа и отпускается на входе
+    // в него: пересчёты на экране результата работают внутри отобранной АП,
+    // а новый бриф собирает её заново.
+    const pl = window.PLANNER;
+    if (phase === "result") pl?.freezeAp?.();
+    else pl?.unfreezeAp?.();
     const bar = document.getElementById("brief-bar");
     if (bar) bar.style.display = (phase === "result") ? "flex" : "none";
     if (typeof window.renderBriefBar === "function") window.renderBriefBar();
@@ -3306,7 +3312,7 @@ window.PLANNER_ASSET_BASE = (function () {
     if (!active && now > 0) items.push({ k: "now", t: "Сейчас", v: now });
     if (!active) active = "now";
     return '<div class="rc-card"><div class="rc-head"><b>Уровень бюджета</b>' +
-      '<span>пересобирает программу на месте — прогноз ставок уже в кэше</span></div>' +
+      '<span>пересобирает в пределах отобранной адрески — новых экранов не добавит</span></div>' +
       '<div class="rc-tiers">' + items.map(x =>
         '<button type="button" class="rc-tier" data-sum="' + Math.round(x.v) + '"' +
         ' aria-pressed="' + (x.k === active) + '">' +
@@ -6849,7 +6855,9 @@ window.PLANNER_ASSET_BASE = (function () {
   runScript(`
 (function(){
   function el(id){ return document.getElementById(id); }
-  function fmtSec(ms){ return Math.round(ms / 1000) + " сек"; }
+  // Ноль приходит из инвентаря отдельной длительностью, но означает не
+  // «ролик на ноль секунд», а «без привязки»: экран берётся по базовой ставке.
+  function fmtSec(ms){ return ms > 0 ? Math.round(ms / 1000) + " сек" : "Любая"; }
 
   function collectDurations(){
     var st = window.PLANNER && window.PLANNER.state;
@@ -6899,6 +6907,9 @@ window.PLANNER_ASSET_BASE = (function () {
         var on = e.target.checked;
         var next = st.selectedDurationsMs.filter(function(v){ return v !== ms; });
         if (on) next.push(ms);
+        // «Любая» и конкретные длительности взаимоисключающи: смешивать
+        // базовую ставку со ставками за ролик бессмысленно.
+        if (on) next = (ms === 0) ? [0] : next.filter(function(v){ return v !== 0; });
         // Снять последнюю галку нельзя: без длительности ставку не посчитать.
         if (!next.length) {
           e.target.checked = true;

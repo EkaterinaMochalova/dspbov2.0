@@ -392,6 +392,11 @@ const state = {
   selectedRegion: null, // ✅ обратная совместимость
   lastChosen: [],
   manuallyExcluded: new Set(), // screens manually removed from map — persists across recalcs
+  // Адресная программа, зафиксированная после расчёта. Пока она не пуста,
+  // пересчёт (смена уровня бюджета, частоты, ручные правки) работает строго
+  // внутри неё и не добирает новых экранов из пула. Сбрасывается при возврате
+  // в бриф — новый бриф собирает программу заново.
+  apFrozenIds: null,
 
   // Owners (optional)
   ownersAll: [],          // ✅ список операторов
@@ -2195,6 +2200,13 @@ function replaceScreen(screenId) {
   const replacement = candidates[0];
   chosen.splice(idx, 1, replacement);
 
+  // Замена вручную — единственный законный способ пополнить замороженную
+  // программу: иначе следующий пересчёт выкинет подставленный экран.
+  if (state.apFrozenIds) {
+    state.apFrozenIds.delete(_screenIdOf(old));
+    state.apFrozenIds.add(_screenIdOf(replacement));
+  }
+
   window.dispatchEvent(new CustomEvent("planner:screen-replaced", {
     detail: { removed: old, added: replacement }
   }));
@@ -2219,6 +2231,31 @@ function _saveExcluded(set) {
 // Restore on load so recalc after page refresh still respects exclusions
 if (!state.manuallyExcluded || !state.manuallyExcluded.size) {
   state.manuallyExcluded = _loadExcluded();
+}
+
+// ===== ЗАМОРОЗКА АДРЕСНОЙ ПРОГРАММЫ =====
+// После расчёта состав экранов зафиксирован. Иначе смена уровня бюджета
+// пересобирала бы программу с нуля: цель уезжала быстрее, чем до неё
+// доходишь (максимум считается по ёмкости отобранной АП, а АП растёт
+// вместе с бюджетом), да и просто подменять экраны под пользователем нельзя.
+function freezeAp() {
+  // Уже зафиксирована — не перезаписываем. Пересчёт на минимуме отбирает
+  // меньше экранов, и повторная заморозка по его результату сделала бы
+  // сжатие необратимым: обратно к максимуму было бы уже не из чего собирать.
+  if (isApFrozen()) return true;
+  const chosen = Array.isArray(state.lastChosen) ? state.lastChosen : [];
+  const ids = chosen.map(_screenIdOf).filter(Boolean);
+  if (!ids.length) return false;
+  state.apFrozenIds = new Set(ids);
+  return true;
+}
+
+function unfreezeAp() {
+  state.apFrozenIds = null;
+}
+
+function isApFrozen() {
+  return !!(state.apFrozenIds && state.apFrozenIds.size);
 }
 
 // Remove a chosen screen (no replacement)
@@ -4446,6 +4483,13 @@ async function onCalcClick() {
     // операторам и зоне. Иначе выбор одного формата ронял бы регион в младший
     // тир и занижал и рекомендацию бюджета, и его долю при распределении.
     const tier = getTierForGeo(region, pool);
+
+    // Программа зафиксирована — пересобираем в её пределах. Режем после
+    // расчёта тира: тир считается по всему инвентарю региона, иначе он
+    // упал бы вместе с размером отобранной программы.
+    if (state.apFrozenIds && state.apFrozenIds.size) {
+      pool = pool.filter(s => state.apFrozenIds.has(_screenIdOf(s)));
+    }
 
     if (!pool.length) {
       console.warn("[DSP] empty pool at region step", {
@@ -6964,9 +7008,14 @@ function computeRecoBudgetTiers() {
     const tier = getTierForGeo(regionKey, regionAll);
 
     // Максимум — это вся ёмкость адресной программы: 30 вых/час на экран
-    // (8 для медиафасадов) по выбранной ставке. Если расчёт уже был, берём
-    // отобранную АП; до расчёта её ещё нет, и считаем по доступному пулу.
-    const chosen = Array.isArray(state.lastChosen) ? state.lastChosen : null;
+    // (8 для медиафасадов) по выбранной ставке. Считаем от зафиксированной
+    // программы: lastChosen после расчёта на минимуме короче неё, и суммы
+    // уровней прыгали бы после каждого переключения. До расчёта программы
+    // ещё нет — берём доступный пул.
+    const frozen = (state.apFrozenIds && state.apFrozenIds.size && Array.isArray(state.screensAll))
+      ? state.screensAll.filter(s => state.apFrozenIds.has(_screenIdOf(s)))
+      : null;
+    const chosen = frozen || (Array.isArray(state.lastChosen) ? state.lastChosen : null);
     const apForRegion = chosen
       ? chosen.filter(s => screenMatchesGeoChoice(s, region))
       : null;
@@ -7587,7 +7636,7 @@ function _durationRatioForScreen(s, durationMs) {
 // (s._durSlots), который учитывает avgEffectiveBid.
 function applySelectedDurations(durationsMs) {
   const list = (Array.isArray(durationsMs) ? durationsMs : [durationsMs])
-    .map(Number).filter(v => Number.isFinite(v) && v > 0)
+    .map(Number).filter(v => Number.isFinite(v) && v >= 0)
     .sort((a, b) => a - b);
 
   state.selectedDurationsMs = list;
@@ -8120,6 +8169,9 @@ Object.assign(window.PLANNER, {
   countScreensInPolygon,
   replaceScreen,
   removeScreen,
+  freezeAp,
+  unfreezeAp,
+  isApFrozen,
   downloadMapHtml,
   buildMapHtml,
 });
