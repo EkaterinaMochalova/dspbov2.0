@@ -187,7 +187,7 @@ window.PLANNER_ASSET_BASE = (function () {
 }
 
 
-  #planner-widget.planner-root{ max-width:980px; margin:0 auto; font-family: Inter, Arial, sans-serif; }
+  #planner-widget.planner-root{ max-width:980px; margin:0 auto; font-family: var(--ux-font); }
   /* Font inheritance reset — browsers don't inherit font into button/input by default */
   #planner-widget button, #planner-widget input, #planner-widget select, #planner-widget textarea{
     font-family: inherit;
@@ -306,7 +306,7 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .dl-settings-row:last-child{ margin-bottom:0; }
   #planner-widget .dl-settings-row input{ margin-top:2px;accent-color:var(--ux-accent);flex-shrink:0; }
   #planner-widget .planner-status{ margin-top:10px; font-size:14px; color:var(--ux-text2); }
-  #planner-map.planner-map{ height:420px; width:100%; border-radius:12px; overflow:hidden; border:1px solid var(--ux-line); font-family: Inter, Arial, sans-serif; }
+  #planner-map.planner-map{ height:420px; width:100%; border-radius:12px; overflow:hidden; border:1px solid var(--ux-line); font-family: var(--ux-font); }
 
   #planner-widget .wiz-step{ display:none; }
   #planner-widget .wiz-step.active{ display:block; }
@@ -1208,7 +1208,7 @@ window.PLANNER_ASSET_BASE = (function () {
     border:1px solid var(--ux-line); border-radius:8px; font-size:12px; line-height:1.5;
   }
   #planner-widget .rc-apply{
-    margin-top:9px; font:600 12px Inter,Arial,sans-serif; border-radius:8px;
+    margin-top:9px; font:600 12px var(--ux-font); border-radius:8px;
     padding:7px 14px; cursor:pointer; border:1.5px solid var(--ux-accent);
     background:var(--ux-accent); color:#fff;
   }
@@ -3859,8 +3859,11 @@ window.PLANNER_ASSET_BASE = (function () {
     // Частота — вторая шкала того же рычага, поэтому вкладываем её
     // внутрь карточки рейки, а не ставим отдельной панелью.
     const html = renderTiers(host);
+    // Без регулярки: обратный слэш внутри неё съедает внешний шаблон, и
+    // /<\/div>$/ приезжает в new Function уже сломанной — весь блок падает.
+    const CLOSE = "</div>";
     host.innerHTML = html
-      ? html.replace(/<\/div>$/, renderWhatIf(pl) + "</div>")
+      ? html.slice(0, -CLOSE.length) + renderWhatIf(pl) + CLOSE
       : renderWhatIf(pl);
     paint(planPph(pl));
   };
@@ -7252,7 +7255,7 @@ window.PLANNER_ASSET_BASE = (function () {
         const barW = Math.max(1, Math.round(share * 0.8));
         return "<tr><td>" + esc(fmtLabel) + "</td>"
           + "<td>" + fmtInt(fd.screens) + "</td>"
-          + "<td><span class=\"ux-bar\" style=\"width:" + barW + "px\"></span>" + shareTxt + "</td>"
+          + "<td><span class='ux-bar' style='width:" + barW + "px'></span>" + shareTxt + "</td>"
           + "<td>" + costPerPlay + "</td>"
           + "<td>" + otsPerPlay + "</td></tr>";
       }).join("");
