@@ -4266,18 +4266,9 @@ window.PLANNER_ASSET_BASE = (function () {
   // выносится в заголовок — «Любая», «все 14», «обе». Раскрывать, чтобы
   // убедиться, что ничего не задано, больше не нужно.
   const FOLDABLE = [
-    { id: "step4-strategy-block", t: "Стратегия подбора", v: () => {
-        const m = document.querySelector('input[name="reach_mode"]:checked')?.value;
-        const map = { max_reach: "Охват", balanced: "Баланс", max_freq: "Частота" };
-        return [map[m] || "Охват", false];
-      } },
-    { id: "constructions-block", t: "Количество экранов", v: () => {
+    { id: "constructions-block", t: "Разбивка количества по форматам и городам", v: () => {
         const on = !!el("constructions-enabled")?.checked;
-        return on ? [(el("constructions-count")?.value || "?") + " экр", true] : ["по стратегии", false];
-      } },
-    { id: "frequency-block", t: "Частота показов", v: () => {
-        const on = !!el("constructions-enabled")?.checked;
-        return on ? [(el("constructions-ppm")?.value || "?") + " вых/час", true] : ["по стратегии", false];
+        return on ? [(el("constructions-count")?.value || "?") + " экр", true] : ["не задана", false];
       } },
     { id: "duration-block", t: "Длительность ролика", v: () => {
         const list = window.PLANNER?.state?.selectedDurationsMs;
@@ -4383,6 +4374,12 @@ window.PLANNER_ASSET_BASE = (function () {
         else console.warn("[layout] блок не найден:", id);
       }
     }
+    // Ось наверху повторяет эти два блока целиком. Прячем, но не удаляем:
+    // расчёт читает reach_mode и constructions-ppm именно отсюда.
+    ["step4-strategy-block", "frequency-block"].forEach(id => {
+      const b = el(id);
+      if (b) b.style.display = "none";
+    });
     foldOptionalBlocks();
 
     // «Доступный инвентарь» — над шагами, чтобы пул было видно и на отборе
