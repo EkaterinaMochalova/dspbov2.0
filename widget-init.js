@@ -2548,6 +2548,20 @@ window.PLANNER_ASSET_BASE = (function () {
     font-size:19px; font-weight:600; white-space:nowrap;
   }
   #planner-widget .rail{ position:relative; height:76px; margin:0 2px; }
+  #planner-widget .ap-frozen{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    margin-top:8px; padding:8px 10px; font-size:12px;
+    color:var(--ux-warn); background:var(--ux-warn-bg);
+    border:1px solid var(--ux-warn-line); border-radius:var(--ux-radius-xs);
+  }
+  #planner-widget .ap-frozen b{ font-weight:600; }
+  #planner-widget .ap-refreeze{
+    margin-left:auto; font:inherit; font-weight:600; cursor:pointer;
+    padding:4px 10px; border-radius:var(--ux-radius-xs);
+    color:var(--ux-accent-ink); background:var(--ux-bg);
+    border:1px solid var(--ux-accent-line);
+  }
+  #planner-widget .ap-refreeze:hover{ background:var(--ux-accent-soft); }
   /* Сумма подставлена по уровню — показывать её мы не обещали. */
   #planner-widget #budget-input[data-from-tier="1"]{ color:transparent; }
   #planner-widget .rail-track{
@@ -2831,12 +2845,11 @@ window.PLANNER_ASSET_BASE = (function () {
     const w = document.getElementById("planner-widget");
     if (!w) return;
     w.dataset.phase = (phase === "result") ? "result" : "brief";
-    // Состав программы фиксируется на выходе из брифа и отпускается на входе
-    // в него: пересчёты на экране результата работают внутри отобранной АП,
-    // а новый бриф собирает её заново.
-    const pl = window.PLANNER;
-    if (phase === "result") pl?.freezeAp?.();
-    else pl?.unfreezeAp?.();
+    // Состав программы фиксируется первым расчётом и держится, пока его не
+    // отпустят кнопкой «Пересобрать». Возврат в бриф фиксацию не снимает:
+    // иначе базой для уровней бюджета становилась прошлая адреска, каждый
+    // пересчёт делал её короче, а минимум — ниже, и так без дна.
+    if (phase === "result") window.PLANNER?.freezeAp?.();
     const bar = document.getElementById("brief-bar");
     if (bar) bar.style.display = (phase === "result") ? "flex" : "none";
     if (typeof window.renderBriefBar === "function") window.renderBriefBar();
@@ -3304,6 +3317,9 @@ window.PLANNER_ASSET_BASE = (function () {
         <div id="wiz-step-3-body"></div>
         <button id="calc-btn" class="ux-primary" disabled>Рассчитать</button>
         <div id="calc-blocked-hint" role="alert" style="display:none; margin-top:8px; font-size:12px; color:#c62828; padding:6px 10px; background:#fff5f5; border-radius:8px;"></div>
+        <!-- Пока адреска зафиксирована, расчёт идёт внутри неё: новые регионы
+             и форматы в неё не попадут, пока её не пересоберут. -->
+        <div id="ap-frozen-note" style="display:none;"></div>
         <div id="status" class="planner-status"></div>
         <div class="wiz-nav" style="margin-top:12px;">
           <button type="button" class="wiz-btn ghost" id="wiz-back-3">← Адреска</button>
@@ -4399,8 +4415,9 @@ window.PLANNER_ASSET_BASE = (function () {
       '<div class="rail-track"></div>' +
       '<div class="rail-fill" style="width:' + nowPct.toFixed(2) + '%"></div>' +
       stops + '</div>' +
-      '<p class="rail-cap"><span>Шкала \u2014 ёмкость отобранных ' + RU(pl ? pl.screens : 0) +
-      ' экранов: 30 выходов в час, 8 у медиафасадов.</span>' +
+      '<p class="rail-cap"><span>Уровни считаются в пределах отобранных ' + RU(pl ? pl.screens : 0) +
+      ' экранов, а не по всему инвентарю: 30 выходов в час, 8 у медиафасадов.' +
+      ' В брифе, до сборки адрески, они выше.</span>' +
       '<span>Занято ' + Math.round(nowPct) + '\u00A0%</span></p>' +
       '</div>';
   }
@@ -5415,7 +5432,35 @@ window.PLANNER_ASSET_BASE = (function () {
         }
       }
     }
+    renderApFrozenNote();
   }
+
+  // Фиксация адрески — состояние неочевидное: расчёт молча идёт внутри
+  // отобранных экранов, и добавленный в брифе регион в него не попадёт.
+  // Поэтому говорим об этом прямо и рядом даём способ отпустить.
+  function renderApFrozenNote(){
+    const box = el("ap-frozen-note");
+    if (!box) return;
+    const size = window.PLANNER?.state?.apFrozenIds?.size || 0;
+    if (!size){ box.style.display = "none"; box.innerHTML = ""; return; }
+    box.style.display = "block";
+    box.innerHTML = "<div class='ap-frozen'><span>Адреска зафиксирована: <b>"
+      + size + "</b> экр. Пересчёт идёт внутри неё, новые регионы и форматы"
+      + " в неё не попадут.</span>"
+      + "<button type='button' class='ap-refreeze' id='ap-refreeze-btn'>"
+      + "Пересобрать адреску</button></div>";
+  }
+  window.renderApFrozenNote = renderApFrozenNote;
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest || !e.target.closest("#ap-refreeze-btn")) return;
+    window.PLANNER?.unfreezeAp?.();
+    renderApFrozenNote();
+    // Уровни считаются долей от ёмкости базы, а база только что сменилась.
+    if (typeof window.renderBudgetTiers === "function") window.renderBudgetTiers();
+    if (typeof window.renderResultControls === "function") window.renderResultControls();
+    renderProgress();
+  });
 
   // делаем доступным другим скриптам (formats/и т.п.)
   window.renderProgress = renderProgress;
@@ -9591,10 +9636,21 @@ window.PLANNER_ASSET_BASE = (function () {
   if (!floatBtn || !calcBtn) return;
 
   let hideTimer = null;
+  // Есть несохранённые правки брифа. Пока их нет, плавающей кнопке
+  // показываться не с чем.
+  let pending = false;
+
+  // Основная кнопка на экране — плавающая была бы её дублем в двух
+  // сантиметрах. Именно на это и жаловались.
+  function calcBtnOnScreen() {
+    const r = calcBtn.getBoundingClientRect();
+    if (!r.width && !r.height) return false;
+    return r.bottom > 0 && r.top < window.innerHeight;
+  }
 
   function showFloat(targetEl) {
     if (!window.PLANNER?.lastCalc) return; // только после первого расчёта
-    clearTimeout(hideTimer);
+    pending = true;
 
     // Позиционируем по Y-центру изменённого элемента, прижимаем к правому краю
     if (targetEl) {
@@ -9604,15 +9660,29 @@ window.PLANNER_ASSET_BASE = (function () {
       const clampedY = Math.max(60, Math.min(window.innerHeight - 60, y));
       floatBtn.style.top = clampedY + "px";
     }
+    sync();
+  }
 
-    floatBtn.style.display = "flex";
-    floatBtn.style.opacity = "1";
+  // Решение о видимости в одном месте: его пересматривает и правка брифа,
+  // и прокрутка — основная кнопка уезжает с экрана и возвращается.
+  function sync() {
+    if (pending && !calcBtnOnScreen()) {
+      clearTimeout(hideTimer);
+      floatBtn.style.display = "flex";
+      floatBtn.style.opacity = "1";
+    } else {
+      hideFloat();
+    }
   }
 
   function hideFloat() {
+    if (floatBtn.style.display === "none") return;
     floatBtn.style.opacity = "0";
     hideTimer = setTimeout(() => { floatBtn.style.display = "none"; }, 200);
   }
+
+  window.addEventListener("scroll", sync, { passive: true });
+  window.addEventListener("resize", sync);
 
   // Слушаем любые изменения внутри виджета
   const widget = document.getElementById("planner-widget");
@@ -9626,12 +9696,13 @@ window.PLANNER_ASSET_BASE = (function () {
 
   // Клик по плавающей кнопке -- запускаем расчёт
   floatBtn.addEventListener("click", () => {
+    pending = false;
     hideFloat();
     calcBtn.click();
   });
 
   // После завершения расчёта -- скрываем кнопку
-  window.addEventListener("planner:calc-done", hideFloat);
+  window.addEventListener("planner:calc-done", () => { pending = false; hideFloat(); });
 })();
 `);
 
