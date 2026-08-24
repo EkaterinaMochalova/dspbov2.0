@@ -214,7 +214,6 @@ window.PLANNER_ASSET_BASE = (function () {
 
   #planner-widget[data-phase="brief"]  .planner-right{ display:none; }
   #planner-widget[data-phase="result"] .planner-left,
-  #planner-widget[data-phase="result"] #progress-checklist{ display:none; }
 
   /* ===== РЕЗУЛЬТАТ ВО ВСЮ ШИРИНУ ===== */
   /* Ленту фотографий сеткой НЕ раскладываем: карточек бывает 600+, и сетка по
@@ -2548,6 +2547,15 @@ window.PLANNER_ASSET_BASE = (function () {
     font-size:19px; font-weight:600; white-space:nowrap;
   }
   #planner-widget .rail{ position:relative; height:76px; margin:0 2px; }
+  #planner-widget .brief-chip.reset{
+    border-color:var(--ux-accent-line); color:var(--ux-accent-ink);
+    background:var(--ux-accent-soft); font-weight:600;
+  }
+  #planner-widget .brief-chip.reset:hover{ background:var(--ux-bg); }
+  #planner-widget .rail-track, #planner-widget .rail-fill{ cursor:pointer; }
+  #planner-widget[data-calc="busy"] .rail-track,
+  #planner-widget[data-calc="busy"] .rail-fill,
+  #planner-widget[data-calc="busy"] .rail-stop .pip{ cursor:progress; }
   #planner-widget .ap-frozen{
     display:flex; align-items:center; gap:10px; flex-wrap:wrap;
     margin-top:8px; padding:8px 10px; font-size:12px;
@@ -2572,7 +2580,16 @@ window.PLANNER_ASSET_BASE = (function () {
     position:absolute; left:0; top:34px; height:8px; border-radius:999px;
     background:var(--ux-accent);
   }
-  #planner-widget .rail-stop{ position:absolute; top:0; transform:translateX(-50%); text-align:center; }
+  #planner-widget .rail-stop{
+    position:absolute; top:0; transform:translateX(-50%); text-align:center;
+    pointer-events:none;
+  }
+  /* Нажимается только риска: подписи — легенда, а не кнопки. */
+  #planner-widget .rail-stop .pip{ pointer-events:auto; position:relative; }
+  #planner-widget .rail-stop .pip::after{
+    content:""; position:absolute; left:50%; top:-8px; bottom:-8px;
+    width:26px; transform:translateX(-50%);
+  }
   #planner-widget .rail-stop .hit{
     display:block; width:100%; font:inherit; background:none; border:0;
     cursor:pointer; padding:0; color:inherit;
@@ -2937,7 +2954,6 @@ window.PLANNER_ASSET_BASE = (function () {
     </div>
     <div id="calc-history-list" class="calc-history-list" style="display:none; flex-direction:column;"></div>
   </div>
-  <div id="progress-checklist" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;"></div>
   <!-- Строка брифа: видна только в фазе результата, собирается из состояния. -->
   <div id="brief-bar" class="brief-bar" style="display:none;"></div>
   <div class="planner-grid">
@@ -4000,6 +4016,9 @@ window.PLANNER_ASSET_BASE = (function () {
     if (bid) main.push(chip(5, "Ставка", bid.value === "min" ? "Минимальная" : "Рекомендованная"));
 
     main.push('<button type="button" class="brief-chip edit" data-step="1">Править бриф</button>');
+    main.push('<button type="button" class="brief-chip reset" data-reset="1"' +
+      ' title="Очистить регионы и отпустить адреску. Период, форматы и ставку оставим">' +
+      'Новый город</button>');
 
     // --- вторая строка: что из необязательного включено ---
     const extra = [];
@@ -4029,10 +4048,37 @@ window.PLANNER_ASSET_BASE = (function () {
   // Делегирование: чипы перерисовываются целиком, свои слушатели вешать некуда.
   document.addEventListener("click", function(e){
     const c = e.target.closest && e.target.closest("#brief-bar .brief-chip");
-    if (!c) return;
+    if (!c || c.dataset.reset) return;
     if (window.PLANNER_UI && window.PLANNER_UI.setPhase) window.PLANNER_UI.setPhase("brief");
     const step = Number(c.dataset.step || 1);
     if (typeof window.setStep === "function") window.setStep(step);
+  });
+
+  document.addEventListener("click", function(e){
+    const b = e.target.closest && e.target.closest("#brief-bar .brief-chip[data-reset]");
+    if (!b) return;
+
+    // Регионы чистим существующей кнопкой: она же дёргает перерисовку
+    // форматов и пула, повторять это здесь незачем.
+    el("regions-clear")?.click();
+    window.PLANNER?.unfreezeAp?.();
+
+    const host = el("budget-tier-btns");
+    if (host){ host.dataset.pending = ""; host.dataset.own = ""; }
+    const inp = el("budget-input");
+    if (inp){
+      inp.disabled = false;
+      delete inp.dataset.fromTier;
+      inp.value = "";
+      inp.dispatchEvent(new Event("input", { bubbles: true }));
+      inp.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    if (window.PLANNER_UI && window.PLANNER_UI.setPhase) window.PLANNER_UI.setPhase("brief");
+    if (typeof window.setStep === "function") window.setStep(1);
+    if (typeof window.renderBudgetTiers === "function") window.renderBudgetTiers();
+    if (typeof window.renderApFrozenNote === "function") window.renderApFrozenNote();
+    if (typeof window.renderProgress === "function") window.renderProgress();
   });
 })();
 `);
@@ -4062,21 +4108,13 @@ window.PLANNER_ASSET_BASE = (function () {
   const el = (id) => document.getElementById(id);
   const money = (v) => Math.round(v).toLocaleString("ru-RU") + " \u20BD";
 
-  // Пока расчёта не было, уровни считались бы от всего пула, а не от
-  // отобранной адрески — то есть показали бы не те суммы, которые выйдут.
-  // Поэтому число появляется только после первого расчёта.
-  function tiersAreReal(){ return !!(window.PLANNER && window.PLANNER.lastCalc); }
-
-
   function render(){
     const host = el("budget-tier-btns");
     if (!host) return;
     const t = window.PLANNER?.computeRecoBudgetTiers?.();
     if (!t || !t.max){ host.style.display = "none"; return; }
 
-    const real = tiersAreReal();
-    const own = Number(el("budget-input")?.value || 0);
-    const pending = el("budget-tier-btns").dataset.pending || "";
+    const pending = host.dataset.pending || "";
     const items = [
       { k: "min", t: "Минимум",     v: t.min },
       { k: "opt", t: "Оптимальный", v: t.optimal },
@@ -4086,21 +4124,15 @@ window.PLANNER_ASSET_BASE = (function () {
 
     host.style.display = "grid";
     host.innerHTML = items.map(x => {
-      const on = real
-        ? (own > 0 && Math.abs(x.v - own) <= Math.max(1, x.v * 0.005))
-        : (pending === x.k);
-      const val = real ? money(x.v) : 'посчитаем при расчёте';
       return '<button type="button" class="ux-tierbtn" data-k="' + x.k
-        + '" data-sum="' + Math.round(x.v)
-        + '" aria-pressed="' + on + '"><span class="t">' + x.t
-        + '</span><span class="v' + (real ? '' : ' soon') + '">' + val
-        + '</span></button>';
+        + '" aria-pressed="' + (pending === x.k) + '"><span class="t">' + x.t
+        + '</span><span class="v soon">посчитаем при расчёте</span></button>';
     }).join("");
 
     // Выбран уровень — сумму задаёт он, руками её вводить нечего.
     const inp = el("budget-input");
     if (inp){
-      const locked = !real && !!pending;
+      const locked = !!pending;
       inp.disabled = locked;
       inp.placeholder = locked
         ? "Сумму подставим по выбранному уровню"
@@ -4150,31 +4182,22 @@ window.PLANNER_ASSET_BASE = (function () {
     const inp = el("budget-input");
     if (!inp || !host) return;
 
-    if (!tiersAreReal()){
-      // Второй клик по выбранному уровню снимает выбор и отпускает поле.
-      const wasPending = host.dataset.pending;
-      host.dataset.pending = (wasPending === b.dataset.k) ? "" : b.dataset.k;
-      if (host.dataset.pending) {
-        // Запоминаем введённое руками ровно один раз — при первом выборе
-        // уровня. Переключение между уровнями своё значение не затирает.
-        if (!wasPending) host.dataset.own = inp.value || "";
-        inp.value = "";
-      } else {
-        inp.value = host.dataset.own || "";
-        delete inp.dataset.fromTier;
-      }
-      inp.dispatchEvent(new Event("input", { bubbles: true }));
-      inp.dispatchEvent(new Event("change", { bubbles: true }));
-      render();
-      if (typeof window.renderProgress === "function") window.renderProgress();
-      return;
+    // Второй клик по выбранному уровню снимает выбор и отпускает поле.
+    const wasPending = host.dataset.pending;
+    host.dataset.pending = (wasPending === b.dataset.k) ? "" : b.dataset.k;
+    if (host.dataset.pending) {
+      // Запоминаем введённое руками ровно один раз — при первом выборе
+      // уровня. Переключение между уровнями своё значение не затирает.
+      if (!wasPending) host.dataset.own = inp.value || "";
+      inp.value = "";
+    } else {
+      inp.value = host.dataset.own || "";
+      delete inp.dataset.fromTier;
     }
-
-    host.dataset.pending = "";
-    inp.value = b.dataset.sum;
     inp.dispatchEvent(new Event("input", { bubbles: true }));
     inp.dispatchEvent(new Event("change", { bubbles: true }));
     render();
+    if (typeof window.renderProgress === "function") window.renderProgress();
   });
 
   ["change", "input"].forEach(ev => document.addEventListener(ev, () => setTimeout(render, 0)));
@@ -4558,6 +4581,13 @@ window.PLANNER_ASSET_BASE = (function () {
     // Засечка перехватывает клик сама — на пустом месте шкалы берём долю.
     const rail = e.target.closest && e.target.closest("#rc-rail");
     if (rail && !e.target.closest(".rail-stop")){
+      // Только по дорожке и рядом с ней: подписи лежат выше и ниже,
+      // и попадание в них не должно уводить бюджет непонятно куда.
+      const track = rail.querySelector(".rail-track");
+      if (track){
+        const tr = track.getBoundingClientRect();
+        if (e.clientY < tr.top - 14 || e.clientY > tr.bottom + 14) return;
+      }
       applyBudget(budgetFromRail(rail, e.clientX));
       return;
     }
@@ -5360,24 +5390,6 @@ window.PLANNER_ASSET_BASE = (function () {
   function renderProgress(){
     const p = calcCompletion();
 
-    // --- Прогресс-чеклист ---
-    const chkEl = el("progress-checklist");
-    if(chkEl){
-      const steps = [
-        { label: "Регион",    ok: !!(Array.isArray(window.PLANNER?.state?.selectedRegions) && window.PLANNER.state.selectedRegions.length) },
-        { label: "Даты",      ok: !!(p.dates.start && p.dates.end) },
-        { label: "Бюджет/цель", ok: p.done >= 2 && (()=>{ const bm = getBudgetMode(); const bv = Number(el("budget-input")?.value||0); const gv = Number(el("goal-ots")?.value||0); const gpv = Number(el("goal-plays")?.value||0); return bm==="recommendation"||(bm==="fixed"&&bv>0)||(bm==="goal_ots"&&gv>0)||(bm==="goal_plays"&&gpv>0); })() },
-        { label: "Форматы",   ok: true }, // опциональны \\u2014 нет выбора = все форматы
-      ];
-      chkEl.innerHTML = steps.map(s => \`
-        <span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:3px 9px;border-radius:999px;
-          background:\${s.ok?"#f0fdf4":"#f8f9fb"};
-          border:1px solid \${s.ok?"#86efac":"#e5e7eb"};
-          color:\${s.ok?"#166534":"#6b7280"};">
-          \${s.ok?"\\u2713":"\\u25CB"} \${s.label}
-        </span>
-      \`).join("");
-    }
 
     // --- Обновляем состояние чипов шагов (done / active) ---
     // Шаги отбора обязательными не являются (дефолты рабочие), поэтому их чип

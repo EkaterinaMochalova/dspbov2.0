@@ -1621,6 +1621,12 @@ function renderSelectedRegions() {
   const wrap = el("region-selected");
   if (!wrap) return;
 
+  // «Добавлено: N» — итог последнего импорта. Любая правка набора делает его
+  // неверным, а висел он до перезагрузки страницы. Импорт ставит подпись уже
+  // после этого вызова, так что свой собственный итог не стирается.
+  const importStatus = el("region-import-status");
+  if (importStatus) { importStatus.textContent = ""; importStatus.style.display = "none"; }
+
   const clearBtn = el("regions-clear");
 
   const regions = Array.isArray(state.selectedRegions)
@@ -3002,6 +3008,10 @@ async function buildMediaPlanBlob() {
 
     // ── base+4: График ч/сутки ────────────────────────────────────
     // Диапазон («5–10») — строка, к ней числовой формат неприменим.
+    // Высота задана явно: расписание лежит в ячейке с переносом, и на
+    // мудрёном графике автоподбор растягивал строку на пол-экрана. Явная
+    // высота автоподбор отключает; сам текст в ячейке остаётся целиком.
+    ws.getRow(base + 4).height = 30;
     const hpdFmt = hpdIsRange ? undefined : decFmt(hpd);
     sc(ws, base + 4, 1, "График, ч/сутки", { bold: true, fill: C_LIGHT, v: "center" });
     sc(ws, base + 4, 2, hpdValue,          { fill: C_GREEN, numFmt: hpdFmt, h: "right", v: "center" });
@@ -6482,6 +6492,9 @@ document.querySelectorAll('input[name="weekly_mode"]').forEach(r => {
       // писали в общий state — итог зависел от того, кто финиширует вторым.
       if (state._calcRunning) return;
       state._calcRunning = true;
+      // Помечаем виджет: пока считаем, клики по шкале бюджета всё равно
+      // не доедут — recalc жмёт эту же кнопку, а она заблокирована.
+      document.getElementById("planner-widget")?.setAttribute("data-calc", "busy");
       const _label = calcBtn.textContent;
       calcBtn.disabled = true;
       calcBtn.textContent = "Считаю…";
@@ -6497,6 +6510,7 @@ document.querySelectorAll('input[name="weekly_mode"]').forEach(r => {
         })
         .finally(() => {
           state._calcRunning = false;
+          document.getElementById("planner-widget")?.removeAttribute("data-calc");
           calcBtn.textContent = _label;
           calcBtn.style.opacity = "";
           calcBtn.style.cursor = "";
