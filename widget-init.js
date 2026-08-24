@@ -213,7 +213,7 @@ window.PLANNER_ASSET_BASE = (function () {
   #planner-widget .planner-grid{ display:grid; grid-template-columns: 1fr; gap:16px; }
 
   #planner-widget[data-phase="brief"]  .planner-right{ display:none; }
-  #planner-widget[data-phase="result"] .planner-left,
+  #planner-widget[data-phase="result"] .planner-left{ display:none; }
 
   /* ===== РЕЗУЛЬТАТ ВО ВСЮ ШИРИНУ ===== */
   /* Ленту фотографий сеткой НЕ раскладываем: карточек бывает 600+, и сетка по
