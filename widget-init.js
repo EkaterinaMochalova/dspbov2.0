@@ -2961,6 +2961,9 @@ window.PLANNER_ASSET_BASE = (function () {
   <div class="ux-panel planner-left">
     <div class="planner-kicker">План размещения</div>
     <div class="planner-sub">Ответь на несколько вопросов — и мы соберём программу.</div>
+    <!-- Та же кнопка, что в плашке над итогом: чистить бриф нужно и не выходя из него. -->
+    <button type="button" class="brief-chip reset" data-reset="1" id="brief-reset-inline"
+      style="align-self:flex-start; margin-bottom:4px;">Очистить бриф</button>
     <div class="wiz-steps" id="wiz-steps">
       <button type="button" class="wiz-chip active" data-step="1">1. География</button>
       <button type="button" class="wiz-chip" data-step="2">2. Период</button>
@@ -3133,6 +3136,8 @@ window.PLANNER_ASSET_BASE = (function () {
       <input id="date-start" type="date" class="ux-input" aria-label="Дата начала кампании" />
       <input id="date-end" type="date" class="ux-input" aria-label="Дата окончания кампании" />
     </div>
+    <button type="button" class="wiz-btn ghost" id="date-next-month"
+      style="margin-top:8px;">Ближайший месяц</button>
   </div>
   <div class="planner-block">
     <div class="planner-label">Расписание</div>
@@ -4017,8 +4022,7 @@ window.PLANNER_ASSET_BASE = (function () {
 
     main.push('<button type="button" class="brief-chip edit" data-step="1">Править бриф</button>');
     main.push('<button type="button" class="brief-chip reset" data-reset="1"' +
-      ' title="Очистить регионы и отпустить адреску. Период, форматы и ставку оставим">' +
-      'Новый город</button>');
+      ' title="' + RESET_HINT + '">Очистить бриф</button>');
 
     // --- вторая строка: что из необязательного включено ---
     const extra = [];
@@ -4054,31 +4058,45 @@ window.PLANNER_ASSET_BASE = (function () {
     if (typeof window.setStep === "function") window.setStep(step);
   });
 
+  const RESET_HINT = "Сбросить бриф целиком и начать с чистого листа. " +
+    "Страница перезагрузится, посчитанный план останется в истории расчётов";
+  el("brief-reset-inline")?.setAttribute("title", RESET_HINT);
+
   document.addEventListener("click", function(e){
-    const b = e.target.closest && e.target.closest("#brief-bar .brief-chip[data-reset]");
+    const b = e.target.closest && e.target.closest("[data-reset]");
     if (!b) return;
 
-    // Регионы чистим существующей кнопкой: она же дёргает перерисовку
-    // форматов и пула, повторять это здесь незачем.
-    el("regions-clear")?.click();
-    window.PLANNER?.unfreezeAp?.();
+    // Черновик снимаем до перезагрузки, иначе страница встретит
+    // предложением восстановить только что вычищенный бриф.
+    try { window.PLANNER?.clearDraft?.(); } catch (err) { console.warn("[reset]", err); }
+    window.location.reload();
+  });
+})();
+`);
 
-    const host = el("budget-tier-btns");
-    if (host){ host.dataset.pending = ""; host.dataset.own = ""; }
-    const inp = el("budget-input");
-    if (inp){
-      inp.disabled = false;
-      delete inp.dataset.fromTier;
-      inp.value = "";
+  // ===== БЛИЖАЙШИЙ МЕСЯЦ =====
+  runScript(`
+(function(){
+  const btn = el("date-next-month");
+  if (!btn) return;
+  const two = (v) => String(v).padStart(2, "0");
+  const iso = (d) => d.getFullYear() + "-" + two(d.getMonth() + 1) + "-" + two(d.getDate());
+  btn.addEventListener("click", () => {
+    // Следующий календарный месяц целиком: 24 августа даёт 01–30 сентября,
+    // 4 сентября — 01–31 октября. День внутри месяца роли не играет.
+    // Считаем в локальном времени: через UTC на восточных поясах дата
+    // уезжает на сутки назад.
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth() + 1;
+    const first = new Date(y, m, 1);
+    const last  = new Date(y, m + 1, 0);   // нулевой день = последний день предыдущего
+    for (const pair of [["date-start", first], ["date-end", last]]) {
+      const inp = el(pair[0]);
+      if (!inp) continue;
+      inp.value = iso(pair[1]);
       inp.dispatchEvent(new Event("input", { bubbles: true }));
       inp.dispatchEvent(new Event("change", { bubbles: true }));
     }
-
-    if (window.PLANNER_UI && window.PLANNER_UI.setPhase) window.PLANNER_UI.setPhase("brief");
-    if (typeof window.setStep === "function") window.setStep(1);
-    if (typeof window.renderBudgetTiers === "function") window.renderBudgetTiers();
-    if (typeof window.renderApFrozenNote === "function") window.renderApFrozenNote();
-    if (typeof window.renderProgress === "function") window.renderProgress();
   });
 })();
 `);
@@ -4168,12 +4186,46 @@ window.PLANNER_ASSET_BASE = (function () {
       inp.value = String(Math.round(v));
       inp.dispatchEvent(new Event("input", { bubbles: true }));
       inp.dispatchEvent(new Event("change", { bubbles: true }));
+      // Помним, какой уровень просили: подставленная сейчас сумма считана
+      // от пула, а после расчёта её надо пересчитать от собранной адрески.
+      if (e.type === "pointerdown") host.dataset.secondPass = k;
     }
     // pointerdown только подставляет сумму — до чтения брифа; снимаем
     // выбор уже по клику, иначе нажатие с уводом мимо кнопки сбросило бы
     // уровень, хотя расчёт так и не начался.
     if (e.type === "click") host.dataset.pending = "";
   }, true));
+
+  // planner:calc-done летит изнутри расчёта, когда замок ещё стоит: снимает
+  // его finally следом. Всё, что запускает новый проход, обязано дождаться
+  // снятия — иначе жмём заблокированную кнопку и проход не начнётся.
+  window.plannerAfterCalc = function afterCalc(fn){
+    let tries = 0;
+    (function wait(){
+      if (!window.PLANNER?.state?._calcRunning) return fn();
+      if (++tries > 200) return;   // 20 секунд, дальше что-то не так
+      setTimeout(wait, 100);
+    })();
+  };
+
+  window.addEventListener("planner:calc-done", () => {
+    const host = el("budget-tier-btns");
+    const k = host && host.dataset.secondPass;
+    if (!k) return;
+    host.dataset.secondPass = "";
+    // Клик по шкале — более позднее решение пользователя, оно главнее.
+    if (window.plannerBudgetQueued && window.plannerBudgetQueued()) return;
+
+    const t = window.PLANNER?.computeRecoBudgetTiers?.();
+    const v = t && ({ min: t.min, opt: t.optimal, max: t.max })[k];
+    const inp = el("budget-input");
+    const now = Number(inp?.value || 0);
+    if (!(v > 0) || !now) return;
+    // Полпроцента — уже попадание: план набирается целыми выходами и
+    // ровно в сумму всё равно не ложится. Второй проход тут ничего не даст.
+    if (Math.abs(v - now) <= Math.max(1, v * 0.005)) return;
+    window.plannerAfterCalc(() => window.plannerApplyBudget?.(v));
+  });
 
   document.addEventListener("click", (e) => {
     const b = e.target.closest && e.target.closest("#budget-tier-btns .ux-tierbtn");
@@ -4551,9 +4603,23 @@ window.PLANNER_ASSET_BASE = (function () {
   // Общий путь для любой суммы: перевести режим в «свой бюджет»,
   // записать её в поле шага «Цели» и пересчитать. Уровни, клик по шкале
   // и ручной ввод в шапке приходят сюда все трое.
+  // Последняя запрошенная сумма, которую не удалось применить сразу.
+  let queuedBudget = null;
+  window.plannerBudgetQueued = () => queuedBudget != null;
+
+  window.addEventListener("planner:calc-done", () => {
+    if (queuedBudget == null) return;
+    const v = queuedBudget;
+    queuedBudget = null;
+    (window.plannerAfterCalc || ((fn) => fn()))(() => applyBudget(v));
+  });
+
   function applyBudget(sum){
     const v = Math.max(0, Math.round(Number(sum) || 0));
     if (!v) return;
+    // Проход уже идёт — кнопка расчёта заблокирована, жать её бесполезно.
+    // Держим намерение до конца прохода; последний клик побеждает.
+    if (window.PLANNER?.state?._calcRunning){ queuedBudget = v; return; }
     const fixed = document.querySelector('input[name="budget_mode"][value="fixed"]');
     if (fixed && !fixed.checked){ fixed.checked = true; fixed.dispatchEvent(new Event("change", { bubbles: true })); }
     const b = el("budget-input");
