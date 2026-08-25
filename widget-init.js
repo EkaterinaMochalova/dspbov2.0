@@ -4037,7 +4037,7 @@ window.PLANNER_ASSET_BASE = (function () {
       extra.push(chip(4, "", "Аудитория VK", "sm on"));
     if (el("yandex-geo-card") && el("yandex-geo-card").classList.contains("active"))
       extra.push(chip(4, "", "Яндекс Гео", "sm on"));
-    if (Array.isArray(st.polygon) && st.polygon.length)
+    if (Array.isArray(st.polygonFilter) && st.polygonFilter.length)
       extra.push(chip(4, "", "Зона на карте", "sm on"));
     if (el("constructions-enabled") && el("constructions-enabled").checked)
       extra.push(chip(4, "", "Экранов вручную: " + ((el("constructions-count") && el("constructions-count").value) || "?"), "sm on"));
@@ -4853,8 +4853,12 @@ window.PLANNER_ASSET_BASE = (function () {
         return [(el("grp-min")?.value || "0") + "\u2013" + (el("grp-max")?.value || ""), true];
       } },
     { id: "step4-map-zone-block", t: "Зона на карте", v: () => {
-        const poly = window.PLANNER?.state?.polygon;
-        return (Array.isArray(poly) && poly.length) ? ["задана", true] : ["весь город", false];
+        // Состояние зоны лежит в polygonFilter — по нему считает расчёт.
+        // Читали несуществующий state.polygon, поэтому здесь всегда стояло
+        // «весь город», даже когда зона была задана.
+        const poly = window.PLANNER?.state?.polygonFilter;
+        const n = Array.isArray(poly) ? poly.length : 0;
+        return n ? [n === 1 ? "1 зона" : n + " зоны", true] : ["весь город", false];
       },
       // Карта была за модалкой: раскрыть кат, нажать «Нарисовать зону»,
       // дождаться попапа. Переносим сам узел модалки внутрь ката и
