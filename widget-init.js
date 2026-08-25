@@ -2547,6 +2547,28 @@ window.PLANNER_ASSET_BASE = (function () {
     font-size:19px; font-weight:600; white-space:nowrap;
   }
   #planner-widget .rail{ position:relative; height:76px; margin:0 2px; }
+  #planner-widget .gid-dupes{
+    margin-top:10px; padding:10px 12px; font-size:12px;
+    color:var(--ux-warn); background:var(--ux-warn-bg);
+    border:1px solid var(--ux-warn-line); border-radius:var(--ux-radius-xs);
+  }
+  #planner-widget .gid-dupes-head{ font-weight:600; margin-bottom:2px; }
+  #planner-widget .gid-dupes-sub{ color:var(--ux-text2); margin-bottom:8px; }
+  #planner-widget .gid-dupe{ padding:8px 0; border-top:1px solid var(--ux-warn-line); }
+  #planner-widget .gid-dupe-id{
+    font-family:var(--ux-mono); font-weight:600; color:var(--ux-text); margin-bottom:4px;
+  }
+  #planner-widget .gid-dupe label{
+    display:flex; align-items:center; gap:8px; padding:3px 0;
+    color:var(--ux-text2); cursor:pointer;
+  }
+  #planner-widget .gid-dupe label:hover{ color:var(--ux-text); }
+  #planner-widget .gid-dupe input{ accent-color:var(--ux-accent); }
+  #planner-widget .gid-dupes-done{
+    margin-top:10px; padding:8px 12px; font-size:12px;
+    color:var(--ux-ok); background:var(--ux-ok-bg);
+    border:1px solid var(--ux-ok-line); border-radius:var(--ux-radius-xs);
+  }
   #planner-widget .brief-chip.reset{
     border-color:var(--ux-accent-line); color:var(--ux-accent-ink);
     background:var(--ux-accent-soft); font-weight:600;
@@ -3105,6 +3127,10 @@ window.PLANNER_ASSET_BASE = (function () {
           <div id="manual-gids-status" style="font-size:12px; color:#667085; margin-top:6px;">
             Введите GID-ы — после расчёта будут использованы только эти экраны.
           </div>
+          <!-- Один GID у операторов бывает на нескольких экранах. Пока выбор
+               не сделан, дальше не пускаем: иначе молча берётся первый
+               попавшийся, а у дублей другой город и другая ставка. -->
+          <div id="gid-dupes" style="display:none;"></div>
           <!-- Прогресс загрузки инвентаря в GID-режиме -->
           <div id="gid-inventory-progress" style="display:none; margin-top:8px; padding:8px 12px;
                background:#f4f1ff; border-radius:8px; font-size:12px; color:#5b3ef5;
@@ -5080,13 +5106,102 @@ window.PLANNER_ASSET_BASE = (function () {
     if (chip) window.setStep(Number(chip.dataset.step || 1));
   });
 
+  // ===== СПОРНЫЕ GID-Ы =====
+  // Один GID у операторов иногда висит на нескольких экранах — в инвентаре
+  // таких около четырёхсот. Раньше расчёт брал первый попавшийся, а у дублей
+  // различаются город, формат и ставка. Просим выбрать явно.
+  function gidsFromField(){
+    const raw = el("manual-gids")?.value || "";
+    return window.PLANNER?._parseManualGids?.(raw) || new Set();
+  }
+
+  function renderGidDupes(){
+    const box = el("gid-dupes");
+    if (!box) return;
+    const gidsBlock = el("geo-gids-block");
+    const gidMode = gidsBlock && gidsBlock.style.display !== "none";
+    if (!gidMode){ box.style.display = "none"; box.innerHTML = ""; return; }
+
+    const набор = gidsFromField();
+    const спорные = набор.size ? (window.PLANNER?.findAmbiguousGids?.(набор) || []) : [];
+    if (!спорные.length){ box.style.display = "none"; box.innerHTML = ""; return; }
+
+    const picks = window.PLANNER.state.gidPicks || {};
+    const осталось = спорные.filter(x => !picks[x.gid]).length;
+    box.style.display = "block";
+
+    if (!осталось){
+      box.innerHTML = "<div class='gid-dupes-done'>Все спорные GID-ы разобраны: "
+        + спорные.length + ". Можно идти дальше.</div>";
+      return;
+    }
+
+    const money = (v) => Number.isFinite(v)
+      ? Math.round(v).toLocaleString("ru-RU") + " ₽" : "ставка неизвестна";
+    const описание = (sc) => [
+      String(sc.owner || "").trim() || "оператор не указан",
+      (window.FORMAT_LABELS?.[String(sc.format || "").trim()]?.label)
+        || String(sc.format || "").trim() || "формат не указан",
+      String(sc.city || sc.region || "").trim() || "город не указан",
+      money(Number(sc.recoBid) > 0 ? sc.recoBid : sc.minBid),
+    ].join(" · ");
+
+    let html = "<div class='gid-dupes'>"
+      + "<div class='gid-dupes-head'>Найдено GID-ов с несколькими экранами: " + спорные.length
+      + ". Не разобрано: " + осталось + "</div>"
+      + "<div class='gid-dupes-sub'>У операторов один GID иногда висит на нескольких"
+      + " экранах — с разным городом, форматом и ставкой. Выберите нужный:</div>";
+
+    for (const item of спорные){
+      html += "<div class='gid-dupe'><div class='gid-dupe-id'>" + item.gid + "</div>";
+      for (const sc of item.variants){
+        const key = window.PLANNER.gidVariantKey(sc);
+        const on = picks[item.gid] === key;
+        html += "<label><input type='radio' name='gidpick-" + item.gid + "'"
+          + " data-gid='" + item.gid + "' value='" + key.split("'").join("&#39;") + "'"
+          + (on ? " checked" : "") + "><span>" + описание(sc) + "</span></label>";
+      }
+      html += "</div>";
+    }
+    box.innerHTML = html + "</div>";
+  }
+  window.renderGidDupes = renderGidDupes;
+
+  // Сколько спорных GID-ов ещё не разобрано. Ноль — путь свободен.
+  window.plannerGidUnresolved = function(){
+    const gidsBlock = el("geo-gids-block");
+    if (!gidsBlock || gidsBlock.style.display === "none") return 0;
+    const набор = gidsFromField();
+    if (!набор.size) return 0;
+    return (window.PLANNER?.unresolvedGids?.(набор) || []).length;
+  };
+
+  document.addEventListener("change", (e) => {
+    const r = e.target;
+    if (!r || r.type !== "radio" || !r.dataset || !r.dataset.gid) return;
+    const st = window.PLANNER.state;
+    if (!st.gidPicks) st.gidPicks = {};
+    st.gidPicks[r.dataset.gid] = r.value;
+    renderGidDupes();
+    updateNext1Btn();
+    if (typeof window.renderProgress === "function") window.renderProgress();
+  });
+
+  document.addEventListener("input", (e) => {
+    if (e.target && e.target.id === "manual-gids") setTimeout(renderGidDupes, 150);
+  });
+  window.addEventListener("planner:screens-ready", () => renderGidDupes());
+
   function updateNext1Btn(){
     const btn = el("wiz-next-1");
     if(!btn) return;
     const loading = window.DSP_AUTH_ENABLED && !window.PLANNER?.state?.dspInventoryWarmupDone;
     btn.textContent = loading ? "Загружаю экраны\\u2026" : "Дальше";
-    btn.style.opacity = loading ? "0.6" : "";
-    btn.style.cursor  = loading ? "default" : "";
+    const спорных = window.plannerGidUnresolved ? window.plannerGidUnresolved() : 0;
+    if (!loading && спорных > 0) btn.textContent = "Разберите GID-ы: " + спорных;
+    const стоп = loading || спорных > 0;
+    btn.style.opacity = стоп ? "0.6" : "";
+    btn.style.cursor  = стоп ? "default" : "";
   }
   window.addEventListener("planner:screens-ready", updateNext1Btn);
   setInterval(updateNext1Btn, 1000);
@@ -5100,6 +5215,13 @@ window.PLANNER_ASSET_BASE = (function () {
     if (isGidMode) {
       if (!el("manual-gids")?.value?.trim()) {
         return _err("manual-gids", "Вставьте хотя бы один GID экрана — по одному на строку или через запятую.");
+      }
+      const спорных = window.plannerGidUnresolved ? window.plannerGidUnresolved() : 0;
+      if (спорных > 0) {
+        renderGidDupes();
+        el("gid-dupes")?.scrollIntoView({ block: "center", behavior: "smooth" });
+        return _err("manual-gids", "Под " + спорных + " GID-ами подходит несколько экранов. " +
+          "Выберите нужный по каждому — иначе в расчёт попадёт случайный.");
       }
     } else {
       const regions = window.PLANNER_UI.getSelectedRegionsArr();

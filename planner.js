@@ -391,6 +391,12 @@ const state = {
   selectedRegions: [], // ✅ мультивыбор регионов
   selectedRegion: null, // ✅ обратная совместимость
   lastChosen: [],
+  // Один GID у операторов иногда висит на нескольких экранах. Здесь лежит
+  // решение пользователя: { "MAER00243MSKMF4": "<ключ варианта>" }. Пока
+  // спорный GID не разобран, расчёт не пускаем — иначе молча берётся первый
+  // попавшийся экран, а это может быть другой город и другая ставка.
+  gidPicks: {},
+
   // Длительность ролика по формату: { BILLBOARD: [5000], MEDIAFACADE: [15000] }.
   // Что здесь не задано — берёт общий выбор selectedDurationsMs.
   durationsByFormat: {},
@@ -1608,6 +1614,52 @@ function isLikelyAddressLikeName(value) {
 // справочник, что и обычный сценарий, — тогда сводки двух сценариев
 // сопоставимы. Не нашли — оставляем как пришло, лучше отдельная строка,
 // чем экран, потерянный в «Не назначено».
+// Различает экраны с одним и тем же GID. Идентичность объекта не годится:
+// инвентарь перезагружается, а решение пользователя должно переживать это
+// и попадать в черновик. Поэтому составной ключ из полей, которые у дублей
+// как раз и различаются.
+function gidVariantKey(s) {
+  return [
+    _screenIdOf(s),
+    String(s?.owner ?? "").trim(),
+    String(s?.format ?? "").trim(),
+    String(s?.city ?? "").trim(),
+    Number.isFinite(s?.lat) ? s.lat.toFixed(5) : "",
+    Number.isFinite(s?.lon) ? s.lon.toFixed(5) : "",
+  ].join("|");
+}
+
+// GID-ы из списка, под которые в инвентаре подходит больше одного экрана.
+// Возвращает [{ gid, variants: [screen, ...] }] — по одной записи на GID.
+function findAmbiguousGids(gidSet) {
+  if (!gidSet || !gidSet.size) return [];
+  const all = (Array.isArray(state.screensAll) && state.screensAll.length)
+    ? state.screensAll : (Array.isArray(state.screens) ? state.screens : []);
+  const поGid = new Map();
+  for (const s of all) {
+    const sid = _screenIdOf(s);
+    if (!sid || !gidSet.has(sid)) continue;
+    if (!поGid.has(sid)) поGid.set(sid, []);
+    поGid.get(sid).push(s);
+  }
+  const out = [];
+  for (const [gid, variants] of поGid) {
+    // Полные близнецы (все поля ключа совпали) выбора не требуют: какой из
+    // них взять — без разницы, отличить их всё равно нечем.
+    const уникальные = new Map();
+    for (const v of variants) uniqueSet(уникальные, gidVariantKey(v), v);
+    if (уникальные.size > 1) out.push({ gid, variants: [...уникальные.values()] });
+  }
+  return out.sort((a, b) => a.gid.localeCompare(b.gid, "ru"));
+}
+function uniqueSet(map, key, value) { if (!map.has(key)) map.set(key, value); }
+
+// Спорные GID-ы, по которым выбор ещё не сделан.
+function unresolvedGids(gidSet) {
+  const picks = state.gidPicks || {};
+  return findAmbiguousGids(gidSet).filter(x => !picks[x.gid]);
+}
+
 function gidRegionKey(screen) {
   const raw = String(screen?.city || screen?.region || "").trim();
   if (!raw) return "\u2014";
@@ -4661,10 +4713,15 @@ async function onCalcClick() {
         const before = pool.length;
         const seenGids = new Set();
         let addedFromZone = 0;
+        const _picks = state.gidPicks || {};
         pool = pool.filter(s => {
           const sid = _screenIdOf(s);
           // 1) типизированный GID-список — сохраняем всегда
           if (gidSet.has(sid) && !seenGids.has(sid)) {
+            // У спорного GID берём именно выбранный экран, а не первый
+            // попавшийся: у дублей различаются город, формат и ставка.
+            const выбран = _picks[sid];
+            if (выбран && gidVariantKey(s) !== выбран) return false;
             seenGids.add(sid);
             _foundGids.add(sid);
             return true;
@@ -7232,6 +7289,9 @@ window.PLANNER.saveCalcToHistory = saveCalcToHistory;
 window.PLANNER.restoreBriefToUI = restoreBriefToUI;
 window.PLANNER.buildMediaPlanBlob = buildMediaPlanBlob;
 window.PLANNER.computeRecoBudgetTiers = computeRecoBudgetTiers;
+window.PLANNER.findAmbiguousGids = findAmbiguousGids;
+window.PLANNER.unresolvedGids = unresolvedGids;
+window.PLANNER.gidVariantKey = gidVariantKey;
 window.PLANNER._parseManualGids = _parseManualGids;
 function getDspAgencyId() { return sessionStorage.getItem("dsp_agency_id") || ""; }
 function setDspAgencyId(id) { id ? sessionStorage.setItem("dsp_agency_id", String(id)) : sessionStorage.removeItem("dsp_agency_id"); }
