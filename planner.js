@@ -2722,6 +2722,8 @@ async function buildMediaPlanBlob() {
   const durList = (Array.isArray(brief.duration?.msList) && brief.duration.msList.length)
     ? brief.duration.msList
     : (Number(brief.duration?.ms) > 0 ? [Number(brief.duration.ms)] : []);
+  // Длительность, заданная отдельному формату, главнее общего выбора.
+  const durByFormat = (brief.duration && brief.duration.byFormat) || {};
   const durTxt = durList.length
     ? ` (длительность: ${durList.map(ms => Math.round(ms / 1000)).join(", ")} сек)`
     : "";
@@ -3087,16 +3089,29 @@ async function buildMediaPlanBlob() {
     // Длительностей может быть выбрано несколько. Показываем те из них, которые
     // этот экран реально поддерживает: по колонке видно, на каких поверхностях
     // идут оба ролика — а это те самые, что в расчёте ставки считались дважды.
+    // Если по длительности не фильтровали, перечисляем все слоты экрана: раньше
+    // колонка в этом случае стояла пустой, хотя данные о слотах есть.
     { h: "Длительность, сек",  w: 16, fn: s => {
-        if (!Array.isArray(s.durationBidInfo) || !s.durationBidInfo.length || !durList.length) return "";
+        const info = Array.isArray(s.durationBidInfo) ? s.durationBidInfo : [];
+        if (!info.length) return "";
+        const секунды = (list) => [...new Set(list)]
+          .sort((a, b) => a - b).map(v => Math.round(v / 1000)).join(", ");
+
+        const perFmt = durByFormat[String(s.format || "").trim()];
+        const wanted = (Array.isArray(perFmt) && perFmt.length) ? perFmt : durList;
+        // Пустой выбор и «Любая» — это одно и то же: ноль ни с одним слотом не
+        // сопоставляется, поэтому отбрасываем его вместе с пустым списком.
+        const filtered = wanted.map(Number).filter(ms => ms > 0);
+        if (!filtered.length) {
+          return секунды(info.map(d => d.duration).filter(Number.isFinite));
+        }
+
         const matched = new Set();
-        for (const ms of durList) {
+        for (const ms of filtered) {
           const m = _resolveDurationMatch(s, ms);
           if (m && Number.isFinite(m.duration)) matched.add(m.duration);
         }
-        return matched.size
-          ? [...matched].sort((a, b) => a - b).map(v => Math.round(v / 1000)).join(", ")
-          : "";
+        return matched.size ? секунды([...matched]) : "";
       } },
     { h: "Вид. разрешение",    w: 20, fn: s => s.resolution ?? "" },
     { h: "Соотношение сторон", w: 20, fn: s => s.aspectRatio ?? "" },
