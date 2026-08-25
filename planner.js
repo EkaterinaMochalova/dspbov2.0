@@ -1375,6 +1375,8 @@ function renderSelectionExtra() {
           if (res.capped && res.unlimited) notes.push("дошли до предохранителя в 5000");
           if (skipped) notes.push(`${skipped} дублей отброшено`);
           if (res.withoutAddress) notes.push(`${res.withoutAddress} объектов без адреса пропущено`);
+          if (res.failedText) notes.push("не дочитано: " +
+            (res.failedRegions.length ? res.failedRegions.join(", ") : "часть регионов"));
           if (status) {
             status.textContent = `Добавлено адресов: ${added}` + (notes.length ? ` (${notes.join(", ")})` : "");
             status.style.color = "#1DB244";
@@ -4044,6 +4046,17 @@ function _2gisAddressOf(item) {
   return String(item.full_address_name || "").trim();
 }
 
+// Сетевой сбой и зависание — не конец выдачи, а повод переспросить: у 2ГИС одна
+// страница из десятков висит до таймаута, а следующий же запрос проходит за
+// секунду. Замерено на живой выдаче: page=4 вернулась 502 через 25,4 с, page=5 —
+// 200 за 0,9 с. Без повтора такая осечка обрывала весь прогон, и пользователь
+// получал ровно то, что успело набраться до неё — характерные «ровно 100».
+// Таймаут свой: у fetch его нет вовсе, и зависший запрос висел бы бесконечно.
+const GEO2GIS_TRY = { attempts: 3, timeoutMs: 12000, pauseMs: 600 };
+const _2gisSleep = (ms) => new Promise(r => setTimeout(r, ms));
+const _2gisSignal = () => (typeof AbortSignal !== "undefined" && AbortSignal.timeout)
+  ? { signal: AbortSignal.timeout(GEO2GIS_TRY.timeoutMs) } : {};
+
 // Одна страница выдачи. done=true — выдача кончилась (штатно или из-за ошибки).
 async function _2gisFetchPage(query, center, radius, page) {
   const url = GEO2GIS_PROXY +
@@ -4055,31 +4068,57 @@ async function _2gisFetchPage(query, center, radius, page) {
     "&fields=" + encodeURIComponent("items.point,items.address,items.address_name,items.full_address_name") +
     "&key=" + GEO2GIS_KEY;
 
-  let data = null;
-  try {
-    const r = await fetch(url);
-    data = await r.json();
-  } catch (e) {
-    return { items: [], done: true, error: "2ГИС не ответил: " + e.message };
-  }
+  let last = "";
+  for (let attempt = 1; attempt <= GEO2GIS_TRY.attempts; attempt++) {
+    // Пауза растёт: если справочник поперхнулся, второй мгновенный запрос
+    // упрётся в то же самое.
+    if (attempt > 1) await _2gisSleep(GEO2GIS_TRY.pauseMs * (attempt - 1));
 
-  const code = data?.meta?.code;
-  if (code !== 200) {
+    let r;
+    try {
+      r = await fetch(url, _2gisSignal());
+    } catch (e) {
+      last = (e && (e.name === "TimeoutError" || e.name === "AbortError"))
+        ? "2ГИС не ответил за " + Math.round(GEO2GIS_TRY.timeoutMs / 1000) + " с"
+        : "2ГИС не ответил: " + (e && e.message ? e.message : e);
+      continue;
+    }
+    // 5xx — поперхнулись прокси или сам справочник, повтор осмыслен.
+    if (r.status >= 500) { last = "2ГИС ответил " + r.status; continue; }
+
+    let data;
+    try {
+      data = await r.json();
+    } catch (e) {
+      // Тело не разобралось — это страница ошибки платформы, а не ответ
+      // справочника. Именно здесь раньше рождалось «ответил undefined».
+      last = "2ГИС ответил не JSON (HTTP " + r.status + ")";
+      continue;
+    }
+
+    const code = data?.meta?.code;
     // 404 itemNotFound — выдача закончилась, это нормальное завершение
     const type = data?.meta?.error?.type || "";
     if (code === 404 || type === "itemNotFound") return { items: [], done: true };
-    return { items: [], done: true, error: data?.meta?.error?.message || ("2ГИС ответил " + code) };
-  }
+    if (code !== 200) {
+      // Ответ разобрался — значит справочник объяснил отказ, и повтор его не
+      // переубедит: неверный параметр останется неверным.
+      return { items: [], done: true, error: data?.meta?.error?.message
+        || ("2ГИС ответил " + (code == null ? "без кода" : code)) };
+    }
 
-  const raw = data?.result?.items || [];
-  const items = [];
-  for (const it of raw) {
-    const p = it.point;
-    if (!p || !Number.isFinite(Number(p.lat)) || !Number.isFinite(Number(p.lon))) continue;
-    items.push({ address: _2gisAddressOf(it), lat: Number(p.lat), lon: Number(p.lon) });
+    const raw = data?.result?.items || [];
+    const items = [];
+    for (const it of raw) {
+      const pt = it.point;
+      if (!pt || !Number.isFinite(Number(pt.lat)) || !Number.isFinite(Number(pt.lon))) continue;
+      items.push({ address: _2gisAddressOf(it), lat: Number(pt.lat), lon: Number(pt.lon) });
+    }
+    // Неполная страница — дальше ничего нет. На result.total не опираемся: он врёт.
+    return { items, done: raw.length < GEO2GIS.PAGE_SIZE };
   }
-  // Неполная страница — дальше ничего нет. На result.total не опираемся: он врёт.
-  return { items, done: raw.length < GEO2GIS.PAGE_SIZE };
+  return { items: [], done: true,
+    error: last + " (попыток: " + GEO2GIS_TRY.attempts + ")" };
 }
 
 // Вычерпывает одну точку: листает страницы, пока они не кончатся или пока не
@@ -4152,17 +4191,21 @@ async function fetch2gisAddresses(query, centers, opts = {}, onProgress) {
 
   const report = (stage) => { if (typeof onProgress === "function") onProgress(withAddress, stage); };
 
-  let error = null, capped = false;
+  // Осечка на одном регионе больше не отменяет остальные: раньше первая же
+  // ошибка выходила из цикла, и города после неё не искались вовсе — отсюда
+  // «по Питеру нашёл, на Москве сыпется». Порядок регионов решал всё.
+  const failed = [];
+  let capped = false;
 
   for (const center of list) {
-    if (error || withAddress >= GEO2GIS.HARD_CAP) break;
+    if (withAddress >= GEO2GIS.HARD_CAP) break;
     const where = center.label ? ` (${center.label})` : "";
     // Цель для этого региона: уже набранное плюс лимит.
     const stopAt = Math.min(withAddress + limit, GEO2GIS.HARD_CAP);
 
     report("широкий поиск" + where);
     const wide = await _2gisSweepPoint(query, center, GEO2GIS.RADIUS_MAX, sink, stopAt);
-    if (wide.error) { error = wide.error; break; }
+    if (wide.error) { failed.push({ label: center.label, message: wide.error }); continue; }
     // Лимит по этому региону набран — идём к следующему, а не выходим совсем.
     if (wide.capped) { capped = true; continue; }
 
@@ -4172,7 +4215,7 @@ async function fetch2gisAddresses(query, centers, opts = {}, onProgress) {
     for (let i = 0; i < sectors.length; i++) {
       report(`сектор ${i + 1} из ${sectors.length}${where}`);
       const r = await _2gisSweepPoint(query, sectors[i], GEO2GIS.GRID_RADIUS, sink, stopAt);
-      if (r.error) { error = r.error; break; }
+      if (r.error) { failed.push({ label: center.label, message: r.error }); break; }
       if (r.capped) { capped = true; break; }
     }
   }
@@ -4185,12 +4228,21 @@ async function fetch2gisAddresses(query, centers, opts = {}, onProgress) {
     results = results.slice(0, hardLimit);
     capped = true;
   }
+  // error оставляем только когда не набралось ничего: по нему интерфейс красит
+  // строку и выбрасывает результат. Если что-то нашлось, отдаём найденное, а
+  // про недочитанные регионы говорим отдельно — терять адреса из-за осечки в
+  // соседнем городе незачем.
+  const failedText = failed.length
+    ? failed.map(f => (f.label ? f.label + ": " : "") + f.message).join("; ")
+    : null;
   return {
     results,
     withoutAddress: byCoord.size - withAddress,
     capped, unlimited,
     limit: unlimited ? null : limit,
-    error,
+    error: results.length ? null : failedText,
+    failedText,
+    failedRegions: failed.map(f => f.label).filter(Boolean),
   };
 }
 
