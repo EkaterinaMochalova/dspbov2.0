@@ -1602,6 +1602,19 @@ function isLikelyAddressLikeName(value) {
   return /(ул|улица|проспект|пр-т|шоссе|проезд|пер|переулок|наб|набережная|бульвар|пл|площадь|ост\.|остановк|дом|д\.)/.test(s);
 }
 
+// Ключ группировки для GID-режима. Города экранов приходят как есть, поэтому
+// «городской округ Екатеринбург» и «Екатеринбург» были разными строками, а
+// подмосковные города не сворачивались в область. Гоняем через тот же
+// справочник, что и обычный сценарий, — тогда сводки двух сценариев
+// сопоставимы. Не нашли — оставляем как пришло, лучше отдельная строка,
+// чем экран, потерянный в «Не назначено».
+function gidRegionKey(screen) {
+  const raw = String(screen?.city || screen?.region || "").trim();
+  if (!raw) return "\u2014";
+  const reg = getRegionForDspCity(raw);
+  return (reg && reg !== "Не назначено") ? reg : raw;
+}
+
 function getRegionForDspCity(city) {
   const raw = String(city || "").trim();
   if (!raw) return "Не назначено";
@@ -2584,10 +2597,7 @@ async function buildMediaPlanBlob() {
   const _isGidMode  = _perRegKeys.length === 1 && _perRegKeys[0] === "По GID-списку";
 
   function _matchScreenRegion(s) {
-    if (_isGidMode) {
-      // In GID mode group by actual city so МП shows real city breakdown
-      return String(s.city || s.region || "—").trim() || "—";
-    }
+    if (_isGidMode) return gidRegionKey(s);
     const sReg  = String(s.region || "").trim();
     const sCity = String(s.city   || "").trim();
     for (const r of _perRegKeys) {
@@ -3219,7 +3229,7 @@ async function buildSberMediaPlanBlob() {
   const _isGidMode  = _perRegKeys.length === 1 && _perRegKeys[0] === "По GID-списку";
 
   function _matchReg(s) {
-    if (_isGidMode) return String(s.city || s.region || "—").trim() || "—";
+    if (_isGidMode) return gidRegionKey(s);
     const sReg = String(s.region || "").trim();
     const sCity = String(s.city  || "").trim();
     for (const r of _perRegKeys) {
@@ -5677,7 +5687,51 @@ async function onCalcClick() {
   const playsPerDayAll = totalPlaysEffectiveAll / days;
   const playsPerHourAll = totalPlaysEffectiveAll / days / hpd;
 
-  const perRegionText = (perRegionRows || [])
+  // В GID-режиме расчёт отдаёт одну строку «По GID-списку»: география задана
+  // списком, а не регионами. Для сводки это бесполезно — разбиваем её тем же
+  // способом, каким это делает выгрузка: выходы поровну на экран, бюджет по
+  // весу ставок. Иначе сводка и медиаплан показывали бы разное.
+  const _gidSetForRows = (brief.selection?.mode === "manual_screens")
+    ? brief.selection.manual_gids : null;
+  let _rowsForText = perRegionRows || [];
+  if (_gidSetForRows && _gidSetForRows.size && chosenAll.length) {
+    const итого = _rowsForText.reduce((a, r) => ({
+      budget: a.budget + (Number(r.budget) || 0),
+      plays:  a.plays  + (Number(r.plays)  || 0),
+    }), { budget: 0, plays: 0 });
+    const tierOf = _rowsForText.length === 1 ? _rowsForText[0].tier : null;
+    const playsPerScreen = итого.plays / chosenAll.length;
+
+    const поРегиону = new Map();
+    for (const sc of chosenAll) {
+      const key = gidRegionKey(sc);
+      let g = поРегиону.get(key);
+      if (!g) { g = { screens: [], bidSum: 0 }; поРегиону.set(key, g); }
+      g.screens.push(sc);
+      g.bidSum += Number(sc.recoBid || 0) > 0
+        ? sc.recoBid : (Number(sc.minBid || 0) * BID_MULTIPLIER);
+    }
+    const bidSumAll = [...поРегиону.values()].reduce((a, g) => a + g.bidSum, 0);
+
+    _rowsForText = [...поРегиону.entries()].map(([region, g]) => {
+      const plays = Math.round(playsPerScreen * g.screens.length);
+      const otsVals = g.screens.map(x => x.ots).filter(v => Number.isFinite(v) && v > 0);
+      const avgOts = otsVals.length ? otsVals.reduce((a, b) => a + b, 0) / otsVals.length : null;
+      return {
+        region, tier: tierOf,
+        budget: bidSumAll > 0
+          ? Math.round(итого.budget * g.bidSum / bidSumAll)
+          : Math.round(итого.budget * g.screens.length / chosenAll.length),
+        screens: g.screens.length,
+        poolSize: null,
+        plays,
+        ots: avgOts != null ? Math.round(plays * avgOts) : null,
+        note: "",
+      };
+    });
+  }
+
+  const perRegionText = (_rowsForText || [])
     .slice()
     .sort((a, b) => (Number(b.budget || 0) - Number(a.budget || 0)))
     .map(r => {
