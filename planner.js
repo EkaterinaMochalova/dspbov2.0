@@ -2935,8 +2935,14 @@ async function buildMediaPlanBlob() {
       const avgBid = bids.length ? bids.reduce((a, b) => a + b, 0) / bids.length : 0;
       const otsArr = fmtScr.map(s => Number.isFinite(s.ots) && s.ots > 0 ? s.ots : null).filter(Boolean);
       const avgOts = otsArr.length ? otsArr.reduce((a, b) => a + b, 0) / otsArr.length : 0;
+      // Ёмкость формата — сумма фактических частот его экранов. По ней делятся
+      // выходы: медиафасад крутит 8 раз в час против 40 у щита, и делёж по
+      // числу экранов печатал в плане одинаковую частоту для обоих.
+      const capW = fmtScr.reduce((a, sc_) =>
+        a + (Number.isFinite(sc_._pphUsed) && sc_._pphUsed > 0
+          ? sc_._pphUsed : getScreenPphCap(sc_)), 0);
       cfStats[city][fmt_] = {
-        cnt: fmtScr.length, avgBid, avgOts, _w: w,
+        cnt: fmtScr.length, avgBid, avgOts, _w: w, _cap: capW,
         plays: 0,   // заполняется вторым проходом
         ots:   0,
         budget: 0,
@@ -2952,9 +2958,16 @@ async function buildMediaPlanBlob() {
       const st = cfStats[city][f];
       return s + st.cnt * st.avgBid;
     }, 0);
+    const capWeightSum = fmtKeys.reduce((s, f) => s + (cfStats[city][f]._cap || 0), 0);
     for (const f of fmtKeys) {
       const st = cfStats[city][f];
-      if (bidWeightSum > 0 && st.avgBid > 0) {
+      if (capWeightSum > 0) {
+        // Выходы — по ёмкости, деньги — из выходов и ставки формата. Сумма по
+        // форматам сходится с бюджетом города: тот считается по той же
+        // взвешенной по выходам ставке.
+        st.plays  = regPlays * st._cap / capWeightSum;
+        st.budget = st.plays * st.avgBid;
+      } else if (bidWeightSum > 0 && st.avgBid > 0) {
         st.budget = regBudget * (st.cnt * st.avgBid) / bidWeightSum;
         st.plays  = st.budget / st.avgBid;
       } else {
@@ -5535,6 +5548,19 @@ async function onCalcClick() {
     // capPlaysByChosen: там стоит min(effectivePPH, getScreenPphCap(s)).
     const effectivePPH = ppmOverride !== null ? Math.min(ppmOverride, SC_MAX) : _poolPphCap;
 
+    // С какой частотой каждый экран реально идёт в плане. Из этой метки растут
+    // и средняя ставка плана, и разбивка выгрузки по форматам: без неё выходы
+    // делились между форматами поровну по числу экранов, и в файле стояло 24
+    // вых/час и у щита, и у фасада вместо 40 и 8.
+    const tagPph = (list) => {
+      for (const sc_ of list) sc_._pphUsed = Math.min(effectivePPH, getScreenPphCap(sc_));
+    };
+    tagPph(chosen);
+    // Ставку пересчитываем уже с этими весами: выше она считалась до того, как
+    // стала известна частота, то есть по экранам.
+    const _pwBid = playWeightedBid(chosen, brief);
+    if (Number.isFinite(_pwBid) && _pwBid > 0) effectiveChosenBid = _pwBid;
+
     // Реальный расход = фактические выходы × ставка ВЫБРАННЫХ экранов (не среднее по пулу).
     // Пересчитываем totalPlaysTheory по фактической ставке выбранных экранов — это убирает
     // раздутие, которое возникает в attempt-loop когда выбираются самые дешёвые экраны:
@@ -5545,7 +5571,10 @@ async function onCalcClick() {
     }
 
     // Per-screen-format cap: sum individual caps (e.g. MF=12, others=60)
-    const capPlaysByChosen = Math.floor(
+    // let, а не const: цикл добора экранов по ёмкости ниже присваивает это
+    // значение заново, и на const присваивание падало с TypeError — весь путь
+    // «выбранных не хватает по ёмкости, добираем из пула» валил расчёт.
+    let capPlaysByChosen = Math.floor(
       chosen.reduce((sum, s) => sum + Math.min(effectivePPH, getScreenPphCap(s)), 0) * days * hpd
     );
     // Срезанную частоту нельзя оставлять молча: пользователь ставит 40, видит в
@@ -5624,8 +5653,11 @@ async function onCalcClick() {
         const toAdd = extraPool.splice(0, Math.min(extraNeeded, extraPool.length));
         chosen = [...chosen, ...toAdd];
 
+        tagPph(toAdd);
         avgChosenBid = avgNumber(chosen.map(s => s.minBid)) ?? pr.avgBid;
-        effectiveChosenBid = avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER, bidUpliftFactor(brief));
+        const _pw = playWeightedBid(chosen, brief);
+        effectiveChosenBid = (Number.isFinite(_pw) && _pw > 0) ? _pw
+          : avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER, bidUpliftFactor(brief));
 
         capPlaysByChosen = Math.floor(chosen.reduce((sum, s) => sum + getScreenPphCap(s), 0) * days * hpd);
         const budgetCap = (effectiveChosenBid > 0) ? Math.floor(budget / effectiveChosenBid) : Infinity;
@@ -6963,6 +6995,26 @@ async function dspFetchForecastBids(screens, brief) {
 // экране и выгрузкой, из-за которого «выходы × ставка» не сходилось с бюджетом.
 // Вес экрана — число выбранных длительностей, которые он поддерживает
 // (см. applySelectedDurations): экран под два ролика идёт в среднюю как два.
+// Средняя ставка плана, взвешенная по ВЫХОДАМ экрана, а не по самому экрану.
+// Пока все экраны крутились с одной частотой, разницы не было — множитель
+// сокращался. Но у медиафасада планка 8 вых/час против 40 у щита, и средняя
+// «по экранам» стала врать: выход щита за 11 ₽ считался по средней 365 ₽, и
+// бюджет плана раздувался втрое. Метку _pphUsed ставит расчёт на выбранных
+// экранах; здесь она и читается — в средние по пулу её пускать нельзя, там
+// экраны не выбраны и метка осталась бы от прошлого прохода.
+function playWeightedBid(screens, brief) {
+  let sum = 0, weight = 0;
+  for (const s of (screens || [])) {
+    const b = screenBid(s, brief);
+    if (!Number.isFinite(b) || b <= 0) continue;
+    const wDur = Number.isFinite(s?._durSlots) && s._durSlots > 0 ? s._durSlots : 1;
+    const wPph = Number.isFinite(s?._pphUsed) && s._pphUsed > 0 ? s._pphUsed : 1;
+    sum += b * wDur * wPph;
+    weight += wDur * wPph;
+  }
+  return weight ? sum / weight : null;
+}
+
 function avgEffectiveBid(screens, bidMode, fallback, uplift = 1) {
   const brief = { bidMode, bidUpliftPct: 0 };   // надбавку домножаем ниже, как и раньше
   let sum = 0, weight = 0;
