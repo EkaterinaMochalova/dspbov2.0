@@ -2629,10 +2629,12 @@ async function buildMediaPlanBlob() {
   // выходы, OTS и бюджет остаются те же.
   const daysShown = (_schedHours && _schedHours.activeDays > 0)
     ? _schedHours.activeDays : days;
-  // Часы числом: в ячейке графика при разном расписании лежит диапазон-строка,
-  // делить на неё нельзя. Когда часы одинаковы, это то же самое hpdShown.
-  const hpdNum = (_schedHours && _schedHours.totalHours > 0 && daysShown > 0)
-    ? _schedHours.totalHours / daysShown : hpd;
+  // Часы за весь период — на них делит частота. Делить на «График, ч/сутки»
+  // нельзя: при расписании «10 ч в будни, 5 в выходные» там лежит диапазон
+  // «5–10», то есть строка. А общее число часов однозначно при любом графике,
+  // и клиент, поправив период или расписание в файле, увидит пересчёт частоты.
+  const hoursTotalShown = (_schedHours && _schedHours.totalHours > 0)
+    ? _round2(_schedHours.totalHours) : _round2(days * hpd);
 
   const dateStr   = s => s ? String(s).split("-").reverse().join(".") : "—";
   const periodStr = `${dateStr(brief.dates?.start)} — ${dateStr(brief.dates?.end)}`;
@@ -2850,10 +2852,11 @@ async function buildMediaPlanBlob() {
     ["Адресная программа", screens.length],
     ["Формат",             fmtLabelWithDuration],
     ["Количество дней",    daysShown],
+    ["Часов вещания за период", hoursTotalShown],
   ];
   // Номер строки берём из таблицы: на него ссылается формула частоты, и
   // вписанное число разъехалось бы при первой же перестановке шапки.
-  const daysRowNum = metaRows.findIndex(x => x[0] === "Количество дней") + 1;
+  const hoursRowNum = metaRows.findIndex(x => x[0] === "Часов вещания за период") + 1;
   for (let i = 0; i < metaRows.length; i++) {
     const r = i + 1;
     const [label, value] = metaRows[i];
@@ -3182,26 +3185,21 @@ async function buildMediaPlanBlob() {
 
     // ── base+8: Частота, вых/час на экран ─────────────────────────
     // Формулой, а не числом: клиент правит период или расписание прямо в файле,
-    // и частота обязана пересчитаться вместе с ними. Когда часы разные по дням,
-    // в ячейке графика лежит диапазон-строка — делить на неё нельзя, там ставим
-    // посчитанное среднее по дням вещания.
-    const rFreq = base + 8, rHpd = base + BR.hpd;
-    const freqFx = (col) =>
-      `IFERROR(${col}${rPlay}/${col}${rCnt}/$B$${daysRowNum}/${col}${rHpd},"–")`;
-    const freqVal = (plays, cnt) => (cnt > 0 && daysShown > 0 && hpdNum > 0)
-      ? +(plays / cnt / daysShown / hpdNum).toFixed(2) : null;
+    // и частота обязана пересчитаться вместе с ними. Делим на общее число часов
+    // за период, а не на ч/сутки: при разном расписании по дням в той ячейке
+    // стоит диапазон «5–10», и делить на неё нечем.
+    const rFreq = base + 8;
+    const freqFx = (col) => `IFERROR(${col}${rPlay}/${col}${rCnt}/$B$${hoursRowNum},"–")`;
+    const freqVal = (plays, cnt) => (cnt > 0 && hoursTotalShown > 0)
+      ? +(plays / cnt / hoursTotalShown).toFixed(2) : null;
     const FREQ_NUMFMT = '#,##0.0;-#,##0.0;"–"';
     sc(ws, rFreq, 1, "Частота, вых/час на экран", { bold: true, fill: C_LIGHT });
-    sc(ws, rFreq, 2, hpdIsRange
-        ? freqVal(s0.plays, regCnt)
-        : fx(freqFx("B"), freqVal(s0.plays, regCnt)),
+    sc(ws, rFreq, 2, fx(freqFx("B"), freqVal(s0.plays, regCnt)),
       { fill: C_GREEN, numFmt: FREQ_NUMFMT, h: "right" });
     fmts.forEach((fmt_, fi) => {
       const st = cfStats[city][fmt_];
       const col = colLetter(5 + fi);
-      sc(ws, rFreq, 5 + fi, hpdIsRange
-          ? freqVal(st?.plays || 0, st?.cnt || 0)
-          : fx(freqFx(col), freqVal(st?.plays || 0, st?.cnt || 0)),
+      sc(ws, rFreq, 5 + fi, fx(freqFx(col), freqVal(st?.plays || 0, st?.cnt || 0)),
         { fill: C_GREEN, numFmt: FREQ_NUMFMT, h: "right" });
     });
 
