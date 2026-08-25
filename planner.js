@@ -3094,7 +3094,11 @@ async function buildMediaPlanBlob() {
     { h: "Длительность, сек",  w: 16, fn: s => {
         const info = Array.isArray(s.durationBidInfo) ? s.durationBidInfo : [];
         if (!info.length) return "";
-        const секунды = (list) => [...new Set(list)]
+        // Нули отсекаем на входе: у части экранов слот приходит нулевым
+        // (длительность не указана), а «0 сек» в колонке — не слот, а мусор.
+        // _resolveDurationMatch берёт ближайший слот по расстоянию, поэтому
+        // нулевой пролезает и через фильтрованный путь, не только через «все».
+        const секунды = (list) => [...new Set(list.filter(v => Number.isFinite(v) && v > 0))]
           .sort((a, b) => a - b).map(v => Math.round(v / 1000)).join(", ");
 
         const perFmt = durByFormat[String(s.format || "").trim()];
@@ -3102,11 +3106,7 @@ async function buildMediaPlanBlob() {
         // Пустой выбор и «Любая» — это одно и то же: ноль ни с одним слотом не
         // сопоставляется, поэтому отбрасываем его вместе с пустым списком.
         const filtered = wanted.map(Number).filter(ms => ms > 0);
-        if (!filtered.length) {
-          // Нули отбрасываем: в инвентаре у части экранов слот приходит нулевым
-          // (длительность не указана), и «0 сек» в колонке — не слот, а мусор.
-          return секунды(info.map(d => d.duration).filter(v => Number.isFinite(v) && v > 0));
-        }
+        if (!filtered.length) return секунды(info.map(d => d.duration));
 
         const matched = new Set();
         for (const ms of filtered) {
