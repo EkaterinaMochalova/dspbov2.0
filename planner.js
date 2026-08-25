@@ -234,7 +234,11 @@ function screenBid(s, brief) {
 window.PLANNER.screenBid = screenBid;
 window.PLANNER.bidUpliftFactor = bidUpliftFactor;
 
-const MF_MAX_PPH = 12; // MediaFacade physical cap: max 12 plays/hour
+// Медиафасад крутит не чаще 8 раз в час — это ограничение носителя, а не
+// плановая планка: сколько бы пользователь ни поставил на слайдере, на фасаде
+// частота срезается до 8. Раньше здесь стояло 12, и расчёт обещал на фасадах
+// больше выходов, чем они физически отдают.
+const MF_MAX_PPH = 8;
 
 // Per-screen plays-per-hour cap based on format
 function getScreenPphCap(s) {
@@ -305,9 +309,10 @@ function markSuspiciousScreens(screens, brief) {
 // ===== Плановая ёмкость =====
 // Ёмкость по показам = часы размещения за период × Σ коэффициента формата.
 // Коэффициенты заданы бизнесом: 8 выходов/час для медиафасадов, 30 для остальных
-// форматов. Это НЕ физический потолок экрана (getScreenPphCap — 12/60), а плановая
-// планка: выше неё нельзя ни рекомендовать «максимальный» бюджет, ни молча принять
-// цель клиента по бюджету/показам/OTS.
+// форматов. Для остальных форматов это НЕ физический потолок экрана
+// (getScreenPphCap — 60), а плановая планка: выше неё нельзя ни рекомендовать
+// «максимальный» бюджет, ни молча принять цель клиента по бюджету/показам/OTS.
+// У медиафасадов оба числа совпадают: 8 — и планка, и физический предел.
 const CAPACITY_PPH_MF = 8;
 const CAPACITY_PPH_DEFAULT = 30;
 
@@ -838,7 +843,10 @@ function computeScheduleHoursForPeriod(schedule, startStr, endStr) {
   // Разброс часов по дням: в медиаплане нужен диапазон («5–10»), а не среднее
   // арифметическое за период. Дни без вещания в диапазон не входят, иначе любой
   // график с выходным превращался бы в «0–10».
-  let minHpd = null, maxHpd = null;
+  // Дней вещания бывает меньше календарных: «только будни» за октябрь — 23 из
+  // 31. Считаем их отдельно, чтобы в сводке и в выгрузке стояли честные дни и
+  // часы, а не среднее, размазанное по выходным.
+  let minHpd = null, maxHpd = null, activeDays = 0;
 
   const start = new Date(startStr + "T00:00:00");
   for (let i = 0; i < days; i++) {
@@ -851,17 +859,19 @@ function computeScheduleHoursForPeriod(schedule, startStr, endStr) {
 
     totalHours += dayHours;
     if (dayHours > 0) {
+      activeDays++;
       minHpd = (minHpd == null) ? dayHours : Math.min(minHpd, dayHours);
       maxHpd = (maxHpd == null) ? dayHours : Math.max(maxHpd, dayHours);
     }
   }
 
   const avgHpd = days ? (totalHours / days) : 0;
-  return { days, totalHours, avgHpd, minHpd: minHpd ?? 0, maxHpd: maxHpd ?? 0 };
+  return { days, totalHours, avgHpd, minHpd: minHpd ?? 0, maxHpd: maxHpd ?? 0, activeDays };
 }
 
   const hpd = hoursPerDay(schedule || { type: "all_day" });
-  return { days, totalHours: hpd * days, avgHpd: hpd, minHpd: hpd, maxHpd: hpd };
+  return { days, totalHours: hpd * days, avgHpd: hpd, minHpd: hpd, maxHpd: hpd,
+           activeDays: hpd > 0 ? days : 0 };
 }
 
 function _getByAnyId(...ids) {
@@ -2609,7 +2619,16 @@ async function buildMediaPlanBlob() {
   const hpdMax = _schedHours && _schedHours.maxHpd > 0 ? _round2(_schedHours.maxHpd) : hpd;
   const hpdIsRange = hpdMax - hpdMin > 0.01;
   // Диапазон — строка, поэтому числовой формат к нему неприменим.
-  const hpdValue = hpdIsRange ? `${hpdMin}–${hpdMax}` : hpd;
+  // Когда часы одинаковы во все дни вещания, ставим именно их, а не avgHpd:
+  // тот делит часы на календарные дни, и «будни по 10 ч» за октябрь выходили
+  // как 7,42 — число, которого нет ни в одном дне графика.
+  const hpdShown = hpdIsRange ? null : (hpdMin > 0 ? hpdMin : hpd);
+  const hpdValue = hpdIsRange ? `${hpdMin}–${hpdMax}` : hpdShown;
+  // Дни вещания, а не календарные: при графике «только будни» в плане стояло
+  // 31, хотя ролик выходит 23 дня. Суммарные часы от этого не меняются, так что
+  // выходы, OTS и бюджет остаются те же.
+  const daysShown = (_schedHours && _schedHours.activeDays > 0)
+    ? _schedHours.activeDays : days;
 
   const dateStr   = s => s ? String(s).split("-").reverse().join(".") : "—";
   const periodStr = `${dateStr(brief.dates?.start)} — ${dateStr(brief.dates?.end)}`;
@@ -2826,7 +2845,7 @@ async function buildMediaPlanBlob() {
     ["Город",              cities.join(", ") || "—"],
     ["Адресная программа", screens.length],
     ["Формат",             fmtLabelWithDuration],
-    ["Количество дней",    days],
+    ["Количество дней",    daysShown],
   ];
   for (let i = 0; i < metaRows.length; i++) {
     const r = i + 1;
@@ -3107,7 +3126,7 @@ async function buildMediaPlanBlob() {
     // мудрёном графике автоподбор растягивал строку на пол-экрана. Явная
     // высота автоподбор отключает; сам текст в ячейке остаётся целиком.
     ws.getRow(base + 4).height = 30;
-    const hpdFmt = hpdIsRange ? undefined : decFmt(hpd);
+    const hpdFmt = hpdIsRange ? undefined : decFmt(hpdShown);
     sc(ws, base + 4, 1, "График, ч/сутки", { bold: true, fill: C_LIGHT, v: "center" });
     sc(ws, base + 4, 2, hpdValue,          { fill: C_GREEN, numFmt: hpdFmt, h: "right", v: "center" });
     if (schedTxt) sc(ws, base + 4, 3, schedTxt,
@@ -5462,7 +5481,13 @@ async function onCalcClick() {
     const _poolPphCap = pool.length > 0
       ? Math.round(pool.reduce((sum, s) => sum + getScreenPphCap(s), 0) / pool.length)
       : SC_MAX;
-    const effectivePPH = ppmOverride !== null ? Math.min(ppmOverride, _poolPphCap) : _poolPphCap;
+    // Запрошенную частоту режем только физическим потолком носителя.
+    // _poolPphCap — СРЕДНЕЕ по пулу, и как потолок «на экран» он врал: в
+    // смешанном пуле (фасады 8, остальные 60) среднее выходило, скажем, 36 и
+    // молча срезало запрошенные 40, хотя ни один экран в 36 не упирается.
+    // Настоящий кап каждого экрана всё равно применяется ниже, в
+    // capPlaysByChosen: там стоит min(effectivePPH, getScreenPphCap(s)).
+    const effectivePPH = ppmOverride !== null ? Math.min(ppmOverride, SC_MAX) : _poolPphCap;
 
     // Реальный расход = фактические выходы × ставка ВЫБРАННЫХ экранов (не среднее по пулу).
     // Пересчитываем totalPlaysTheory по фактической ставке выбранных экранов — это убирает
@@ -5477,6 +5502,19 @@ async function onCalcClick() {
     const capPlaysByChosen = Math.floor(
       chosen.reduce((sum, s) => sum + Math.min(effectivePPH, getScreenPphCap(s)), 0) * days * hpd
     );
+    // Срезанную частоту нельзя оставлять молча: пользователь ставит 40, видит в
+    // плане 8 на фасадах и читает это как ошибку расчёта.
+    if (ppmOverride !== null) {
+      const capped = chosen.filter(s => getScreenPphCap(s) < ppmOverride);
+      if (capped.length > 0) {
+        warnings.push(
+          `ℹ️ Регион «${regionDisplay}»: на ${capped.length} экр. частота срезана до ` +
+          `${MF_MAX_PPH} вых/час вместо запрошенных ${Math.round(ppmOverride * 10) / 10} — ` +
+          `медиафасад чаще не крутит.`
+        );
+      }
+    }
+
     // Если ppmOverride — теоретический максимум определяется частотой, а не бюджетом.
     // Но всё равно кэпим по бюджету, чтобы не выходить за введённую сумму.
     if (ppmOverride !== null) {
@@ -5491,7 +5529,10 @@ async function onCalcClick() {
       if (budgetMaxPlays < totalPlaysEffective) {
         // In GID budget mode: frequency is OUTPUT (budget ÷ bid), not a target — no warning.
         // In constructions mode with budget: warn if desired pph can't be met.
-        if (_isManualMode && !_isGidRegion && chosen.length > 0 && hpd > 0 && days > 0) {
+        // Раньше условие «_isManualMode && !_isGidRegion» не выполнялось никогда:
+        // в режиме manual_screens ключ региона как раз «__gid_mode__». Считаем по
+        // делу: частота — цель ровно тогда, когда её задали явно (ppmOverride).
+        if (ppmOverride !== null && chosen.length > 0 && hpd > 0 && days > 0) {
           const desiredPph = ppmOverride !== null ? ppmOverride : effectivePPH;
           const actualPph  = budgetMaxPlays / (chosen.length * hpd * days);
           if (actualPph < desiredPph - 0.5) {
@@ -5860,6 +5901,16 @@ async function onCalcClick() {
     }
   }
 
+  // Та же правда, что и в выгрузке: календарные дни и среднее по ним ничего не
+  // говорят клиенту, если график не каждый день. Произведение дней на часы не
+  // меняется, поэтому выходы и частота на экран остаются те же.
+  const _schedOnAir = brief.schedule?.type === "weekly"
+    ? computeScheduleHoursForPeriod(brief.schedule, brief.dates.start, brief.dates.end)
+    : null;
+  const daysOnAir = (_schedOnAir && _schedOnAir.activeDays > 0) ? _schedOnAir.activeDays : days;
+  const hpdOnAir  = (_schedOnAir && _schedOnAir.totalHours > 0 && daysOnAir > 0)
+    ? _schedOnAir.totalHours / daysOnAir : hpd;
+
   const summaryText =
     `Бриф:
 — Бюджет: ${totalBudgetFinal.toLocaleString("ru-RU")} ₽ ${
@@ -5867,8 +5918,9 @@ async function onCalcClick() {
         ? "(распределён по регионам)"
         : (brief.budget.mode === "goal_ots" ? "(под цель OTS)" : brief.budget.mode === "goal_plays" ? "(под цель показов)" : "(сумма рекомендаций)")
     }${budgetAdviceLine}
-— Даты: ${brief.dates.start} → ${brief.dates.end} (дней: ${days})
-— Расписание: ${brief.schedule.type} (часов/день: ${hpd.toFixed(2)})
+— Даты: ${brief.dates.start} → ${brief.dates.end} (дней: ${daysOnAir})${
+      daysOnAir !== days ? ` — дней вещания, календарных ${days}` : ""}
+— Расписание: ${brief.schedule.type} (часов/день: ${hpdOnAir.toFixed(2)})
 — Регион(ы): ${regions.join(", ")}
 — Форматы: ${selectedFormatsText}
 — Подбор: ${brief.selection.mode}

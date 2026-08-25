@@ -4152,9 +4152,31 @@ window.PLANNER_ASSET_BASE = (function () {
   const el = (id) => document.getElementById(id);
   const money = (v) => Math.round(v).toLocaleString("ru-RU") + " \u20BD";
 
+  // «Частоту задали руками» — это осознанное действие, а не значение по
+  // умолчанию: GID-слайдер всегда стоит на 10, и без метки уровни исчезали бы
+  // в GID-режиме всегда. Метку ставит сам сдвиг слайдера.
+  function freqFixed(){
+    const gids = el("geo-gids-block");
+    if (gids && gids.style.display !== "none") return !!el("gid-ppm")?.dataset?.touched;
+    return !!(el("constructions-enabled")?.checked
+      && Number(el("constructions-ppm")?.value) > 0);
+  }
+  window.plannerFreqFixed = freqFixed;
+
   function render(){
     const host = el("budget-tier-btns");
     if (!host) return;
+    // Частота и уровень бюджета — одно число с двух сторон: бюджет = экраны x
+    // частота x часы x ставка. Когда частота задана, уровень ей противоречит:
+    // выбрали 40 вых/час, а план приходил на 15, потому что сумма от уровня
+    // пересчитывала частоту обратно. Убираем уровни, считаем от частоты.
+    if (freqFixed()){
+      host.style.display = "none";
+      host.dataset.pending = "";
+      const inp = el("budget-input");
+      if (inp){ inp.disabled = false; inp.placeholder = "Введите бюджет, ₽"; }
+      return;
+    }
     const t = window.PLANNER?.computeRecoBudgetTiers?.();
     if (!t || !t.max){ host.style.display = "none"; return; }
 
@@ -4704,9 +4726,17 @@ window.PLANNER_ASSET_BASE = (function () {
       // не влияет и пользователь получит тот же план.
       const rec = document.querySelector('input[name="budget_mode"][value="recommendation"]');
       if (rec && !rec.checked){ rec.checked = true; rec.dispatchEvent(new Event("change", { bubbles: true })); }
-      const cb = el("constructions-enabled"), chip = el("constructions-chip");
-      if (cb && !cb.checked && chip) chip.click();
-      const sl = el("constructions-ppm");
+      // В GID-режиме бриф берёт частоту из gid-ppm, а не из constructions-ppm:
+      // запись не в тот слайдер уходила в пустоту, и «пересобрать» возвращало
+      // тот же план. Ручной чип трогаем только в городском сценарии — в
+      // GID-режиме его блок скрыт, и клик по нему ничего не значит.
+      const gids = el("geo-gids-block");
+      const gidMode = gids && gids.style.display !== "none";
+      if (!gidMode){
+        const cb = el("constructions-enabled"), chip = el("constructions-chip");
+        if (cb && !cb.checked && chip) chip.click();
+      }
+      const sl = el(gidMode ? "gid-ppm" : "constructions-ppm");
       if (sl){
         sl.value = String(Math.max(1, Math.round(Number(apply.dataset.pph))));
         sl.dispatchEvent(new Event("input", { bubbles: true }));
@@ -5068,6 +5098,11 @@ window.PLANNER_ASSET_BASE = (function () {
   // добор с карты и фильтр ВК (он сужает сам введённый список по аффинити).
   const GID_HIDDEN = [
     "step4-formats-block", "side-block", "owners-block", "grp-block",
+    // axis-block: его поле «вых/час» пишет в constructions-ppm, а GID-режим
+    // читает свой слайдер — на экране выходили две шкалы частоты одна над
+    // другой, и работала из них нижняя. Заодно уходит «экранов»: в GID-режиме
+    // берётся весь перечисленный список, ограничить его этим полем нельзя.
+    "axis-block",
     "step4-strategy-block", "constructions-block", "frequency-block",
     "step4-map-zone-block", "step4-selection-block", "pool-preview-block",
   ];
@@ -8143,8 +8178,9 @@ window.PLANNER_ASSET_BASE = (function () {
 
     if (badge) badge.style.display = hasZone ? "flex" : "none";
     if (drawBtn) drawBtn.textContent = hasZone ? "✏️ Изменить зону" : "🗺 Нарисовать зону на карте";
-    // Форматы/операторы показываем всегда — можно выбрать до рисования зоны
-    if (filtersWrap) filtersWrap.style.display = "block";
+    // Пока зоны нет, добирать неоткуда, а чипы считались по всему инвентарю и
+    // обещали «Russ Outdoor (25 997)» там, где не добавится ни один экран.
+    if (filtersWrap) filtersWrap.style.display = hasZone ? "block" : "none";
 
     var typed = _gidExtraTypedSet();
     var selFmt = st.gidExtraFormats, selOwn = st.gidExtraOwners;
@@ -10021,6 +10057,8 @@ window.PLANNER_ASSET_BASE = (function () {
   if (gidPpm && gidPpmVal) {
     gidPpm.addEventListener("input", () => {
       gidPpmVal.textContent = gidPpm.value;
+      // Метка для уровней бюджета: дальше они этой частоте противоречат.
+      gidPpm.dataset.touched = "1";
     });
   }
 })();
