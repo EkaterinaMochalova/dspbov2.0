@@ -1614,6 +1614,32 @@ function isLikelyAddressLikeName(value) {
 // справочник, что и обычный сценарий, — тогда сводки двух сценариев
 // сопоставимы. Не нашли — оставляем как пришло, лучше отдельная строка,
 // чем экран, потерянный в «Не назначено».
+// Технический аккаунт: у настоящих операторов в поле владельца стоит
+// название, а не адрес почты. На момент правки такой в инвентаре ровно один
+// — test@maergroup.ru, он дублирует инвентарь MAER на 355 экранах. Из 389
+// спорных GID-ов 264 были выбором между MAER и его же тестовой копией;
+// правило по «собаке» убирает этот шум и переживёт появление новых тестовых
+// аккаунтов, не задевая живых операторов.
+function isTechnicalOwner(s) {
+  return String(s?.owner ?? "").includes("@");
+}
+
+// GID-ы, у которых есть хотя бы один экран настоящего оператора. Для них
+// технические варианты можно смело игнорировать. Если же GID существует
+// только у технического аккаунта, экран остаётся — иначе он просто исчезнет
+// из расчёта, а это хуже, чем взять что есть.
+function gidsWithRealOwner(gidSet) {
+  const out = new Set();
+  if (!gidSet || !gidSet.size) return out;
+  const all = (Array.isArray(state.screensAll) && state.screensAll.length)
+    ? state.screensAll : (Array.isArray(state.screens) ? state.screens : []);
+  for (const s of all) {
+    const sid = _screenIdOf(s);
+    if (sid && gidSet.has(sid) && !isTechnicalOwner(s)) out.add(sid);
+  }
+  return out;
+}
+
 // Различает экраны с одним и тем же GID. Идентичность объекта не годится:
 // инвентарь перезагружается, а решение пользователя должно переживать это
 // и попадать в черновик. Поэтому составной ключ из полей, которые у дублей
@@ -1642,12 +1668,17 @@ function findAmbiguousGids(gidSet) {
     if (!поGid.has(sid)) поGid.set(sid, []);
     поGid.get(sid).push(s);
   }
+  const реальные = gidsWithRealOwner(gidSet);
   const out = [];
   for (const [gid, variants] of поGid) {
+    // Технические копии из выбора убираем: между настоящим оператором и его
+    // тестовым аккаунтом выбирать нечего. Оставляем их только если больше
+    // ничего нет.
+    const живые = реальные.has(gid) ? variants.filter(v => !isTechnicalOwner(v)) : variants;
     // Полные близнецы (все поля ключа совпали) выбора не требуют: какой из
     // них взять — без разницы, отличить их всё равно нечем.
     const уникальные = new Map();
-    for (const v of variants) uniqueSet(уникальные, gidVariantKey(v), v);
+    for (const v of живые) uniqueSet(уникальные, gidVariantKey(v), v);
     if (уникальные.size > 1) out.push({ gid, variants: [...уникальные.values()] });
   }
   return out.sort((a, b) => a.gid.localeCompare(b.gid, "ru"));
@@ -4714,10 +4745,15 @@ async function onCalcClick() {
         const seenGids = new Set();
         let addedFromZone = 0;
         const _picks = state.gidPicks || {};
+        const _realGids = gidsWithRealOwner(gidSet);
         pool = pool.filter(s => {
           const sid = _screenIdOf(s);
           // 1) типизированный GID-список — сохраняем всегда
           if (gidSet.has(sid) && !seenGids.has(sid)) {
+            // Тестовый аккаунт дублирует инвентарь настоящего оператора.
+            // Пока у GID есть живой владелец, техническую копию не берём —
+            // иначе выбор зависел бы от порядка экранов в пуле.
+            if (isTechnicalOwner(s) && _realGids.has(sid)) return false;
             // У спорного GID берём именно выбранный экран, а не первый
             // попавшийся: у дублей различаются город, формат и ставка.
             const выбран = _picks[sid];
