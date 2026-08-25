@@ -5182,7 +5182,21 @@ window.PLANNER_ASSET_BASE = (function () {
     const st = window.PLANNER.state;
     if (!st.gidPicks) st.gidPicks = {};
     st.gidPicks[r.dataset.gid] = r.value;
-    renderGidDupes();
+
+    // Перерисовываем панель целиком только когда разобрано всё — там меняется
+    // сам блок. На каждом отдельном выборе обновляем один счётчик: список из
+    // трёх десятков GID-ов иначе пересобирался бы под курсором и уводил скролл.
+    const осталось = window.plannerGidUnresolved();
+    if (!осталось) {
+      renderGidDupes();
+    } else {
+      const head = el("gid-dupes")?.querySelector(".gid-dupes-head");
+      if (head) {
+        const всего = (window.PLANNER?.findAmbiguousGids?.(gidsFromField()) || []).length;
+        head.textContent = "Найдено GID-ов с несколькими экранами: " + всего +
+          ". Не разобрано: " + осталось;
+      }
+    }
     updateNext1Btn();
     if (typeof window.renderProgress === "function") window.renderProgress();
   });
