@@ -5864,15 +5864,24 @@ function computePoolPreview() {
   if (!sourceScreens.length) return null;
   const brief = buildBrief();
   const regions = Array.isArray(brief?.geo?.regions) ? brief.geo.regions : [];
-  if (!regions.length) return null;
 
-  // 1. По регионам
-  let pool = sourceScreens.filter(s => regions.some(r => screenMatchesGeoChoice(s, r)));
+  // В GID-режиме регионов нет — экраны заданы списком. Без этой ветки счётчик
+  // «Доступный инвентарь» уходил в null и не показывал ничего.
+  const gidSet = (brief.selection?.mode === "manual_screens" && brief.selection.manual_gids)
+    ? brief.selection.manual_gids : null;
+  const gidMode = !!(gidSet && gidSet.size);
+  if (!gidMode && !regions.length) return null;
 
-  // 2. По форматам (если ручной выбор) — те же что в onCalcClick
+  // 1. По регионам либо по списку GID-ов
+  let pool = gidMode
+    ? sourceScreens.filter(s => gidSet.has(_screenIdOf(s)))
+    : sourceScreens.filter(s => regions.some(r => screenMatchesGeoChoice(s, r)));
+
+  // 2. По форматам (если ручной выбор) — те же что в onCalcClick.
+  // На GID-экраны фильтр форматов не влияет: список задан вручную.
   const formatsMode = brief.formats?.mode || "auto";
   const manualFormats = Array.isArray(brief.formats?.selected) ? brief.formats.selected : [];
-  if (formatsMode === "manual" && manualFormats.length > 0) {
+  if (!gidMode && formatsMode === "manual" && manualFormats.length > 0) {
     const fset = new Set(manualFormats);
     pool = pool.filter(s => fset.has(s.format));
   }
@@ -7054,7 +7063,6 @@ function computeRecoBudgetTiers() {
 
   const brief = buildBrief();
   const regions = Array.isArray(brief?.geo?.regions) ? brief.geo.regions : [];
-  if (!regions.length) return null;
 
   const dates = brief?.dates;
   const days = (dates?.start && dates?.end)
@@ -7073,35 +7081,72 @@ function computeRecoBudgetTiers() {
   let totalMin = 0, totalOpt = 0, totalMax = 0;
   const tiersUsed = new Set();
 
-  for (const region of regions) {
-    const regionKey = typeof region === "string" ? region : (region?.city || region?.region || "");
-    // regionAll — весь инвентарь региона: по нему определяется тир.
-    // pool — то, что реально доступно под текущие форматы и ставки: по нему
-    // считается потолок бюджета. Смешивать нельзя — иначе выбор одного формата
-    // ронял бы регион в младший тир и занижал рекомендацию.
-    const regionAll = sourceScreens.filter(s => screenMatchesGeoChoice(s, region));
-    let pool = regionAll;
-    if (formatsMode === "manual" && manualFormats.size > 0) {
-      pool = pool.filter(s => manualFormats.has(s.format));
+  // Корзина — единица, для которой считается свой потолок и свой тир.
+  // Обычный режим: выбранный регион. GID-режим: город экранов из списка.
+  // key   — по нему берётся тир,
+  // all   — весь инвентарь этого города/региона (основание для тира),
+  // pool  — то, что реально доступно под фильтры и ставки (основание
+  //         для потолка). Смешивать нельзя: выбор одного формата ронял бы
+  //         регион в младший тир и занижал рекомендацию.
+  // inAp  — принадлежность экрана корзине, для пересечения с фиксацией.
+  const buckets = [];
+  const gidSet = (brief.selection?.mode === "manual_screens" && brief.selection.manual_gids)
+    ? brief.selection.manual_gids : null;
+
+  if (gidSet && gidSet.size) {
+    // Города считаем по тому же ключу, что и разбивка расчёта в GID-режиме.
+    const cityKey = (s) => String(s.city || s.region || "\u2014").trim() || "\u2014";
+    const поГороду = new Map();
+    for (const s of sourceScreens) {
+      const k = cityKey(s);
+      let b = поГороду.get(k);
+      if (!b) { b = { all: [], picked: [] }; поГороду.set(k, b); }
+      b.all.push(s);
+      if (gidSet.has(_screenIdOf(s))) b.picked.push(s);
     }
-    pool = pool.filter(hasActiveInventory);
+    for (const [k, b] of поГороду) {
+      if (!b.picked.length) continue;
+      // Фильтры форматов и операторов на сами GID-экраны не влияют —
+      // ровно как в расчёте: список задан вручную и уважается целиком.
+      const picked = new Set(b.picked);
+      buckets.push({ key: k, all: b.all,
+        pool: b.picked.filter(hasActiveInventory),
+        inAp: (s) => picked.has(s) });
+    }
+  } else {
+    if (!regions.length) return null;
+    for (const region of regions) {
+      const key = typeof region === "string" ? region : (region?.city || region?.region || "");
+      const all = sourceScreens.filter(s => screenMatchesGeoChoice(s, region));
+      let pool = all;
+      if (formatsMode === "manual" && manualFormats.size > 0) {
+        pool = pool.filter(s => manualFormats.has(s.format));
+      }
+      buckets.push({ key, all, pool: pool.filter(hasActiveInventory),
+        inAp: (s) => screenMatchesGeoChoice(s, region) });
+    }
+  }
+  if (!buckets.length) return null;
+
+  // Максимум — это вся ёмкость адресной программы: 30 вых/час на экран
+  // (8 для медиафасадов) по выбранной ставке. База — только зафиксированная
+  // программа либо, когда фиксации нет, доступный пул. Запасной путь через
+  // lastChosen убран: он давал базу, которая едет. Расчёт на минимуме
+  // отбирает меньше экранов, база от них становится меньше, минимум падает,
+  // следующий расчёт отбирает ещё меньше — и так без дна. Ровно это и
+  // происходило после «Пересобрать адреску», где ждут как раз пул.
+  //
+  // Считается один раз: это перебор всего инвентаря, а корзин бывает десяток.
+  const frozen = (state.apFrozenIds && state.apFrozenIds.size && Array.isArray(state.screensAll))
+    ? state.screensAll.filter(s => state.apFrozenIds.has(_screenIdOf(s)))
+    : null;
+
+  for (const bucket of buckets) {
+    const pool = bucket.pool;
     if (!pool.length) continue;
 
-    const tier = getTierForGeo(regionKey, regionAll);
-
-    // Максимум — это вся ёмкость адресной программы: 30 вых/час на экран
-    // (8 для медиафасадов) по выбранной ставке. База — только зафиксированная
-    // программа либо, когда фиксации нет, доступный пул. Запасной путь через
-    // lastChosen убран: он давал базу, которая едет. Расчёт на минимуме
-    // отбирает меньше экранов, база от них становится меньше, минимум падает,
-    // следующий расчёт отбирает ещё меньше — и так без дна. Ровно это и
-    // происходило после «Пересобрать адреску», где ждут как раз пул.
-    const frozen = (state.apFrozenIds && state.apFrozenIds.size && Array.isArray(state.screensAll))
-      ? state.screensAll.filter(s => state.apFrozenIds.has(_screenIdOf(s)))
-      : null;
-    const apForRegion = frozen
-      ? frozen.filter(s => screenMatchesGeoChoice(s, region))
-      : null;
+    const tier = getTierForGeo(bucket.key, bucket.all);
+    const apForRegion = frozen ? frozen.filter(bucket.inAp) : null;
     const capBase = (apForRegion && apForRegion.length) ? apForRegion : pool;
 
     const capBudget = computeCapacity(capBase, days * hpd, brief.bidMode, bidUpliftFactor(brief))?.budget;
