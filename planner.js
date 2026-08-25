@@ -5112,8 +5112,16 @@ async function onCalcClick() {
 
       if (_isGidRecoWithPpm) {
         const allGidScreens = prepared.flatMap(r => r.pool);
-        const recoBid = avgEffectiveBid(allGidScreens, brief.bidMode, 1, bidUpliftFactor(brief));
-        const totalBudget = Math.round(allGidScreens.length * _gidPpmGlobal * hpdFixed * days * recoBid);
+        // Считаем по экранам, а не через среднюю ставку: у медиафасада потолок
+        // 8 вых/час и ставка в разы выше щита, поэтому «средняя ставка x
+        // средняя частота» давала сумму, которой не хватало на заказанное, —
+        // план приходил на 7,7 вых/час вместо 40. Здесь сумма ровно равна
+        // стоимости того, что заказали, с настоящим потолком каждого носителя.
+        const totalBudget = Math.round(hpdFixed * days * allGidScreens.reduce((sum, s) => {
+          const bid = screenBid(s, brief);
+          if (!Number.isFinite(bid) || bid <= 0) return sum;
+          return sum + Math.min(_gidPpmGlobal, getScreenPphCap(s)) * bid;
+        }, 0));
         const alloc = allocateBudgetAcrossRegions(
           totalBudget,
           prepared.map(r => ({ key: r.region, tier: r.tier })),
@@ -5473,8 +5481,14 @@ async function onCalcClick() {
     const ppmRegionOverride = Number(brief.constructions?.perRegionPpm?.[region] || 0);
     const ppmManual = ppmRegionOverride > 0 ? ppmRegionOverride : Number(brief.constructions?.playsPerHour || 0);
     const hasBudget = Number.isFinite(budget) && budget > 0;
+    // Когда бюджет выводится из частоты («подскажите бюджет»), частота — цель, и
+    // обнулять её нельзя: в GID-режиме бюджет по региону есть всегда, hasBudget
+    // был true, частота становилась производной от суммы и возвращалась другой
+    // (заказали 40 — получили 7,7). Когда сумму задал пользователь, всё
+    // наоборот: частота = бюджет / ставка, и цель тут ставить нечего.
+    const _freqIsTarget = ppmManual > 0 && brief.budget.mode === "recommendation";
     const ppmOverride = (constructionsTarget !== null)
-      ? (hasBudget
+      ? ((hasBudget && !_freqIsTarget)
           ? (ppmRegionOverride > 0 ? ppmRegionOverride : null)
           : (ppmManual > 0 ? ppmManual : pphTarget))
       : (_isManualMode && ppmManual > 0 ? ppmManual : null);
