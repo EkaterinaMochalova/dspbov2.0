@@ -5572,7 +5572,14 @@ async function onCalcClick() {
 
     // Кэп по бюджету: сколько выходов можно купить на указанный бюджет.
     // ppm-слайдер — верхний предел частоты, но бюджет всегда ограничивает фактический расход.
-    if (Number.isFinite(effectiveChosenBid) && effectiveChosenBid > 0 && Number.isFinite(budget) && budget > 0) {
+    // Кроме одного случая: когда сумму вывели из частоты, она и есть стоимость
+    // заказанного, и резать по ней выходы — гонять частоту по кругу. Сумма
+    // складывается по ставке каждого экрана, а тратится по средней; в смешанном
+    // пуле (дешёвые щиты по 40 вых/час и дорогие фасады по 8) эти два числа
+    // расходятся в разы, и план сваливался с заказанных 40 до 2. Частоту задал
+    // пользователь, сумма — следствие, её и показываем.
+    const _skipBudgetCap = _freqIsTarget && ppmOverride !== null;
+    if (!_skipBudgetCap && Number.isFinite(effectiveChosenBid) && effectiveChosenBid > 0 && Number.isFinite(budget) && budget > 0) {
       const budgetMaxPlays = Math.floor(budget / effectiveChosenBid);
       if (budgetMaxPlays < totalPlaysEffective) {
         // In GID budget mode: frequency is OUTPUT (budget ÷ bid), not a target — no warning.
