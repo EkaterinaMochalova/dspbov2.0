@@ -8911,6 +8911,7 @@ window.PLANNER_ASSET_BASE = (function () {
     if(id === "grp-enabled" || id === "grp-min" || id === "grp-max" ||
        id === "constructions-enabled" || id === "constructions-count" ||
        id === "audience-enabled" || id === "audience-min-affinity" ||
+       id === "manual-gids" ||
        name === "reach_mode" || name === "bid_mode" ||
        t.closest?.("#owner-wrap") || t.closest?.("#formats-wrap") ||
        t.closest?.("#audience-segment-wrap")){
@@ -8921,7 +8922,10 @@ window.PLANNER_ASSET_BASE = (function () {
     const t = e.target;
     if(!t) return;
     const id = t.id || "";
-    if(id === "grp-min" || id === "grp-max" || id === "constructions-count"){
+    // manual-gids: в GID-режиме пул задаёт именно он. Без этого счётчик так и
+    // висел с надписью «укажите регионы», хотя экраны уже были перечислены.
+    if(id === "grp-min" || id === "grp-max" || id === "constructions-count" ||
+       id === "manual-gids"){
       setTimeout(renderPoolPreview, 80);
     }
   });
