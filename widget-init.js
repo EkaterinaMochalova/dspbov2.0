@@ -2695,8 +2695,9 @@ window.PLANNER_ASSET_BASE = (function () {
     border-radius:var(--ux-radius-sm) !important;
     border:1px solid var(--ux-line) !important; box-shadow:none !important;
   }
-  /* Шапка карты: заголовок оставляем, иначе полоса с одной кнопкой
-     «Применить» выглядит пустой. Ужимаем её по высоте. */
+  /* Шапка карты: заголовок и счётчик зон, справа «Перерисовать».
+     Кнопки «Применить» больше нет — зона уходит в фильтр сразу, как
+     дорисована. Ужимаем полосу по высоте. */
   #poly-modal.is-inline > div > div:first-child{ padding:10px 14px !important; }
   #poly-modal.is-inline #poly-modal-cancel{ display:none; }
   #planner-widget .ux-fold[data-fold-for="step4-map-zone-block"] #poly-draw-btn{ display:none; }
@@ -3913,7 +3914,6 @@ window.PLANNER_ASSET_BASE = (function () {
           Перерисовать
         </button>
         <button id="poly-modal-cancel" type="button" class="wiz-btn ghost">Отмена</button>
-        <button id="poly-modal-confirm" type="button" class="ux-primary" disabled>Применить</button>
       </div>
     </div>
     <!-- Draw mode toolbar -->
@@ -7540,6 +7540,21 @@ window.PLANNER_ASSET_BASE = (function () {
       currentPolys.push(p);
     });
 
+    // Возвращаем на карту то, что уже в фильтре: иначе слой открывается
+    // пустым, счётчик в шапке считает по состоянию, а внутри — по
+    // нарисованному, и числа расходятся.
+    if (!currentPolys.length) {
+      const saved = getPoly();
+      if (Array.isArray(saved) && saved.length) {
+        for (const ring of saved) {
+          if (!Array.isArray(ring) || ring.length < 3) continue;
+          const poly = L.polygon(ring, { color: "#5B3EF5", fillOpacity: 0.15, weight: 2 }).addTo(drawLayer);
+          currentPolys.push(poly);
+          attachZoneDelete(poly);
+        }
+      }
+    }
+
     // Render screens matching current region/format/owner filters
     dotsLayer.clearLayers();
     const screens = getMapScreens();
@@ -7683,16 +7698,19 @@ window.PLANNER_ASSET_BASE = (function () {
       if (bufCoords) {
         const poly = L.polygon(bufCoords, { color: "#5B3EF5", fillOpacity: 0.15, weight: 2 }).addTo(drawLayer);
         currentPolys.push(poly);
+        attachZoneDelete(poly);
       }
     } else {
       const poly = L.polygon(vertices, { color: "#5B3EF5", fillOpacity: 0.15, weight: 2 }).addTo(drawLayer);
       currentPolys.push(poly);
+      attachZoneDelete(poly);
     }
 
     vertices = [];
     const finBtn = el("poly-finish-btn");
     if (finBtn) finBtn.style.display = "none";
 
+    applyPolys();
     updateModalState();
 
     // Re-enable drawing for the next zone
@@ -7709,12 +7727,12 @@ window.PLANNER_ASSET_BASE = (function () {
     const finBtn = el("poly-finish-btn");
     if (finBtn) finBtn.style.display = "none";
     polyMap.on("click", onMapClick);
+    applyPolys();   // стёрли всё — фильтр тоже пуст
     updateModalState();
   }
 
   // -- update modal UI state --------------------------------------------
   function updateModalState() {
-    const confirmBtn = el("poly-modal-confirm");
     const resetBtn   = el("poly-modal-reset");
     const countBadge = el("poly-modal-count");
     const hint       = el("poly-hint");
@@ -7723,7 +7741,6 @@ window.PLANNER_ASSET_BASE = (function () {
     const hasPolys = currentPolys.length > 0;
     const hasVerts = vertices.length >= minVerts;
 
-    if (confirmBtn) confirmBtn.disabled = !hasPolys;
     if (resetBtn)   resetBtn.style.display = (hasPolys || hasVerts) ? "block" : "none";
 
     // Update finish button text based on mode
@@ -7739,7 +7756,7 @@ window.PLANNER_ASSET_BASE = (function () {
       const what = drawMode === "line" ? "линию" : "зону";
       const drawingMore = hasVerts
         ? \` Рисуете \${what} \${n + 1} \\u2014 добавлено \${vertices.length} точек.\`
-        : " Нажмите \\u00ABПрименить\\u00BB или нарисуйте ещё зону.";
+        : " Зона уже в фильтре. Можно нарисовать ещё одну.";
       if (hint) hint.textContent = cnt > 0
         ? \`В \${n === 1 ? "зоне" : "зонах"} \${cnt.toLocaleString("ru-RU")} экранов.\${drawingMore}\`
         : \`В зонах нет экранов \\u2014 попробуйте перерисовать.\${drawingMore}\`;
@@ -7753,12 +7770,53 @@ window.PLANNER_ASSET_BASE = (function () {
     }
   }
 
-  // -- confirm: save all polygons to state -----------------------------
-  function confirmPolygon() {
-    if (!currentPolys.length) return;
-    // Save as array of polygon coordinate arrays
-    setPoly(currentPolys.map(p => p.getLatLngs()[0].map(ll => [ll.lat, ll.lng])));
-    closeModal();
+  // Клик по готовой зоне открывает корзинку: убрать одну зону, не
+  // перерисовывая остальные. Всплытие гасим — иначе тот же клик уйдёт в
+  // onMapClick и поставит первую точку новой зоны поверх существующей.
+  let zoneSeq = 0;
+  const zoneById = new Map();
+
+  function attachZoneDelete(poly) {
+    const id = "z" + (++zoneSeq);
+    zoneById.set(id, poly);
+    poly.bindPopup(
+      "<div style='display:flex;align-items:center;gap:10px;font-size:12px;'>" +
+      "<span style='color:#4C5368;'>Зона в фильтре</span>" +
+      "<button type='button' class='zone-del' data-zone='" + id + "' " +
+      "style='display:inline-flex;align-items:center;gap:5px;padding:4px 10px;" +
+      "border:1px solid #EFD8A1;border-radius:8px;background:#FFF6E1;" +
+      "color:#8A5A00;font:inherit;font-weight:600;cursor:pointer;'>" +
+      "\u{1F5D1} Удалить зону</button></div>",
+      { closeButton: false, className: "zone-popup" });
+    poly.on("click", (e) => {
+      if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
+      poly.openPopup(e.latlng);
+    });
+  }
+
+  function deleteZone(id) {
+    const poly = zoneById.get(id);
+    if (!poly) return;
+    zoneById.delete(id);
+    poly.closePopup();
+    drawLayer.removeLayer(poly);
+    currentPolys = currentPolys.filter(x => x !== poly);
+    applyPolys();
+    updateModalState();
+  }
+
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest && e.target.closest(".zone-del");
+    if (!b) return;
+    e.preventDefault();
+    deleteZone(b.dataset.zone);
+  });
+
+  // -- применяем нарисованное сразу, без отдельной кнопки ---------------
+  function applyPolys() {
+    setPoly(currentPolys.length
+      ? currentPolys.map(p => p.getLatLngs()[0].map(ll => [ll.lat, ll.lng]))
+      : null);
     updateBadge();
     window.dispatchEvent(new CustomEvent("planner:filters-changed"));
   }
@@ -7805,7 +7863,6 @@ window.PLANNER_ASSET_BASE = (function () {
 
     el("poly-draw-btn")?.addEventListener("click", openModal);
     el("poly-modal-cancel")?.addEventListener("click", closeModal);
-    el("poly-modal-confirm")?.addEventListener("click", confirmPolygon);
     el("poly-modal-reset")?.addEventListener("click", resetDraw);
     el("poly-clear-btn")?.addEventListener("click", clearPolygon);
     el("poly-finish-btn")?.addEventListener("click", finishPolygon);
