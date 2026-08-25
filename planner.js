@@ -3103,7 +3103,9 @@ async function buildMediaPlanBlob() {
         // сопоставляется, поэтому отбрасываем его вместе с пустым списком.
         const filtered = wanted.map(Number).filter(ms => ms > 0);
         if (!filtered.length) {
-          return секунды(info.map(d => d.duration).filter(Number.isFinite));
+          // Нули отбрасываем: в инвентаре у части экранов слот приходит нулевым
+          // (длительность не указана), и «0 сек» в колонке — не слот, а мусор.
+          return секунды(info.map(d => d.duration).filter(v => Number.isFinite(v) && v > 0));
         }
 
         const matched = new Set();
