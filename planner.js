@@ -5738,24 +5738,36 @@ async function onCalcClick() {
     // pricing is per 1000 OTS: OTS = budget / cpm × 1000; plays = OTS / avgOts
     let russOtsBased = false;
     let avgChosenCpm = null;
+    let avgOtsForRuss = null;
     if (chosen.length > 0 && chosen.every(s => isRussScreen(s))) {
       const cpms = chosen.map(s => s.otsBid).filter(v => Number.isFinite(v) && v > 0);
       if (cpms.length > 0) {
         avgChosenCpm = cpms.reduce((a, b) => a + b, 0) / cpms.length;
-        const avgOtsForRuss = avgNumberNonZero(chosen.map(s => s.ots));
-        if (avgOtsForRuss != null && avgOtsForRuss > 0 && budget > 0) {
-          const otsByBudget = Math.floor(budget / avgChosenCpm * 1000);
-          totalPlaysEffective = Math.round(otsByBudget / avgOtsForRuss);
-          russOtsBased = true;
+        avgOtsForRuss = avgNumberNonZero(chosen.map(s => s.ots));
+        if (avgOtsForRuss != null && avgOtsForRuss > 0) {
+          if (_goalIsTarget) {
+            // Цель задана в показах или OTS — она и остаётся целью. У Russ цена
+            // за 1000 OTS, поэтому из цели выводим сумму, а не наоборот: иначе
+            // цель подменялась бюджетом, который сам из неё же и посчитан, и
+            // заказанные 150 000 показов превращались в 327 000.
+            russOtsBased = true;
+          } else if (budget > 0) {
+            const otsByBudget = Math.floor(budget / avgChosenCpm * 1000);
+            totalPlaysEffective = Math.round(otsByBudget / avgOtsForRuss);
+            russOtsBased = true;
+          }
         }
       }
     }
 
     totalPlaysEffectiveAll += totalPlaysEffective;
 
-    const actualBudget = russOtsBased
-      ? budget
-      : Math.ceil(totalPlaysEffective * effectiveChosenBid);
+    const actualBudget = !russOtsBased
+      ? Math.ceil(totalPlaysEffective * effectiveChosenBid)
+      : (_goalIsTarget
+          // Цена за 1000 OTS: сумма = показы x OTS одного выхода / 1000 x CPM.
+          ? Math.ceil(totalPlaysEffective * avgOtsForRuss / 1000 * avgChosenCpm)
+          : budget);
     totalBudgetFinal += actualBudget;
 
     if (brief.budget.mode !== "goal_ots" && brief.budget.mode !== "goal_plays") {
