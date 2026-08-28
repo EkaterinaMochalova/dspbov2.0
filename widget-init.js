@@ -3412,6 +3412,32 @@ window.PLANNER_ASSET_BASE = (function () {
       <div id="city-formats-rows" class="city-fmt-rows" style="display:none;"></div>
     </div>
   </div>
+  <!-- ===== ПЕРЕДАЧА ФОТООТЧЁТА ===== -->
+  <div class="planner-block" id="photo-report-block" style="display:none;">
+    <div class="planner-label">Передача фотоотчёта</div>
+    <div class="planner-note" style="margin-bottom:8px;">
+      Ничего не выбрано = не фильтруем. «Авто» — экраны, которые фото реально
+      присылают; если последнее фото старше полугода, экран считается как «Нет».
+    </div>
+    <div class="strategy-chips" id="photo-report-chips" style="max-width:420px;">
+      <label class="str-chip">
+        <input type="checkbox" id="pr-yes" value="YES">
+        <div class="str-chip-body"><div class="str-chip-title">Да</div>
+          <div class="str-chip-desc">оператор заявил передачу</div></div>
+      </label>
+      <label class="str-chip">
+        <input type="checkbox" id="pr-auto" value="AUTO">
+        <div class="str-chip-body"><div class="str-chip-title">Авто</div>
+          <div class="str-chip-desc">фото приходят, проверено нами</div></div>
+      </label>
+      <label class="str-chip">
+        <input type="checkbox" id="pr-no" value="NO">
+        <div class="str-chip-body"><div class="str-chip-title">Нет</div>
+          <div class="str-chip-desc">не передаёт</div></div>
+      </label>
+    </div>
+    <div class="planner-note" id="photo-report-counts" style="margin-top:8px;"></div>
+  </div>
   <!-- ===== СТОРОНА ЭКРАНА A/Б ===== -->
   <div class="planner-block" id="side-block" style="display:none;">
     <div class="planner-label">Сторона экрана</div>
@@ -4859,6 +4885,7 @@ window.PLANNER_ASSET_BASE = (function () {
     // 3. Подбираем экраны — чем ограничиваем набор поверхностей
     "wiz-step-4-body": [
       "step4-formats-block",     // Форматы
+      "photo-report-block",      // Передача фотоотчёта
       "side-block",              // Сторона экрана A/Б
       "duration-block",          // Длительность ролика
       "owners-block",            // Операторы
@@ -4924,6 +4951,12 @@ window.PLANNER_ASSET_BASE = (function () {
         const n = window.PLANNER?.state?.selectedOwners?.size || 0;
         const all = window.PLANNER?.state?.ownersAll?.length || 0;
         return n ? ["выбрано " + n, true] : ["все" + (all ? " " + all : ""), false];
+      } },
+    { id: "photo-report-block", t: "Передача фотоотчёта", v: () => {
+        const set = window.PLANNER?.state?.selectedPhotoReport;
+        if (!set || !set.size) return ["не фильтруем", false];
+        const имя = { YES: "да", AUTO: "авто", NO: "нет" };
+        return [[...set].map(k => имя[k] || k).join(", "), true];
       } },
     { id: "side-block", t: "Сторона экрана", v: () => {
         const n = window.PLANNER?.state?.selectedSides?.size || 0;
@@ -5123,7 +5156,7 @@ window.PLANNER_ASSET_BASE = (function () {
   // отбирает и режет набор, теряет смысл и только путает. Показываем частоту,
   // добор с карты и фильтр ВК (он сужает сам введённый список по аффинити).
   const GID_HIDDEN = [
-    "step4-formats-block", "side-block", "owners-block", "grp-block",
+    "step4-formats-block", "side-block", "photo-report-block", "owners-block", "grp-block",
     // axis-block: его поле «вых/час» пишет в constructions-ppm, а GID-режим
     // читает свой слайдер — на экране выходили две шкалы частоты одна над
     // другой, и работала из них нижняя. Заодно уходит «экранов»: в GID-режиме
@@ -8999,6 +9032,45 @@ window.PLANNER_ASSET_BASE = (function () {
     block.style.display = (!isGidMode() && hasSideData()) ? "" : "none";
   }
 
+  // Сколько экранов в каждом состоянии — иначе непонятно, что даст фильтр.
+  // Считаем по той же функции, что и расчёт, чтобы «Авто» старше полугода
+  // попадало в «Нет» и здесь.
+  function renderPhotoReportBlock(){
+    var block = document.getElementById("photo-report-block");
+    if (!block) return;
+    var st = window.PLANNER && window.PLANNER.state;
+    var all = (st && Array.isArray(st.screensAll)) ? st.screensAll : [];
+    var fn = window.PLANNER && window.PLANNER.photoReportOf;
+    if (isGidMode() || !all.length || !fn) { block.style.display = "none"; return; }
+    var счёт = { YES: 0, AUTO: 0, NO: 0, "": 0 };
+    for (var i = 0; i < all.length; i++) счёт[fn(all[i])]++;
+    // Ни у одного экрана нет значения — фильтровать нечем, блок не показываем.
+    if (!счёт.YES && !счёт.AUTO && !счёт.NO) { block.style.display = "none"; return; }
+    block.style.display = "";
+    var note = document.getElementById("photo-report-counts");
+    if (note) note.textContent = "В инвентаре: да — " + счёт.YES.toLocaleString("ru-RU")
+      + ", авто — " + счёт.AUTO.toLocaleString("ru-RU")
+      + ", нет — " + счёт.NO.toLocaleString("ru-RU")
+      + (счёт[""] ? ", без данных — " + счёт[""].toLocaleString("ru-RU") : "");
+  }
+
+  function bindPhotoReportCheckboxes(){
+    var st = window.PLANNER && window.PLANNER.state;
+    if (!st) return;
+    if (!st.selectedPhotoReport) st.selectedPhotoReport = new Set();
+    ["pr-yes", "pr-auto", "pr-no"].forEach(function(id){
+      var cb = document.getElementById(id);
+      if (!cb || cb._prBound) return;
+      cb._prBound = true;
+      cb.checked = st.selectedPhotoReport.has(cb.value);
+      cb.addEventListener("change", function(){
+        if (cb.checked) st.selectedPhotoReport.add(cb.value);
+        else st.selectedPhotoReport.delete(cb.value);
+        window.dispatchEvent(new CustomEvent("planner:filters-changed"));
+      });
+    });
+  }
+
   function bindSideCheckboxes(){
     var st = window.PLANNER && window.PLANNER.state;
     if (!st) return;
@@ -9016,12 +9088,19 @@ window.PLANNER_ASSET_BASE = (function () {
   }
 
   function init(){
+    bindPhotoReportCheckboxes();
+    renderPhotoReportBlock();
     bindSideCheckboxes();
     renderSideBlock();
   }
 
-  window.addEventListener("planner:screens-ready", function(){ bindSideCheckboxes(); renderSideBlock(); });
-  window.addEventListener("planner:filters-changed", renderSideBlock);
+  window.addEventListener("planner:screens-ready", function(){
+    bindPhotoReportCheckboxes(); renderPhotoReportBlock();
+    bindSideCheckboxes(); renderSideBlock();
+  });
+  window.addEventListener("planner:filters-changed", function(){
+    renderSideBlock(); renderPhotoReportBlock();
+  });
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
 })();

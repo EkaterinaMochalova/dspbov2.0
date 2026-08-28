@@ -389,6 +389,21 @@ function withEstimatedBids(pool) {
   });
 }
 
+// Передача фотоотчёта. От SSP приходит YES или NO; AUTO ставится на нашей
+// стороне экранам с YES, которые фото реально присылают, и только у них есть
+// lastShotTime. Экран с AUTO, у которого последнее фото старше полугода, фото
+// фактически не передаёт — считаем его как NO. Дата отсутствует вовсе —
+// значит фото мы не видели ни разу, тоже NO.
+const PHOTO_REPORT_STALE_MS = 183 * 24 * 60 * 60 * 1000;
+function photoReportOf(s) {
+  const raw = String(s?.photoReportOption ?? "").trim().toUpperCase();
+  if (raw !== "AUTO") return (raw === "YES" || raw === "NO") ? raw : "";
+  const t = Number(s?.lastShotTime);
+  if (!Number.isFinite(t) || t <= 0) return "NO";
+  return (Date.now() - t > PHOTO_REPORT_STALE_MS) ? "NO" : "AUTO";
+}
+window.PLANNER.photoReportOf = photoReportOf;
+
 function hasActiveInventory(s) {
   if (!Number.isFinite(s?.minBid) || s.minBid <= 0) return false;
   if (Number.isFinite(s?.requestHourlyAvg) && s.requestHourlyAvg <= 0) return false;
@@ -4795,6 +4810,10 @@ async function onCalcClick() {
       }
 
       // Фильтр по стороне экрана (A/Б), выбирается на шаге 4
+      if (state.selectedPhotoReport && state.selectedPhotoReport.size > 0) {
+        pool = pool.filter(s => state.selectedPhotoReport.has(photoReportOf(s)));
+      }
+
       if (state.selectedSides && state.selectedSides.size > 0) {
         pool = pool.filter(s => state.selectedSides.has(String(s.side || "").trim()));
       }
@@ -6261,6 +6280,10 @@ function computePoolPreview() {
   }
 
   // Фильтр по стороне экрана (A/Б) — та же логика, что в onCalcClick
+  if (state.selectedPhotoReport && state.selectedPhotoReport.size > 0) {
+    pool = pool.filter(s => state.selectedPhotoReport.has(photoReportOf(s)));
+  }
+
   if (state.selectedSides && state.selectedSides.size > 0) {
     pool = pool.filter(s => state.selectedSides.has(String(s.side || "").trim()));
   }
@@ -7185,6 +7208,7 @@ function _draftExtras() {
     owners:  state.selectedOwners ? [...state.selectedOwners] : [],
     polygon: state.polygonFilter || null,
     sides:   state.selectedSides ? [...state.selectedSides] : [],
+    photoReport: state.selectedPhotoReport ? [...state.selectedPhotoReport] : [],
     cityFormats: state.cityFormats
       ? Object.fromEntries(Object.entries(state.cityFormats).map(([k, v]) => [k, [...v]]))
       : null,
@@ -7238,6 +7262,7 @@ async function restoreDraft(draft) {
     const ex = draft.extras || {};
     if (Array.isArray(ex.owners))  state.selectedOwners = new Set(ex.owners);
     if (Array.isArray(ex.sides))   state.selectedSides  = new Set(ex.sides);
+    if (Array.isArray(ex.photoReport)) state.selectedPhotoReport = new Set(ex.photoReport);
     state.polygonFilter = ex.polygon || null;
     if (ex.cityFormats) {
       state.cityFormats = {};
@@ -8246,6 +8271,9 @@ function mapDspInventory(inv) {
     durationBidInfo,
     slotCountPerDay: Number.isFinite(slotCountPerDay) ? slotCountPerDay : NaN,
     requestHourlyAvg: Number.isFinite(requestHourlyAvg) ? requestHourlyAvg : NaN,
+    // Передача фотоотчёта и дата последнего фото — на них строится фильтр ФО.
+    photoReportOption: String(inv.photoReportOption ?? "").trim().toUpperCase(),
+    lastShotTime: Number.isFinite(Number(inv.lastShotTime)) ? Number(inv.lastShotTime) : NaN,
     _dspId:      inv.id,
   };
 }
@@ -8429,6 +8457,10 @@ const DSP_CACHE_TTL  = 24 * 60 * 60 * 1000; // 24 часа
 const DSP_IDB_NAME   = "dsp_planner";
 const DSP_IDB_STORE  = "inventory";
 const DSP_IDB_VER    = 1;
+// Версия формата экрана в кэше. Добавили поле — подняли номер, и запись
+// прошлого формата выбрасывается вместо того, чтобы сутки отдавать экраны
+// без нового поля и молча ломать фильтр по нему.
+const DSP_CACHE_SCHEMA = 2;
 
 // v7: mapDspInventory теперь тащит requestHourlyAvg, и без него фильтр «только
 // активные» работать не может — старые записи кэша (v6 и раньше) надо перечитать.
@@ -8459,7 +8491,7 @@ async function dspSaveInventoryToStorage(cityCache) {
     const db  = await _openIdb();
     await new Promise((res, rej) => {
       const tx  = db.transaction(DSP_IDB_STORE, "readwrite");
-      tx.objectStore(DSP_IDB_STORE).put({ ts: Date.now(), d: cityCache }, key);
+      tx.objectStore(DSP_IDB_STORE).put({ ts: Date.now(), v: DSP_CACHE_SCHEMA, d: cityCache }, key);
       tx.oncomplete = res; tx.onerror = rej;
     });
     db.close();
@@ -8487,6 +8519,14 @@ async function dspLoadInventoryFromStorage() {
     });
     db.close();
     if (!rec) return null;
+    if (rec.v !== DSP_CACHE_SCHEMA) {
+      console.log("[DSP] IDB cache: формат экрана изменился, перечитываю инвентарь");
+      const dbOld = await _openIdb();
+      const txOld = dbOld.transaction(DSP_IDB_STORE, "readwrite");
+      txOld.objectStore(DSP_IDB_STORE).delete(key);
+      dbOld.close();
+      return null;
+    }
     if (Date.now() - rec.ts > DSP_CACHE_TTL) {
       // Просрочен — удаляем
       const db2 = await _openIdb();
