@@ -3130,9 +3130,13 @@ async function buildMediaPlanBlob() {
     // ── base+2: Средняя ставка за показ (or CPM for all-Russ cities) ──
     const isRussCity = rd.russOts === true;
     const rateLabel = isRussCity ? "Ставка за 1000 OTS" : "Средняя ставка за показ";
+    // Ставку кладём НЕокруглённой: показывает её numFmt "0.00", а по значению
+    // считает формула бюджета «выходы x ставка». Раньше в ячейке лежало
+    // округлённое до копеек число, а бюджет был посчитан по полному — Excel
+    // при пересчёте давал другой итог. На плане по Владивостоку это +5 878 ₽.
     const wtRateD = isRussCity
-      ? (rd.avgCpm != null ? +rd.avgCpm.toFixed(2) : null)
-      : (wtAvgBid > 0 ? +wtAvgBid.toFixed(2) : null);
+      ? (rd.avgCpm != null ? rd.avgCpm : null)
+      : (wtAvgBid > 0 ? wtAvgBid : null);
     sc(ws, base + 2, 1, rateLabel, { bold: true, fill: C_LIGHT });
     // Средневзвешенная по количеству экранов. SUMPRODUCT, а не ручная сумма
     // произведений: в рукописных планах такую формулу писали под фиксированное
@@ -3141,8 +3145,8 @@ async function buildMediaPlanBlob() {
       { fill: C_GREEN, numFmt: "0.00" });
     fmts.forEach((fmt_, fi) => {
       const r = isRussCity
-        ? (rd.avgCpm != null ? +rd.avgCpm.toFixed(2) : null)
-        : (cfStats[city][fmt_]?.avgBid > 0 ? +(cfStats[city][fmt_].avgBid).toFixed(2) : null);
+        ? (rd.avgCpm != null ? rd.avgCpm : null)
+        : (cfStats[city][fmt_]?.avgBid > 0 ? cfStats[city][fmt_].avgBid : null);
       sc(ws, base + 2, 5 + fi, r, { fill: C_GREEN, numFmt: "0.00" });
     });
 
