@@ -7567,11 +7567,33 @@ function computeFreqBudget() {
   for (const bucket of buckets) {
     // Расчёт выбрасывает экраны без ставки только при включённом «Только
     // активные» — уровни бюджета режут их всегда, и подсказка по их пулу
-    // показывала 4 экрана там, где расчёт возьмёт 6. Экраны без ставки всё
-    // равно отсеются ниже: screenBid по ним не даёт числа.
+    // показывала 4 экрана там, где расчёт возьмёт 6.
     const список = brief.onlyActiveBids ? bucket.pool : (bucket.poolAll || bucket.pool);
+
+    // Экран без своей ставки оцениваем средней ЭФФЕКТИВНОЙ ставкой его
+    // формата, а не средним minBid: к сборке плана расчёт уже знает прогноз
+    // аукциона, а он у медиафасадов много выше minBid x 1.8. Из-за этого
+    // подсказка показывала 3,1 млн там, где расчёт давал 5,9 млн — вся
+    // разница сидела в двух фасадах без ставки.
+    const поФормату = new Map();
+    let общаяСумма = 0, общаяШт = 0;
     for (const s of список) {
-      const bid = screenBid(s, brief);
+      if (s._bidEstimated) continue;
+      const b = screenBid(s, brief);
+      if (!Number.isFinite(b) || b <= 0) continue;
+      const k = String(s.format || "");
+      const acc = поФормату.get(k) || { sum: 0, n: 0 };
+      acc.sum += b; acc.n++; поФормату.set(k, acc);
+      общаяСумма += b; общаяШт++;
+    }
+    const средняяСтавка = (s) => {
+      const acc = поФормату.get(String(s.format || ""));
+      if (acc && acc.n) return acc.sum / acc.n;
+      return общаяШт ? общаяСумма / общаяШт : 0;
+    };
+
+    for (const s of список) {
+      const bid = s._bidEstimated ? средняяСтавка(s) : screenBid(s, brief);
       if (!Number.isFinite(bid) || bid <= 0) continue;
       const own = Math.min(pph, getScreenPphCap(s));
       if (own < pph) capped++;
