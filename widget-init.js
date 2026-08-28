@@ -2553,6 +2553,14 @@ window.PLANNER_ASSET_BASE = (function () {
     border:1px solid var(--ux-warn-line); border-radius:var(--ux-radius-xs);
   }
   #planner-widget .gid-dupes-head{ font-weight:600; margin-bottom:2px; }
+  #planner-widget .ux-freqsum{
+    display:flex; flex-direction:column; gap:2px;
+    padding:10px 12px; border:1px solid var(--ux-line); border-radius:var(--ux-radius-xs);
+    background:var(--ux-soft);
+  }
+  #planner-widget .ux-freqsum b{ font-size:18px; color:var(--ux-text); }
+  #planner-widget .ux-freqsum span{ font-size:12px; color:var(--ux-text2); }
+  #planner-widget .ux-freqsum .cap{ color:var(--ux-warn); }
   #planner-widget .gid-dupes-sub{ color:var(--ux-text2); margin-bottom:8px; }
   #planner-widget .gid-dupe{ padding:8px 0; border-top:1px solid var(--ux-warn-line); }
   #planner-widget .gid-dupe-id{
@@ -4171,10 +4179,28 @@ window.PLANNER_ASSET_BASE = (function () {
     // выбрали 40 вых/час, а план приходил на 15, потому что сумма от уровня
     // пересчитывала частоту обратно. Убираем уровни, считаем от частоты.
     if (freqFixed()){
-      host.style.display = "none";
       host.dataset.pending = "";
       const inp = el("budget-input");
       if (inp){ inp.disabled = false; inp.placeholder = "Введите бюджет, ₽"; }
+      // Уровни здесь не к месту, но и пустое место — не ответ: когда частота
+      // задана, сумма из неё выводится однозначно, её и показываем. Считает
+      // planner.js той же формулой, какой потом пойдёт расчёт.
+      const f = window.PLANNER?.computeFreqBudget?.();
+      if (!f){ host.style.display = "none"; host.innerHTML = ""; return; }
+      const режим = document.querySelector('input[name="budget_mode"]:checked')?.value;
+      host.style.display = "block";
+      host.innerHTML = "<div class='ux-freqsum'>"
+        + "<b>" + money(f.budget) + "</b>"
+        + "<span>" + f.screens.toLocaleString("ru-RU") + " экр. \u00D7 "
+        + String(f.pph).replace(".", ",") + " вых/час \u00D7 "
+        + String(f.hours).replace(".", ",") + " ч вещания \u00D7 ваша ставка</span>"
+        + (f.capped ? "<span class='cap'>у " + f.capped
+            + " экр. частота срезана потолком носителя</span>" : "")
+        + (режим && режим !== "recommendation"
+            ? "<span class='cap'>сейчас выбран свой бюджет — тогда частота станет"
+              + " производной от суммы. Выберите «подскажите бюджет», чтобы"
+              + " считать от частоты</span>" : "")
+        + "</div>";
       return;
     }
     const t = window.PLANNER?.computeRecoBudgetTiers?.();
@@ -8498,7 +8524,12 @@ window.PLANNER_ASSET_BASE = (function () {
 
     const spentBudget   = perRegion.reduce((a,r)=> a + (Number(r.budget)||0), 0);
     const targetBudget  = Number(detail?.brief?.budget?.amount) || spentBudget;
-    const totalBudget   = targetBudget; // badge shows target; unspent is shown via warning
+    // Показываем ОСВОЕННОЕ, а не заданное. Раньше здесь стояла заданная сумма,
+    // и когда инвентарь не мог её освоить, страница показывала одно число, а
+    // выгрузка — другое, меньшее. Заодно врали «стоимость выхода» и CPM: они
+    // делят этот бюджет на выходы, которых на заданную сумму не набралось.
+    // Предупреждение о неосвоенном есть, но только при разнице больше 10 %.
+    const totalBudget   = spentBudget;
     const totalPlays   = perRegion.reduce((a,r)=> a + (Number(r.plays)||0), 0);
     const totalScreens = Array.isArray(detail?.chosen) ? detail.chosen.length
       : perRegion.reduce((a,r)=> a + (Number(r.screens)||0), 0);
@@ -8616,7 +8647,12 @@ window.PLANNER_ASSET_BASE = (function () {
           <div class="ps-head">
             <div>
               <div class="ps-title">Сводка кампании</div>
-              <div class="ps-sub">Итоги и разбивка по регионам</div>
+              <div class="ps-sub">Итоги и разбивка по регионам\${
+                (targetBudget > spentBudget + 1)
+                  ? " \u00B7 освоено " + Math.round(spentBudget).toLocaleString("ru-RU")
+                    + "\u202F\u20BD из " + Math.round(targetBudget).toLocaleString("ru-RU")
+                    + "\u202F\u20BD заданных"
+                  : ""}</div>
             </div>
 
           </div>
@@ -8948,10 +8984,19 @@ window.PLANNER_ASSET_BASE = (function () {
     return screens.some(function(s){ return s.side === "A" || s.side === "B"; });
   }
 
+  // В GID-режиме сторона уже задана выбором конкретного экрана, фильтр по ней
+  // не нужен. Блок лежит в GID_HIDDEN, но эта функция висит на
+  // planner:filters-changed и возвращала его на экран после любой правки
+  // длительности — она перекрывала решение applyGidVisibility.
+  function isGidMode(){
+    var b = document.getElementById("geo-gids-block");
+    return !!(b && b.style.display !== "none");
+  }
+
   function renderSideBlock(){
     var block = document.getElementById("side-block");
     if (!block) return;
-    block.style.display = hasSideData() ? "" : "none";
+    block.style.display = (!isGidMode() && hasSideData()) ? "" : "none";
   }
 
   function bindSideCheckboxes(){

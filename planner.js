@@ -5584,6 +5584,14 @@ async function onCalcClick() {
     // (заказали 40 — получили 7,7). Когда сумму задал пользователь, всё
     // наоборот: частота = бюджет / ставка, и цель тут ставить нечего.
     const _freqIsTarget = ppmManual > 0 && brief.budget.mode === "recommendation";
+    // Цель по показам и по OTS — тоже контракт, и бюджет под неё выведен из неё
+    // же: цель делится по регионам, потом умножается на среднюю ставку пула.
+    // Резать по такому бюджету выходы значит гонять цель по кругу — тратится
+    // план по ставке ВЫБРАННЫХ экранов, а она другая, и заказанные X показов
+    // приходили меньше. Хуже того, ставка выбранных зависит от прошлого
+    // прохода через фиксацию адрески: отсюда «нажала рассчитать ещё раз без
+    // изменений — число другое».
+    const _goalIsTarget = brief.budget.mode === "goal_plays" || brief.budget.mode === "goal_ots";
     const ppmOverride = (constructionsTarget !== null)
       ? ((hasBudget && !_freqIsTarget)
           ? (ppmRegionOverride > 0 ? ppmRegionOverride : null)
@@ -5649,6 +5657,18 @@ async function onCalcClick() {
     }
     let totalPlaysEffective = Math.min(totalPlaysTheory, capPlaysByChosen);
 
+    // Цель, срезанную ёмкостью, молчать нельзя: пользователь задал число и
+    // должен видеть, почему получил меньше. Ёмкость — единственное, что
+    // теперь может урезать цель, и это честное физическое ограничение.
+    if (_goalIsTarget && capPlaysByChosen < totalPlaysTheory && chosen.length > 0) {
+      warnings.push(
+        `⚠️ Регион «${regionDisplay}»: инвентарь отдаёт ` +
+        `${capPlaysByChosen.toLocaleString("ru-RU")} выходов из запрошенных ` +
+        `${totalPlaysTheory.toLocaleString("ru-RU")} — ${chosen.length} экр. на ` +
+        `максимальной частоте больше не открутят. Нужны ещё экраны или период длиннее.`
+      );
+    }
+
     // Кэп по бюджету: сколько выходов можно купить на указанный бюджет.
     // ppm-слайдер — верхний предел частоты, но бюджет всегда ограничивает фактический расход.
     // Кроме одного случая: когда сумму вывели из частоты, она и есть стоимость
@@ -5657,7 +5677,7 @@ async function onCalcClick() {
     // пуле (дешёвые щиты по 40 вых/час и дорогие фасады по 8) эти два числа
     // расходятся в разы, и план сваливался с заказанных 40 до 2. Частоту задал
     // пользователь, сумма — следствие, её и показываем.
-    const _skipBudgetCap = _freqIsTarget && ppmOverride !== null;
+    const _skipBudgetCap = (_freqIsTarget && ppmOverride !== null) || _goalIsTarget;
     if (!_skipBudgetCap && Number.isFinite(effectiveChosenBid) && effectiveChosenBid > 0 && Number.isFinite(budget) && budget > 0) {
       const budgetMaxPlays = Math.floor(budget / effectiveChosenBid);
       if (budgetMaxPlays < totalPlaysEffective) {
@@ -6821,23 +6841,47 @@ document.querySelectorAll('input[name="weekly_mode"]').forEach(r => {
   }
 
   // ===== Ненайденные GID: кнопка скачать =====
-  window.addEventListener("planner:calc-done", (e) => {
-    const unmatched = e?.detail?.unmatchedGids || [];
+  // Каких экранов нет в инвентаре, видно сразу: на шаге 1 инвентарь уже
+  // загружен, и ждать расчёта незачем — раньше кнопка появлялась только
+  // после него, то есть ровно тогда, когда список уже поздно исправлять.
+  function _unmatchedGidsFromField() {
+    if ((el("selection-mode")?.value || "") !== "manual_screens") return [];
+    const set = _parseManualGids(el("manual-gids")?.value || "");
+    if (!set.size) return [];
+    const all = (Array.isArray(state.screensAll) && state.screensAll.length)
+      ? state.screensAll : (Array.isArray(state.screens) ? state.screens : []);
+    if (!all.length) return [];
+    const have = new Set();
+    for (const s of all) { const id = _screenIdOf(s); if (id) have.add(id); }
+    return [...set].filter(g => !have.has(g));
+  }
+
+  function renderUnmatchedGids(list) {
     const btn = el("manual-gids-download-unmatched");
     if (!btn) return;
-    if (unmatched.length > 0) {
-      btn.style.display = "inline-block";
-      btn.textContent = `↓ Скачать не найденные GID-ы (${unmatched.length})`;
-      btn.onclick = () => {
-        const blob = new Blob([unmatched.join("\n")], { type: "text/plain;charset=utf-8;" });
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = "gids_not_found.txt";
-        a.click();
-      };
-    } else {
-      btn.style.display = "none";
-    }
+    // После расчёта список приходит от него: там учтён ещё и добор с карты.
+    const unmatched = Array.isArray(list) ? list : _unmatchedGidsFromField();
+    if (!unmatched.length) { btn.style.display = "none"; return; }
+    btn.style.display = "inline-block";
+    btn.textContent = `↓ Скачать не найденные GID-ы (${unmatched.length})`;
+    btn.onclick = () => {
+      const blob = new Blob([unmatched.join("\n")], { type: "text/plain;charset=utf-8;" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "gids_not_found.txt";
+      a.click();
+    };
+  }
+
+  window.addEventListener("planner:calc-done", (e) =>
+    renderUnmatchedGids(e?.detail?.unmatchedGids || []));
+  window.addEventListener("planner:screens-ready", () => renderUnmatchedGids());
+  // Делегированно: разметка шага 1 к этому моменту может быть ещё не создана.
+  let _unmatchedTimer = null;
+  document.addEventListener("input", (e) => {
+    if (e.target?.id !== "manual-gids") return;
+    clearTimeout(_unmatchedTimer);
+    _unmatchedTimer = setTimeout(() => renderUnmatchedGids(), 300);
   });
 
   // ===== Calc =====
@@ -7412,7 +7456,10 @@ function restoreBriefToUI(brief) {
   if (typeof window.setStep === "function") window.setStep(1);
 }
 
-function computeRecoBudgetTiers() {
+// Корзины, по которым считаются и уровни бюджета, и сумма под заданную частоту.
+// Обе подсказки на шаге «Цели» обязаны видеть один и тот же набор экранов,
+// иначе показанное расходится с тем, что потом посчитает расчёт.
+function _budgetBuckets() {
   const sourceScreens = (Array.isArray(state.screensAll) && state.screensAll.length)
     ? state.screensAll : (Array.isArray(state.screens) ? state.screens : []);
   if (!sourceScreens.length) return null;
@@ -7434,8 +7481,6 @@ function computeRecoBudgetTiers() {
   const formatsMode = brief.formats?.mode || "auto";
   const manualFormats = new Set(Array.isArray(brief.formats?.selected) ? brief.formats.selected : []);
 
-  let totalMin = 0, totalOpt = 0, totalMax = 0;
-  const tiersUsed = new Set();
 
   // Корзина — единица, для которой считается свой потолок и свой тир.
   // Обычный режим: выбранный регион. GID-режим: город экранов из списка.
@@ -7483,6 +7528,45 @@ function computeRecoBudgetTiers() {
     }
   }
   if (!buckets.length) return null;
+  return { brief, days, hpd, buckets };
+}
+
+// Сумма под заданную вручную частоту: экраны x часы x частота x ставка — ровно
+// той же формулой, какой её считает расчёт, с настоящим потолком каждого
+// носителя (медиафасад чаще 8 раз в час не крутит).
+function computeFreqBudget() {
+  const ctx = _budgetBuckets();
+  if (!ctx) return null;
+  const { brief, days, hpd, buckets } = ctx;
+  const pph = Number(brief.constructions?.playsPerHour || 0);
+  const hours = days * hpd;
+  if (!(pph > 0) || !(hours > 0)) return null;
+
+  let sum = 0, screens = 0, capped = 0;
+  for (const bucket of buckets) {
+    for (const s of bucket.pool) {
+      const bid = screenBid(s, brief);
+      if (!Number.isFinite(bid) || bid <= 0) continue;
+      const own = Math.min(pph, getScreenPphCap(s));
+      if (own < pph) capped++;
+      sum += own * bid * hours;
+      screens++;
+    }
+  }
+  if (!screens) return null;
+  return {
+    budget: Math.round(sum), screens, pph, capped,
+    hours: Math.round(hours * 10) / 10,
+  };
+}
+
+function computeRecoBudgetTiers() {
+  const ctx = _budgetBuckets();
+  if (!ctx) return null;
+  const { brief, days, hpd, buckets } = ctx;
+
+  const tiersUsed = new Set();
+  let totalMin = 0, totalOpt = 0, totalMax = 0;
 
   // Максимум — это вся ёмкость адресной программы: 30 вых/час на экран
   // (8 для медиафасадов) по выбранной ставке. База — только зафиксированная
@@ -7534,6 +7618,7 @@ window.PLANNER.saveCalcToHistory = saveCalcToHistory;
 window.PLANNER.restoreBriefToUI = restoreBriefToUI;
 window.PLANNER.buildMediaPlanBlob = buildMediaPlanBlob;
 window.PLANNER.computeRecoBudgetTiers = computeRecoBudgetTiers;
+window.PLANNER.computeFreqBudget = computeFreqBudget;
 window.PLANNER.findAmbiguousGids = findAmbiguousGids;
 window.PLANNER.unresolvedGids = unresolvedGids;
 window.PLANNER.gidVariantKey = gidVariantKey;
