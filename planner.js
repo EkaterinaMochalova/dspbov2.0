@@ -7505,13 +7505,36 @@ function _budgetBuckets() {
       b.all.push(s);
       if (gidSet.has(_screenIdOf(s))) b.picked.push(s);
     }
+    // Под одним GID-ом бывает несколько экранов. Расчёт берёт ровно один —
+    // выбранный пользователем, а при молчании отсеивает технический аккаунт.
+    // Здесь должно быть то же, иначе и уровни бюджета, и сумма под частоту
+    // считались бы по дублям и завышали план.
+    const _real = gidsWithRealOwner(gidSet);
+    const _picks = state.gidPicks || {};
+    const оставить = (list) => {
+      const seen = new Set();
+      const out = [];
+      for (const sc of list) {
+        const id = _screenIdOf(sc);
+        if (seen.has(id)) continue;
+        if (isTechnicalOwner(sc) && _real.has(id)) continue;
+        const выбран = _picks[id];
+        if (выбран && gidVariantKey(sc) !== выбран) continue;
+        seen.add(id);
+        out.push(sc);
+      }
+      return out;
+    };
     for (const [k, b] of поГороду) {
       if (!b.picked.length) continue;
       // Фильтры форматов и операторов на сами GID-экраны не влияют —
       // ровно как в расчёте: список задан вручную и уважается целиком.
       const picked = new Set(b.picked);
+      const свои = оставить(b.picked);
+      if (!свои.length) continue;
       buckets.push({ key: k, all: b.all,
-        pool: b.picked.filter(hasActiveInventory),
+        pool: свои.filter(hasActiveInventory),
+        poolAll: свои,
         inAp: (s) => picked.has(s) });
     }
   } else {
@@ -7524,6 +7547,7 @@ function _budgetBuckets() {
         pool = pool.filter(s => manualFormats.has(s.format));
       }
       buckets.push({ key, all, pool: pool.filter(hasActiveInventory),
+        poolAll: pool,
         inAp: (s) => screenMatchesGeoChoice(s, region) });
     }
   }
@@ -7544,7 +7568,12 @@ function computeFreqBudget() {
 
   let sum = 0, screens = 0, capped = 0;
   for (const bucket of buckets) {
-    for (const s of bucket.pool) {
+    // Расчёт выбрасывает экраны без ставки только при включённом «Только
+    // активные» — уровни бюджета режут их всегда, и подсказка по их пулу
+    // показывала 4 экрана там, где расчёт возьмёт 6. Экраны без ставки всё
+    // равно отсеются ниже: screenBid по ним не даёт числа.
+    const список = brief.onlyActiveBids ? bucket.pool : (bucket.poolAll || bucket.pool);
+    for (const s of список) {
       const bid = screenBid(s, brief);
       if (!Number.isFinite(bid) || bid <= 0) continue;
       const own = Math.min(pph, getScreenPphCap(s));
