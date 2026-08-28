@@ -5454,6 +5454,10 @@ async function onCalcClick() {
 
     budget = Math.min(budget, effectiveCapBudget);
 
+    // Цель по показам и по OTS — контракт: бюджет под неё выведен из неё же,
+    // поэтому всё, что «доосваивает бюджет», обязано её уважать.
+    const _goalIsTarget = brief.budget.mode === "goal_plays" || brief.budget.mode === "goal_ots";
+
     let totalPlaysTheory = 0;
     if ((brief.budget.mode === "goal_ots" || brief.budget.mode === "goal_plays") && goalPlan && goalPlan[region]) {
       totalPlaysTheory = Math.ceil(Number(goalPlan[region].playsPlanned || 0));
@@ -5524,7 +5528,13 @@ async function onCalcClick() {
       }
 
       const totalPlaysTheoryByChosen = Math.floor(budget / effectiveChosenBid);
-      const adjustedTotalPlaysTheory = Math.max(totalPlaysTheory, totalPlaysTheoryByChosen);
+      // Поднимать план до «сколько влезет в бюджет» можно только когда сумму
+      // задал пользователь. В режиме цели бюджет выведен из цели, а сетка
+      // отбирает экраны дешевле средней по пулу — на ту же сумму выходов
+      // купится больше, и заказанные 150 000 показов превращались в 327 000.
+      const adjustedTotalPlaysTheory = _goalIsTarget
+        ? totalPlaysTheory
+        : Math.max(totalPlaysTheory, totalPlaysTheoryByChosen);
       const adjustedScreensNeeded = Math.min(
         pool.length,
         computeScreensNeededForPlays(
@@ -5581,14 +5591,8 @@ async function onCalcClick() {
     // (заказали 40 — получили 7,7). Когда сумму задал пользователь, всё
     // наоборот: частота = бюджет / ставка, и цель тут ставить нечего.
     const _freqIsTarget = ppmManual > 0 && brief.budget.mode === "recommendation";
-    // Цель по показам и по OTS — тоже контракт, и бюджет под неё выведен из неё
-    // же: цель делится по регионам, потом умножается на среднюю ставку пула.
-    // Резать по такому бюджету выходы значит гонять цель по кругу — тратится
-    // план по ставке ВЫБРАННЫХ экранов, а она другая, и заказанные X показов
-    // приходили меньше. Хуже того, ставка выбранных зависит от прошлого
-    // прохода через фиксацию адрески: отсюда «нажала рассчитать ещё раз без
-    // изменений — число другое».
-    const _goalIsTarget = brief.budget.mode === "goal_plays" || brief.budget.mode === "goal_ots";
+    // Про _goalIsTarget см. объявление выше: цель нельзя ни резать бюджетом,
+    // выведенным из неё же, ни поднимать выше заданной.
     const ppmOverride = (constructionsTarget !== null)
       ? ((hasBudget && !_freqIsTarget)
           ? (ppmRegionOverride > 0 ? ppmRegionOverride : null)
