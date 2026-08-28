@@ -368,6 +368,27 @@ function computeCapacity(screens, hoursTotal, bidMode, uplift = 1) {
 // Поля может не быть в старом ответе/кэше — тогда NaN трактуем как "неизвестно" и
 // экран не выбрасываем, иначе "только активные" вычистит весь пул на источниках без
 // этого поля (например, при загрузке из CSV).
+// Экраны без ставки в GID-режиме и в режиме конструкций не выбрасываются, а
+// получают оценку по среднему своего формата: список задан вручную, и молча
+// терять его часть нельзя. Функция одна на все места — расчёт делал это двумя
+// копиями, а подсказка на шаге «Цели» не делала вовсе, из-за чего показывала
+// 4 экрана там, где расчёт берёт 6, и сумма расходилась в разы.
+function withEstimatedBids(pool) {
+  const bidScreens = pool.filter(hasActiveInventory);
+  if (!bidScreens.length || bidScreens.length === pool.length) return pool;
+  const fmtAvg = {};
+  for (const s of bidScreens) {
+    if (!fmtAvg[s.format]) fmtAvg[s.format] = { sum: 0, n: 0 };
+    fmtAvg[s.format].sum += s.minBid; fmtAvg[s.format].n++;
+  }
+  const regionAvg = bidScreens.reduce((a, s) => a + s.minBid, 0) / bidScreens.length;
+  return pool.map(s => {
+    if (Number.isFinite(s.minBid) && s.minBid > 0) return s;
+    const f = fmtAvg[s.format];
+    return { ...s, minBid: f ? f.sum / f.n : regionAvg, _bidEstimated: true };
+  });
+}
+
 function hasActiveInventory(s) {
   if (!Number.isFinite(s?.minBid) || s.minBid <= 0) return false;
   if (Number.isFinite(s?.requestHourlyAvg) && s.requestHourlyAvg <= 0) return false;
@@ -4964,41 +4985,13 @@ async function onCalcClick() {
     // onlyActiveBids=true → filter out no-bid screens (default-safe for city mode).
     // onlyActiveBids=false or GID mode → estimate bid for no-bid screens from same-format avg.
     const _skipBidFilter = (brief.constructions?.enabled && brief.constructions.count > 0) || _isManualMode;
-    if (!_skipBidFilter) {
+    if (!_skipBidFilter && brief.onlyActiveBids !== false) {
+      // Городской сценарий с включённым «Только активные»: экраны без ставки
+      // выбрасываем, а не оцениваем — так просил пользователь.
       const bidScreens = pool.filter(hasActiveInventory);
-      if (bidScreens.length > 0) {
-        if (brief.onlyActiveBids !== false) {
-          pool = bidScreens;
-        } else {
-          const fmtAvg = {};
-          for (const s of bidScreens) {
-            if (!fmtAvg[s.format]) fmtAvg[s.format] = { sum: 0, n: 0 };
-            fmtAvg[s.format].sum += s.minBid; fmtAvg[s.format].n++;
-          }
-          const regionAvg = bidScreens.reduce((a, s) => a + s.minBid, 0) / bidScreens.length;
-          pool = pool.map(s => {
-            if (Number.isFinite(s.minBid) && s.minBid > 0) return s;
-            const f = fmtAvg[s.format];
-            return { ...s, minBid: f ? f.sum / f.n : regionAvg, _bidEstimated: true };
-          });
-        }
-      }
+      if (bidScreens.length > 0) pool = bidScreens;
     } else {
-      // GID mode or constructions mode: estimate bids for screens that don't have one
-      const bidScreens = pool.filter(hasActiveInventory);
-      if (bidScreens.length > 0 && bidScreens.length < pool.length) {
-        const fmtAvg = {};
-        for (const s of bidScreens) {
-          if (!fmtAvg[s.format]) fmtAvg[s.format] = { sum: 0, n: 0 };
-          fmtAvg[s.format].sum += s.minBid; fmtAvg[s.format].n++;
-        }
-        const regionAvg = bidScreens.reduce((a, s) => a + s.minBid, 0) / bidScreens.length;
-        pool = pool.map(s => {
-          if (Number.isFinite(s.minBid) && s.minBid > 0) return s;
-          const f = fmtAvg[s.format];
-          return { ...s, minBid: f ? f.sum / f.n : regionAvg, _bidEstimated: true };
-        });
-      }
+      pool = withEstimatedBids(pool);
     }
 
     // GRP filter (skipped in GID mode)
@@ -7530,10 +7523,14 @@ function _budgetBuckets() {
       // Фильтры форматов и операторов на сами GID-экраны не влияют —
       // ровно как в расчёте: список задан вручную и уважается целиком.
       const picked = new Set(b.picked);
-      const свои = оставить(b.picked);
+      // Ставку оцениваем так же, как расчёт, и hasActiveInventory здесь не
+      // применяем: в GID-режиме расчёт его не применяет вовсе, а у части
+      // экранов нулевой requestHourlyAvg — они выпадали и из уровней бюджета,
+      // хотя в плане будут.
+      const свои = withEstimatedBids(оставить(b.picked));
       if (!свои.length) continue;
       buckets.push({ key: k, all: b.all,
-        pool: свои.filter(hasActiveInventory),
+        pool: свои,
         poolAll: свои,
         inAp: (s) => picked.has(s) });
     }
@@ -7547,7 +7544,7 @@ function _budgetBuckets() {
         pool = pool.filter(s => manualFormats.has(s.format));
       }
       buckets.push({ key, all, pool: pool.filter(hasActiveInventory),
-        poolAll: pool,
+        poolAll: withEstimatedBids(pool),
         inAp: (s) => screenMatchesGeoChoice(s, region) });
     }
   }
