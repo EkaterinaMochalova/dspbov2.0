@@ -2956,9 +2956,11 @@ async function buildMediaPlanBlob() {
     : (Number(brief.duration?.ms) > 0 ? [Number(brief.duration.ms)] : []);
   // Длительность, заданная отдельному формату, главнее общего выбора.
   const durByFormat = (brief.duration && brief.duration.byFormat) || {};
-  const durTxt = durList.length
-    ? ` (длительность: ${durList.map(ms => Math.round(ms / 1000)).join(", ")} сек)`
-    : "";
+  const _durSec = [...new Set(durList.map(Number).filter(ms => ms > 0))]
+    .sort((a, b) => a - b).map(ms => Math.round(ms / 1000));
+  const durTxt = _durSec.length
+    ? ` (длительность: ${_durSec.join(", ")} сек)`
+    : (durList.length ? " (длительность: любая)" : "");
   const fmtLabelWithDuration = (sortFormats(allFmts).join(", ") || "—") + durTxt;
   const metaRows = [
     ["Период размещения",  periodStr],

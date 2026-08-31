@@ -7914,6 +7914,8 @@ window.PLANNER_ASSET_BASE = (function () {
 
     window.addEventListener("planner:calc-done", (e) => {
       allowed = true;
+      // Новый расчёт — новая программа: набранный выбор к ней не относится.
+      picked.clear();
       lastItems = (e?.detail && Array.isArray(e.detail.chosen)) ? e.detail.chosen : [];
       renderPerRegion(lastItems);
     });
