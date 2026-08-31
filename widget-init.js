@@ -3066,8 +3066,8 @@ window.PLANNER_ASSET_BASE = (function () {
   <span class="rf-icon">↻</span> Пересчитать
 </button>
 <div id="planner-exclusions-bar" style="display:none; position:fixed; bottom:18px; left:50%; transform:translateX(-50%); z-index:9999; background:#fff3cd; border:1px solid #ffc107; border-radius:8px; padding:7px 14px; font-size:13px; color:#7a5800; box-shadow:0 2px 8px rgba(0,0,0,.15); white-space:nowrap;">
-  \\u274C Исключено вручную: <b id="planner-exclusions-count">0</b> экр. &nbsp;
-  <button id="planner-exclusions-reset" style="background:#ffc107; border:none; border-radius:5px; padding:2px 10px; cursor:pointer; font-size:12px; font-weight:600; color:#3a2800;">\\u21A9 Вернуть все</button>
+  ❌ Исключено вручную: <b id="planner-exclusions-count">0</b> экр. &nbsp;
+  <button id="planner-exclusions-reset" style="background:#ffc107; border:none; border-radius:5px; padding:2px 10px; cursor:pointer; font-size:12px; font-weight:600; color:#3a2800;">↩ Вернуть все</button>
 </div>
   <h2 class="planner-title">Расчёт размещения</h2>
   <div id="dsp-user-bar" style="display:none; font-size:12px; color:#6b7280; margin:-8px 0 10px;"></div>
