@@ -7252,6 +7252,14 @@ window.PLANNER_ASSET_BASE = (function () {
     // Russ» обязан находить каждый экран Russ. Показываем все; без фото — с
     // заглушкой вместо картинки.
     const arrAll = allItems.slice();
+
+    // Выбор мог остаться от прошлого состава: экран заменили или убрали, а его
+    // GID висел в наборе — панель считала его выбранным, и массовая замена
+    // тратила попытку на экран, которого в программе уже нет.
+    if (picked.size) {
+      const есть = new Set(arrAll.map(getGid));
+      for (const g of [...picked]) if (!есть.has(g)) picked.delete(g);
+    }
     const coordCount = allItems.filter(s => Number.isFinite(Number(s.lat)) && Number.isFinite(Number(s.lon))).length;
     const mapBtn = "";
 
@@ -7403,6 +7411,12 @@ window.PLANNER_ASSET_BASE = (function () {
     }
     const owners  = [...so].sort(function(a, b){ return a.localeCompare(b, "ru"); });
     const formats = [...sf].sort(function(a, b){ return a.localeCompare(b, "ru"); });
+
+    // Выбранного значения в кате может уже не быть — заменили последний экран
+    // оператора. Такой option не отрисуется, select покажет «Все операторы», а
+    // фильтровать по нему всё равно продолжат: сбрасываем сразу.
+    if (f.owner  && !so.has(f.owner))  f.owner  = "";
+    if (f.format && !sf.has(f.format)) f.format = "";
 
     const opt = function(list, cur, любой, label){
       let out = '<option value="">' + любой + '</option>';
