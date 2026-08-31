@@ -7591,8 +7591,9 @@ window.PLANNER_ASSET_BASE = (function () {
     m.className = "ph-menu";
     m.innerHTML =
         '<button type="button" data-act="any">На любой похожий'
-      +   '<span class="ph-menu-sub">Ближайший свободный экран того же формата,'
-      +     ' не вторая сторона той же конструкции</span></button>'
+      +   '<span class="ph-menu-sub">Ищем в километре свой формат, потом близкий'
+      +     ' по размеру; не нашли — следующий километр. Вторая сторона той же'
+      +     ' конструкции не подставляется.</span></button>'
       + '<button type="button" data-act="pick">На конкретный…'
       +   '<span class="ph-menu-sub">Оператор, формат, длительность, GID</span></button>';
     document.body.appendChild(m);
@@ -7667,7 +7668,7 @@ window.PLANNER_ASSET_BASE = (function () {
       +       grp("ph-rep-fmt", opts.formats, ownFmts, fmtLabel) + '</div>'
       +     '<div class="ph-noimg" style="margin-top:5px;">В списке только близкие по'
       +       ' размеру форматы — замена ходит на них. Ситиформат меняется на ситиборд,'
-      +       ' но не на суперсайт.</div></div>'
+      +       ' но не на суперсайт. Внутри километра свой формат берётся первым.</div></div>'
       +   '<div><div class="ph-rep-lbl">Доступная длительность</div>'
       +     '<div class="ph-rep-grp">' + grp("ph-rep-dur", opts.durations, new Set(), durLabel) + '</div>'
       +     '<div class="ph-noimg" style="margin-top:5px;">Ничего не отмечено — длительность не важна.'
