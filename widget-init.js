@@ -7645,7 +7645,11 @@ window.PLANNER_ASSET_BASE = (function () {
       +   '<div><div class="ph-rep-lbl">Формат'
       +     '<button type="button" data-set="fmt-all">все</button>'
       +     '<button type="button" data-set="fmt-none">никого</button></div>'
-      +     '<div class="ph-rep-grp">' + grp("ph-rep-fmt", opts.formats, ownFmts, fmtLabel) + '</div></div>'
+      +     '<div class="ph-rep-grp">'
+      +       '<label style="border-bottom:1px solid var(--ux-line,#e2e5ec); padding-bottom:5px;'
+      +         ' margin-bottom:4px;"><input type="checkbox" id="ph-rep-samefmt" checked>'
+      +         '<span>как у заменяемого экрана</span></label>'
+      +       grp("ph-rep-fmt", opts.formats, ownFmts, fmtLabel) + '</div></div>'
       +   '<div><div class="ph-rep-lbl">Доступная длительность</div>'
       +     '<div class="ph-rep-grp">' + grp("ph-rep-dur", opts.durations, new Set(), durLabel) + '</div>'
       +     '<div class="ph-noimg" style="margin-top:5px;">Ничего не отмечено — длительность не важна.'
@@ -7679,9 +7683,14 @@ window.PLANNER_ASSET_BASE = (function () {
       const o = {};
       const own = vals("ph-rep-own");
       if (own.length && own.length < opts.owners.length) o.owners = own;
-      const fmt = vals("ph-rep-fmt");
-      if (fmt.length && fmt.length < opts.formats.length) o.formats = fmt;
-      else if (fmt.length && fmt.length === opts.formats.length) o.sameFormat = false;
+      // Галка «как у заменяемого» главнее списка: пока она стоит, формат
+      // каждого экрана сохраняется, что бы в списке ни было отмечено.
+      const свой = modal.querySelector("#ph-rep-samefmt");
+      if (!свой || !свой.checked) {
+        const fmt = vals("ph-rep-fmt");
+        if (fmt.length && fmt.length < opts.formats.length) o.formats = fmt;
+        else if (fmt.length) o.sameFormat = false;
+      }
       const dur = vals("ph-rep-dur").map(Number).filter(function(v){ return v > 0; });
       if (dur.length) o.durations = dur;
       const raw = (modal.querySelector("#ph-rep-gids").value || "")
@@ -7725,13 +7734,20 @@ window.PLANNER_ASSET_BASE = (function () {
         runReplace(gids, o);
       }
     });
-    modal.addEventListener("change", updateCount);
+    function syncFmtGroup(){
+      const свой = modal.querySelector("#ph-rep-samefmt");
+      const on = !!(свой && свой.checked);
+      modal.querySelectorAll(".ph-rep-fmt").forEach(function(x){ x.disabled = on; });
+      modal.querySelectorAll('[data-set^="fmt-"]').forEach(function(x){ x.disabled = on; });
+    }
+    modal.addEventListener("change", function(){ syncFmtGroup(); updateCount(); });
     modal.addEventListener("input", updateCount);
     overlay.addEventListener("click", function(e){ if (e.target === overlay) close(); });
     document.addEventListener("keydown", onKey);
 
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
+    syncFmtGroup();
     updateCount();
   }
 
