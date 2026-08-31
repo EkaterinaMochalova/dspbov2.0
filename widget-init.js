@@ -7591,7 +7591,8 @@ window.PLANNER_ASSET_BASE = (function () {
     m.className = "ph-menu";
     m.innerHTML =
         '<button type="button" data-act="any">На любой похожий'
-      +   '<span class="ph-menu-sub">Ближайший свободный экран того же формата</span></button>'
+      +   '<span class="ph-menu-sub">Ближайший свободный экран того же формата,'
+      +     ' не вторая сторона той же конструкции</span></button>'
       + '<button type="button" data-act="pick">На конкретный…'
       +   '<span class="ph-menu-sub">Оператор, формат, длительность, GID</span></button>';
     document.body.appendChild(m);
@@ -7663,7 +7664,10 @@ window.PLANNER_ASSET_BASE = (function () {
       +       '<label style="border-bottom:1px solid var(--ux-line,#e2e5ec); padding-bottom:5px;'
       +         ' margin-bottom:4px;"><input type="checkbox" id="ph-rep-samefmt" checked>'
       +         '<span>как у заменяемого экрана</span></label>'
-      +       grp("ph-rep-fmt", opts.formats, ownFmts, fmtLabel) + '</div></div>'
+      +       grp("ph-rep-fmt", opts.formats, ownFmts, fmtLabel) + '</div>'
+      +     '<div class="ph-noimg" style="margin-top:5px;">В списке только близкие по'
+      +       ' размеру форматы — замена ходит на них. Ситиформат меняется на ситиборд,'
+      +       ' но не на суперсайт.</div></div>'
       +   '<div><div class="ph-rep-lbl">Доступная длительность</div>'
       +     '<div class="ph-rep-grp">' + grp("ph-rep-dur", opts.durations, new Set(), durLabel) + '</div>'
       +     '<div class="ph-noimg" style="margin-top:5px;">Ничего не отмечено — длительность не важна.'
@@ -7671,7 +7675,9 @@ window.PLANNER_ASSET_BASE = (function () {
       +   '<div><div class="ph-rep-lbl">Конкретные GID-ы</div>'
       +     '<input type="text" id="ph-rep-gids" placeholder="через запятую, необязательно"'
       +       ' style="width:100%; box-sizing:border-box; font:inherit; font-size:13px; padding:8px 10px;'
-      +       ' border:1px solid var(--ux-line,#e2e5ec); border-radius:8px;"></div>'
+      +       ' border:1px solid var(--ux-line,#e2e5ec); border-radius:8px;">'
+      +     '<div class="ph-noimg" style="margin-top:5px;">Прямое указание, а не фильтр:'
+      +       ' названный экран берётся, даже если он другого формата или в стороне.</div></div>'
       + '</div>'
       + '<div style="display:flex; align-items:center; gap:10px; padding:12px 16px;'
       +   ' border-top:1px solid var(--ux-line,#e2e5ec);">'
@@ -7698,12 +7704,13 @@ window.PLANNER_ASSET_BASE = (function () {
       const own = vals("ph-rep-own");
       if (own.length && own.length < opts.owners.length) o.owners = own;
       // Галка «как у заменяемого» главнее списка: пока она стоит, формат
-      // каждого экрана сохраняется, что бы в списке ни было отмечено.
+      // каждого экрана сохраняется, что бы в списке ни было отмечено. Снята —
+      // берём отмеченные, и подбор всё равно пересечёт их с близкими по
+      // размеру: фильтр сужает поиск, а не расширяет.
       const свой = modal.querySelector("#ph-rep-samefmt");
       if (!свой || !свой.checked) {
         const fmt = vals("ph-rep-fmt");
-        if (fmt.length && fmt.length < opts.formats.length) o.formats = fmt;
-        else if (fmt.length) o.sameFormat = false;
+        if (fmt.length) o.formats = fmt;
       }
       const dur = vals("ph-rep-dur").map(Number).filter(function(v){ return v > 0; });
       if (dur.length) o.durations = dur;

@@ -2322,19 +2322,83 @@ function _screenIdOf(s) {
 const _replacedAway = new Set();
 window.addEventListener("planner:calc-done", () => _replacedAway.clear());
 
+// Родство форматов: ступень размера и среда. Замена «на похожий» ходит
+// только на соседнюю ступень внутри своей среды — ситиформат меняется на
+// ситиборд, но не на суперсайт. Таблица одна, правится в одном месте.
+const FORMAT_KIN = {
+  MEDIAFACADE:      { size: 0, env: "outdoor" },
+  SUPERSITE:        { size: 1, env: "outdoor" },
+  BILLBOARD:        { size: 2, env: "outdoor" },
+  CITY_BOARD:       { size: 3, env: "outdoor" },
+  CITY_FORMAT:      { size: 4, env: "outdoor" },
+  CITY_FORMAT_RC:   { size: 4, env: "transit" },
+  CITY_FORMAT_RD:   { size: 4, env: "transit" },
+  CITY_FORMAT_WD:   { size: 4, env: "transit" },
+  RW_PLATFORM:      { size: 4, env: "transit" },
+  METRO_SCREEN_3X1: { size: 5, env: "transit" },
+  METRO_LIGHTBOX:   { size: 5, env: "transit" },
+  PVZ_SCREEN:       { size: 6, env: "indoor"  },
+  SKY_DIGITAL:      { size: 6, env: "indoor"  },
+  OTHER:            { size: 6, env: "indoor"  },
+};
+
+function _fmtKey(v) { return String(v || "").trim().toUpperCase(); }
+
+// Форматы, на которые можно заменить экран этого формата: свой и соседний
+// по размеру в своей среде. Формат, которого в таблице нет, родни не имеет —
+// меняем только на такой же, чтобы не подставить наугад что попало.
+function kinFormats(format) {
+  const f = _fmtKey(format);
+  const own = FORMAT_KIN[f];
+  if (!own) return f ? [f] : [];
+  return Object.keys(FORMAT_KIN).filter(name => {
+    const k = FORMAT_KIN[name];
+    return k.env === own.env && Math.abs(k.size - own.size) <= 1;
+  });
+}
+window.PLANNER = window.PLANNER || {};
+window.PLANNER.kinFormats = kinFormats;
+
+// Вторая сторона той же конструкции: то же место, только с другой стороны.
+// Клиенту от такой замены ни холодно ни жарко — точка та же, поэтому в
+// кандидаты она не идёт. Адрес сверяем нормализованным, а на случай
+// расхождений в тексте — ещё и расстоянием: 30 м это одна опора, а не
+// соседняя.
+const SAME_SPOT_M = 30;
+
+function _addrKey(s) {
+  return String(s?.address || "").toLowerCase().replace(/ё/g, "е")
+    .replace(/[^0-9a-zа-я]+/g, " ").trim();
+}
+
+function isOtherSideOf(cand, old) {
+  const a = normalizeSide(cand?.side), b = normalizeSide(old?.side);
+  if (!a || !b || a === b) return false;
+  const ka = _addrKey(cand), kb = _addrKey(old);
+  if (ka && kb && ka === kb) return true;
+  const la = getLatLon(cand), lb = getLatLon(old);
+  const dist = window.GeoUtils?.haversineMeters;
+  if (!la || !lb || !dist) return false;
+  return dist(la.lat, la.lon, lb.lat, lb.lon) <= SAME_SPOT_M;
+}
+window.PLANNER.isOtherSideOf = isOtherSideOf;
+
 function _filterSet(list) {
   if (!Array.isArray(list) || !list.length) return null;
   const out = new Set(list.map(v => String(v ?? "").trim()).filter(Boolean));
   return out.size ? out : null;
 }
 
-// Кандидаты на замену экрана, по возрастанию расстояния от него.
-// opts (всё необязательно):
-//   owners     — только эти операторы
-//   formats    — только эти форматы (задан хоть один — правило «свой формат» снято)
-//   gids       — только эти GID-ы
-//   durations  — экран должен крутить КАЖДУЮ из этих длительностей (мс)
-//   sameFormat — false, чтобы посмотреть кандидатов во всех форматах
+// Кандидаты на замену экрана — «любой похожий», по возрастанию расстояния.
+// Похожий значит: тот же регион, свой формат (а своих нет — соседняя ступень
+// размера в своей среде) и не вторая сторона той же конструкции.
+//
+// opts (всё необязательно) только СУЖАЕТ этот набор:
+//   owners    — только эти операторы
+//   formats   — только эти форматы, и лишь из числа родственных
+//   durations — экран должен крутить КАЖДУЮ из этих длительностей (мс)
+// Исключение — gids: это не фильтр, а выбор конкретного экрана, и он
+// главнее всех правил похожести.
 function replacementCandidates(screenId, opts) {
   const chosen = state.lastChosen;
   if (!chosen || !chosen.length) return [];
@@ -2348,12 +2412,29 @@ function replacementCandidates(screenId, opts) {
   const gids    = _filterSet(flt.gids);
   const durs = Array.isArray(flt.durations)
     ? flt.durations.map(Number).filter(v => Number.isFinite(v) && v > 0) : [];
-  const свойФормат = flt.sameFormat !== false && !formats;
-  const безФильтров = !owners && !formats && !gids && !durs.length;
 
   const allScreens = state.screensAll || [];
   const chosenIds = new Set(chosen.map(s => _screenIdOf(s)));
+
+  // Названный GID — прямое указание, а не фильтр: он перебивает и похожесть,
+  // и вторую сторону, и прежние отказы. Нельзя только одного — взять экран,
+  // который в программе уже стоит: получится дубль.
+  if (gids) {
+    return allScreens.filter(s => {
+      const sid = _screenIdOf(s);
+      return sid && gids.has(sid) && !chosenIds.has(sid);
+    });
+  }
+
   const excluded = state.manuallyExcluded || new Set();
+  const oldLoc = getLatLon(old);
+  const dist = window.GeoUtils?.haversineMeters;
+  const метры = (s) => {
+    const l = getLatLon(s);
+    if (!oldLoc || !l) return Infinity;
+    return dist ? dist(oldLoc.lat, oldLoc.lon, l.lat, l.lon)
+                : Math.hypot(oldLoc.lat - l.lat, oldLoc.lon - l.lon) * 111000;
+  };
 
   const годен = (s) => {
     const sid = _screenIdOf(s);
@@ -2362,12 +2443,12 @@ function replacementCandidates(screenId, opts) {
     // это ровно тот экран, который пользователь уже отверг.
     if (excluded.has(sid) || _replacedAway.has(sid)) return false;
     if (s.region && old.region && s.region !== old.region) return false;
-    return !!getLatLon(s);
+    if (!getLatLon(s)) return false;
+    // Вторая сторона той же конструкции — то же место: менять незачем.
+    return !isOtherSideOf(s, old);
   };
   const подФильтр = (s) => {
-    if (owners  && !owners.has(String(s.owner  || "").trim())) return false;
-    if (formats && !formats.has(String(s.format || "").trim())) return false;
-    if (gids    && !gids.has(_screenIdOf(s))) return false;
+    if (owners && !owners.has(String(s.owner || "").trim())) return false;
     // Длительность нужна ровно такая: _resolveDurationMatch берёт ближайший
     // слот и подошёл бы любой экран, а «доступная длительность» — про то,
     // что экран эту длительность правда крутит.
@@ -2378,23 +2459,27 @@ function replacementCandidates(screenId, opts) {
     return true;
   };
 
-  let candidates = allScreens.filter(s => годен(s) && подФильтр(s)
-    && (свойФормат ? s.format === old.format : true));
-
-  // Фолбэк «любой формат» — только когда фильтров не задавали. Иначе замена
-  // молча подставила бы то, что пользователь как раз исключил.
-  if (!candidates.length && безФильтров) candidates = allScreens.filter(годен);
-
-  const oldLoc = getLatLon(old);
-  const dist = window.GeoUtils?.haversineMeters;
-  if (oldLoc && dist) {
-    candidates.sort((a, b) => {
-      const la = getLatLon(a), lb = getLatLon(b);
-      return dist(oldLoc.lat, oldLoc.lon, la.lat, la.lon)
-           - dist(oldLoc.lat, oldLoc.lon, lb.lat, lb.lon);
-    });
+  // Фильтр форматов пересекаем с родственными, а не заменяем ими: поп-ап
+  // сужает поиск и не должен уводить щит в ситиформат.
+  const own = _fmtKey(old.format);
+  let разрешено = kinFormats(old.format);
+  if (formats) {
+    const хотят = new Set([...formats].map(_fmtKey));
+    разрешено = разрешено.filter(f => хотят.has(f));
   }
-  return candidates;
+
+  const подбор = (список) => {
+    if (!список.length) return [];
+    const набор = new Set(список);
+    return allScreens
+      .filter(s => набор.has(_fmtKey(s.format)) && годен(s) && подФильтр(s))
+      .sort((a, b) => метры(a) - метры(b));
+  };
+
+  // Свой формат берём целиком и только если своих нет вовсе — соседнюю
+  // ступень: «на ситиборд можно, если ситиформатов нет».
+  const свои = подбор(разрешено.filter(f => f === own));
+  return свои.length ? свои : подбор(разрешено.filter(f => f !== own));
 }
 
 // Из чего вообще можно выбирать замену для набора экранов: операторы,
@@ -2405,13 +2490,21 @@ function replacementOptions(screenIds) {
   const chosen = Array.isArray(state.lastChosen) ? state.lastChosen : [];
   const выбранные = chosen.filter(s => ids.has(_screenIdOf(s)));
   const регионы = new Set(выбранные.map(s => s.region).filter(Boolean));
-  const свои = new Set(выбранные.map(s => String(s.format || "").trim()).filter(Boolean));
+  const свои = new Set(выбранные.map(s => _fmtKey(s.format)).filter(Boolean));
+
+  // Предлагаем только то, на что замена вообще может пойти: родственные
+  // форматы, а операторы и длительности — по экранам этих форматов. Иначе
+  // поп-ап показывал бы оператора, у которого подходящих экранов нет вовсе.
+  const родня = new Set();
+  for (const f of свои) for (const k of kinFormats(f)) родня.add(k);
 
   const owners = new Set(), formats = new Set(), durations = new Set();
   for (const s of (state.screensAll || [])) {
     if (регионы.size && s.region && !регионы.has(s.region)) continue;
-    const o = String(s.owner || "").trim();  if (o) owners.add(o);
-    const f = String(s.format || "").trim(); if (f) formats.add(f);
+    const f = _fmtKey(s.format);
+    if (!f || (родня.size && !родня.has(f))) continue;
+    formats.add(f);
+    const o = String(s.owner || "").trim(); if (o) owners.add(o);
     if (Array.isArray(s.durationBidInfo)) {
       for (const d of s.durationBidInfo) {
         if (Number.isFinite(d.duration) && d.duration > 0) durations.add(d.duration);
