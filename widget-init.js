@@ -1938,6 +1938,98 @@ window.PLANNER_ASSET_BASE = (function () {
     font-size: 12px; color: var(--ux-text3); margin-top: 8px;
   }
   #img-carousel .img-section{ margin-top: 16px; }
+  /* ===== ФИЛЬТРЫ И МАССОВЫЙ ВЫБОР В АДРЕСНОЙ ПРОГРАММЕ ===== */
+  #img-carousel .ph-filters{
+    display: flex; flex-wrap: wrap; gap: 7px; align-items: center; margin-bottom: 9px;
+  }
+  #img-carousel .ph-filters input[type="text"],
+  #img-carousel .ph-filters select{
+    font: inherit; font-size: 12px; padding: 5px 8px; min-width: 0;
+    border: 1px solid var(--ux-line); border-radius: 6px;
+    background: var(--ux-bg); color: var(--ux-text);
+  }
+  #img-carousel .ph-filters input[type="text"]{ flex: 1 1 150px; }
+  #img-carousel .ph-filters select{ flex: 0 1 170px; }
+  #img-carousel .ph-filters button{
+    font: inherit; font-size: 11.5px; padding: 5px 9px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--ux-line); background: var(--ux-bg); color: var(--ux-text2);
+  }
+  #img-carousel .ph-filters button:hover{ border-color: var(--ux-line2); color: var(--ux-text); }
+  #img-carousel .ph-filters .ph-n{
+    font-family: var(--ux-mono); font-size: 11.5px; color: var(--ux-text3); margin-left: auto;
+  }
+  /* Галка выбора лежит поверх фото: в подписи для неё места нет, а промахнуться
+     мимо неё и открыть просмотр — обычное дело, поэтому она крупная. */
+  #img-carousel .ph-img{ position: relative; }
+  #img-carousel .ph-pick{
+    position: absolute; top: 6px; left: 6px; width: 18px; height: 18px; margin: 0;
+    accent-color: var(--ux-accent); cursor: pointer; z-index: 2;
+  }
+  #img-carousel .img-card.is-picked{
+    border-color: var(--ux-accent); box-shadow: inset 0 0 0 1px var(--ux-accent);
+  }
+  #img-carousel .ph-noimg{ font-size: 11.5px; color: var(--ux-text3); }
+  #img-carousel .ph-susp{
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px;
+  }
+  #img-carousel .ph-susp-tag{
+    padding: 2px 7px; border-radius: 6px; font-size: 10px; font-weight: 700;
+    background: #FFF1F1; color: var(--ux-danger);
+  }
+  #img-carousel .ph-susp-bid{ font-size: 12px; font-weight: 700; color: var(--ux-danger); }
+  #img-carousel .ph-susp-med{ font-size: 11px; color: #9A6B6B; }
+  /* Панель массовых действий липкая: выбор набирают, прокручивая длинный список. */
+  #img-carousel .ph-bulk{
+    position: sticky; top: 0; z-index: 5;
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    padding: 9px 12px; margin-bottom: 10px;
+    border: 1px solid var(--ux-accent-line); border-radius: var(--ux-radius-sm);
+    background: var(--ux-accent-soft);
+  }
+  #img-carousel .ph-bulk-t{ font-size: 12.5px; font-weight: 600; color: var(--ux-accent-ink); }
+  #img-carousel .ph-bulk button{
+    font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--ux-accent-line); background: var(--ux-bg); color: var(--ux-accent-ink);
+  }
+  #img-carousel .ph-bulk button:hover{ background: var(--ux-bg2); }
+  #img-carousel .ph-bulk .ph-bulk-del{ border-color: var(--ux-danger); color: var(--ux-danger); }
+  #img-carousel .ph-bulk .ph-bulk-off{
+    margin-left: auto; border-color: var(--ux-line); color: var(--ux-text3);
+  }
+  /* Меню «Заменить»: на любой похожий или на конкретный — с фильтрами. */
+  .ph-menu{
+    position: fixed; z-index: 2147483646; min-width: 214px; padding: 5px;
+    border: 1px solid var(--ux-line); border-radius: 10px;
+    background: var(--ux-bg); box-shadow: 0 12px 34px rgba(15, 23, 42, .18);
+  }
+  .ph-menu button{
+    display: block; width: 100%; text-align: left; font: inherit; font-size: 12.5px;
+    padding: 8px 10px; border: 0; border-radius: 7px; background: none; cursor: pointer;
+    color: var(--ux-text);
+  }
+  .ph-menu button:hover{ background: var(--ux-bg2); }
+  .ph-menu .ph-menu-sub{ display: block; font-size: 11px; color: var(--ux-text3); margin-top: 2px; }
+  /* Поп-ап «заменить на конкретный»: группы галок по операторам, форматам,
+     длительностям. Список операторов бывает длинным — группа скроллится. */
+  .ph-rep-grp{
+    border: 1px solid var(--ux-line); border-radius: 9px; padding: 8px 10px;
+    max-height: 168px; overflow-y: auto;
+  }
+  .ph-rep-grp label{
+    display: flex; align-items: center; gap: 7px; font-size: 12.5px;
+    padding: 3px 0; cursor: pointer; color: var(--ux-text);
+  }
+  .ph-rep-grp input{ accent-color: var(--ux-accent); flex: 0 0 auto; }
+  .ph-rep-lbl{
+    display: flex; align-items: baseline; gap: 8px;
+    font-size: 11.5px; font-weight: 600; color: var(--ux-text3);
+    text-transform: uppercase; letter-spacing: .04em; margin: 0 0 5px;
+  }
+  .ph-rep-lbl button{
+    font: inherit; font-size: 10.5px; text-transform: none; letter-spacing: 0;
+    padding: 0; border: 0; background: none; cursor: pointer;
+    color: var(--ux-accent-ink); text-decoration: underline;
+  }
   #results-toggle:hover{
     color: var(--ux-accent);
   }
@@ -7002,6 +7094,23 @@ window.PLANNER_ASSET_BASE = (function () {
   let allowed = false;
   let lastItems = [];
 
+  // По 24 карточки на страницу: на большой адресной программе их шестьсот,
+  // и любая раскладка без страниц превращается в простыню.
+  const PER_PAGE = 24;
+  // Экраны по регионам — те же массивы, что отрисованы в карточках.
+  // Обработчики делегированы на контейнер и достают экран отсюда по
+  // data-region/data-idx, поэтому карточку можно перерисовать на месте.
+  let byReg = new Map();
+  // Массовый выбор общий на все города: заменить одного оператора приходится
+  // сразу по всей программе, а не обходя каты по одному.
+  const picked = new Set();
+  // Что раскрыто, на какой странице и с какими фильтрами. Раньше этого не
+  // помнили, и после «Заменить» кат закрывался, а место приходилось искать
+  // заново — список перерисовывается целиком, состояние <details> терялось.
+  const foldUi = new Map();
+  // Своя перерисовка не должна прилетать обратно через planner:screens-edited.
+  let _selfEdit = false;
+
   function getOwner(s){ return (s?.owner ?? s?.OWNER ?? s?.operator ?? s?.vendor ?? s?.network ?? "").toString().trim(); }
   function getAddr(s){ return (s?.address ?? s?.addr ?? s?.location ?? s?.place ?? "").toString().trim(); }
   function getGid(s){ return (s?.screen_id ?? s?.gid ?? s?.GID ?? s?.id ?? "").toString().trim(); }
@@ -7051,7 +7160,7 @@ window.PLANNER_ASSET_BASE = (function () {
           </div>
         </div>
         <div style="background:#111; height:min(64vh, 520px); display:flex; align-items:center; justify-content:center;">
-          <img src="\${escapeHtml(url)}" alt="" style="max-width:100%; max-height:100%; object-fit:contain;">
+          <img src="\${escapeHtml(url)}" alt="Фото нет" style="max-width:100%; max-height:100%; object-fit:contain; color:#888; font-size:13px;">
         </div>
         <div style="padding:12px 14px;">
           <div style="font-size:13px;"><b>Оператор:</b> \${escapeHtml(getOwner(s) || "\\u2014")}</div>
@@ -7138,7 +7247,11 @@ window.PLANNER_ASSET_BASE = (function () {
     }
 
     const allItems = Array.isArray(items) ? items : [];
-    const arrAll = allItems.filter(s => !!getImg(s));
+    // Раньше карточки строились только по экранам с фото. Массовая замена по
+    // такому списку молча пропускала бы часть программы, а фильтр «всё кроме
+    // Russ» обязан находить каждый экран Russ. Показываем все; без фото — с
+    // заглушкой вместо картинки.
+    const arrAll = allItems.slice();
     const coordCount = allItems.filter(s => Number.isFinite(Number(s.lat)) && Number.isFinite(Number(s.lon))).length;
     const mapBtn = "";
 
@@ -7148,7 +7261,7 @@ window.PLANNER_ASSET_BASE = (function () {
           <div style="font-weight:700;">Фото экранов</div>
           \${mapBtn}
         </div>
-        <div style="font-size:13px; color:#666;">Нет изображений (image_url) у выбранных экранов.</div>
+        <div style="font-size:13px; color:#666;">В расчёте нет экранов.</div>
       \`;
       box.style.display = "block";
       el("carousel-map-download-btn")?.addEventListener("click", () => {
@@ -7157,7 +7270,7 @@ window.PLANNER_ASSET_BASE = (function () {
       return;
     }
 
-    const byReg = groupByRegion(arrAll);
+    byReg = groupByRegion(arrAll);
 
     const selectedOrder = getSelectedRegionsFromState();
     const regionsOrdered = [
@@ -7165,180 +7278,604 @@ window.PLANNER_ASSET_BASE = (function () {
       ...Array.from(byReg.keys()).filter(r => !selectedOrder.includes(r))
     ];
 
-    // По 24 карточки на страницу: на большой адресной программе их
-    // шестьсот, и любая раскладка без страниц превращается в простыню.
-    const PER_PAGE = 24;
-
-    function pgBtn(role, goto, disabled, label){
-      return "<button type=button data-goto=" + goto
-        + (role ? " data-role=" + role : " aria-current=" + (goto === 0))
-        + (disabled ? " disabled" : "") + ">" + label + "</button>";
-    }
-
-    function pagerHtml(total){
-      const pages = Math.max(1, Math.ceil(total / PER_PAGE));
-      let out = pgBtn("prev", -1, true, "\u2039");
-      for (let i = 0; i < pages; i++) out += pgBtn("", i, false, String(i + 1));
-      out += pgBtn("next", 1, pages <= 1, "\u203A");
-      return "<span class='ux-pg'>" + out + "</span>";
-    }
-
-    const sectionsHtml = regionsOrdered.map(regionName => {
+    const sectionsHtml = regionsOrdered.map(function(regionName){
       const regItems = (byReg.get(regionName) || []);
 
       // Сомнительные (аномально низкая ставка) — в начало списка: цель в том,
-      // чтобы пользователь их увидел, а не искал в конце горизонтальной прокрутки.
-      // Сортируем массив на месте, а не копию: обработчик клика ниже достаёт экран
-      // по data-idx из byReg.get(region), и копия развалила бы это соответствие.
-      regItems.sort((a, b) => (b._suspiciousBid ? 1 : 0) - (a._suspiciousBid ? 1 : 0));
+      // чтобы пользователь их увидел, а не искал в конце списка. Сортируем
+      // массив на месте, а не копию: обработчики достают экран по data-idx
+      // из byReg.get(region), и копия развалила бы это соответствие.
+      regItems.sort(function(a, b){
+        return (b._suspiciousBid ? 1 : 0) - (a._suspiciousBid ? 1 : 0);
+      });
 
-      const cards = regItems.map((s, idx) => {
-        const url = escapeHtml(getImg(s));
-        const gid = escapeHtml(getGid(s));
-        const own = escapeHtml(getOwner(s));
-        const addr = escapeHtml(getAddr(s));
-        const susp = !!s._suspiciousBid;
-        const suspStyle = susp
-          ? "border:2px solid #e04444; box-shadow:0 0 0 3px rgba(224,68,68,.10);"
-          : "border:1px solid rgba(15,23,42,.10);";
-        // Рядом с плашкой показываем саму ставку и медиану, иначе «Низкая ставка»
-        // без цифр — утверждение, которое нечем проверить.
-        const money = (v) => Number.isFinite(v)
-          ? (Math.round(v * 100) / 100).toLocaleString("ru-RU", { maximumFractionDigits: 2 }) + " \u20BD"
-          : "\u2014";
-        const suspBadge = susp
-          ? \`<div style="margin-top:6px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-               <span style="display:inline-block; padding:2px 7px; border-radius:6px;
-                 background:#fff1f1; color:#c62828; font-size:10px; font-weight:700;">Низкая ставка</span>
-               <span style="font-size:12px; font-weight:700; color:#c62828;"
-                 title="Медиана по своему формату и городу — \${money(s._suspiciousMedian)}">
-                 \${money(s._effectiveBid)}
-               </span>
-               <span style="font-size:11px; color:#9a6b6b;">медиана \${money(s._suspiciousMedian)}</span>
-             </div>\`
-          : "";
-
-        return \`
-          <div class="img-card\${susp ? ' is-susp' : ''}" data-region="\${escapeHtml(regionName)}" data-idx="\${idx}" data-gid="\${gid}"
-               data-page="\${Math.floor(idx / 24)}">
-            <div class="ph-img">
-              <img src="\${url}" alt="\${gid}" loading="lazy">
-            </div>
-            <div class="ph-meta">
-              <div class="ph-gid">\${gid || "\\u2014"}</div>
-              \${suspBadge}
-              <div class="ph-own">\${own || "\\u2014"}</div>
-              <div class="ph-adr">\${addr || ""}</div>
-              <div class="ph-acts">
-                <button type="button" class="card-remove-btn" data-gid="\${gid}">Убрать</button>
-                <button type="button" class="card-replace-btn" data-gid="\${gid}">Заменить</button>
-              </div>
-            </div>
-          </div>
-        \`;
+      const ui = foldUi.get(regionName) || {};
+      const cards = regItems.map(function(s, idx){
+        return cardHtml(s, regionName, idx);
       }).join("");
 
-      return \`
-        <details class="ux-fold img-section" data-pages="\${Math.max(1, Math.ceil(regItems.length / 24))}">
-          <summary class="ux-fold-sum">
-            <span class="car">\\u25B6</span>
-            <span class="ux-fold-t">Экраны программы \\u2014 \${escapeHtml(regionName)}</span>
-            <span class="ux-fold-v">\${regItems.length.toLocaleString("ru-RU")} шт</span>
-          </summary>
-          <div class="ux-fold-body">
-            <div class="ux-ph-head">
-              \${regItems.length > 24 ? pagerHtml(regItems.length) : ""}
-            </div>
-            <div class="img-row" data-region="\${escapeHtml(regionName)}" data-page="0">
-              \${cards}
-            </div>
-            <div class="ux-ph-note">Нажмите на карточку, чтобы открыть просмотр.</div>
-          </div>
-        </details>
-      \`;
+      return '<details class="ux-fold img-section"' + (ui.open ? " open" : "")
+        + ' data-region="' + escapeHtml(regionName) + '"'
+        + ' data-pages="' + Math.max(1, Math.ceil(regItems.length / PER_PAGE)) + '">'
+        + '<summary class="ux-fold-sum">'
+        +   '<span class="car">▶</span>'
+        +   '<span class="ux-fold-t">Экраны программы — ' + escapeHtml(regionName) + '</span>'
+        +   '<span class="ux-fold-v">' + regItems.length.toLocaleString("ru-RU") + ' шт</span>'
+        + '</summary>'
+        + '<div class="ux-fold-body">'
+        +   filterBarHtml(regItems, ui)
+        +   '<div class="ux-ph-head"></div>'
+        +   '<div class="img-row" data-region="' + escapeHtml(regionName) + '" data-page="0">'
+        +     cards
+        +   '</div>'
+        +   '<div class="ux-ph-note">Нажмите на карточку, чтобы открыть просмотр.'
+        +     ' Галка на фото — выбор для массовой замены.</div>'
+        + '</div>'
+        + '</details>';
     }).join("");
 
-    box.innerHTML = sectionsHtml;
+    // Панель массовых действий живёт в отдельном контейнере: выбор экранов
+    // её перерисовывает, а перерисовывать из-за галки весь список нельзя —
+    // из полей фильтра пропадал бы фокус.
+    box.innerHTML = '<div id="ph-bulk-host"></div>' + sectionsHtml;
     box.style.display = "block";
+    syncBulkBar();
 
-    // Страницы переключаются классом на секции: карточки уже в DOM,
-    // обработчики на них навешены ниже и переживать перерисовку не должны.
-    box.querySelectorAll(".ux-pg").forEach(pager => {
-      pager.addEventListener("click", (e) => {
-        const b = e.target.closest("button[data-goto]");
-        if (!b) return;
-        const section = pager.closest(".img-section");
-        const row = section.querySelector(".img-row");
-        const pages = Number(section.dataset.pages) || 1;
-        const page = Math.max(0, Math.min(pages - 1, Number(b.dataset.goto)));
-        row.dataset.page = String(page);
-        pager.querySelectorAll("button").forEach(x => {
-          const g = Number(x.dataset.goto);
-          if (x.dataset.role) {
-            x.dataset.goto = String(x.dataset.role === "prev" ? page - 1 : page + 1);
-            x.disabled = (x.dataset.role === "prev") ? page === 0 : page >= pages - 1;
-          } else {
-            x.setAttribute("aria-current", g === page ? "page" : "false");
-          }
-        });
-        section.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      });
+    if (!box._phBound) {
+      box._phBound = true;
+      box.addEventListener("click", onBoxClick);
+      box.addEventListener("change", onBoxChange);
+      box.addEventListener("input", onBoxInput);
+      // toggle не всплывает — ловим на погружении: иначе состояние «раскрыт»
+      // не сохранялось бы и кат закрывался после каждой правки программы.
+      box.addEventListener("toggle", onBoxToggle, true);
+    }
+
+    // Пагинация, подсчёт найденного и скрытие непопавших под фильтр — всё в
+    // одном месте, чтобы отрисовка и последующие правки шли одним путём.
+    box.querySelectorAll("details.img-section").forEach(applyFilter);
+  }
+
+  // ── КАРТОЧКА ЭКРАНА ──────────────────────────────────────────────
+  function money(v){
+    return Number.isFinite(v)
+      ? (Math.round(v * 100) / 100).toLocaleString("ru-RU", { maximumFractionDigits: 2 }) + " ₽"
+      : "—";
+  }
+
+  function cardHtml(s, regionName, idx){
+    const url  = escapeHtml(getImg(s));
+    const gid  = escapeHtml(getGid(s));
+    const own  = escapeHtml(getOwner(s));
+    const addr = escapeHtml(getAddr(s));
+    const susp = !!s._suspiciousBid;
+    const on   = picked.has(getGid(s));
+    // Рядом с плашкой показываем саму ставку и медиану, иначе «Низкая ставка»
+    // без цифр — утверждение, которое нечем проверить.
+    const badge = susp
+      ? '<div class="ph-susp">'
+        + '<span class="ph-susp-tag">Низкая ставка</span>'
+        + '<span class="ph-susp-bid" title="Медиана по своему формату и городу — '
+        +   escapeHtml(money(s._suspiciousMedian)) + '">'
+        +   escapeHtml(money(s._effectiveBid)) + '</span>'
+        + '<span class="ph-susp-med">медиана ' + escapeHtml(money(s._suspiciousMedian)) + '</span>'
+        + '</div>'
+      : "";
+    // Экраны без фото тоже в списке: массовая замена по списку «только с фото»
+    // молча пропускала бы часть программы, а фильтр «всё кроме Russ» обязан
+    // находить каждый экран Russ.
+    const img = url
+      ? '<img src="' + url + '" alt="' + gid + '" loading="lazy">'
+      : '<span class="ph-noimg">без фото</span>';
+
+    return '<div class="img-card' + (susp ? " is-susp" : "") + (on ? " is-picked" : "") + '"'
+      + ' data-region="' + escapeHtml(regionName) + '" data-idx="' + idx + '"'
+      + ' data-gid="' + gid + '" data-page="' + Math.floor(idx / PER_PAGE) + '">'
+      + '<div class="ph-img">'
+      +   '<input type="checkbox" class="ph-pick"' + (on ? " checked" : "")
+      +     ' title="Выбрать для массовой замены">'
+      +   img
+      + '</div>'
+      + '<div class="ph-meta">'
+      +   '<div class="ph-gid">' + (gid || "—") + '</div>'
+      +   badge
+      +   '<div class="ph-own">' + (own || "—") + '</div>'
+      +   '<div class="ph-adr">' + addr + '</div>'
+      +   '<div class="ph-acts">'
+      +     '<button type="button" class="card-remove-btn">Убрать</button>'
+      +     '<button type="button" class="card-replace-btn">Заменить ▾</button>'
+      +   '</div>'
+      + '</div>'
+      + '</div>';
+  }
+
+  // ── ФИЛЬТРЫ ПО КАТУ ──────────────────────────────────────────────
+  function fmtLabel(f){
+    const t = window.FORMAT_LABELS && window.FORMAT_LABELS[f];
+    return (t && t.label) || f;
+  }
+
+  function filterBarHtml(regItems, f){
+    const so = new Set(), sf = new Set();
+    for (const s of regItems) {
+      const o = getOwner(s);                     if (o) so.add(o);
+      const m = String(s.format || "").trim();   if (m) sf.add(m);
+    }
+    const owners  = [...so].sort(function(a, b){ return a.localeCompare(b, "ru"); });
+    const formats = [...sf].sort(function(a, b){ return a.localeCompare(b, "ru"); });
+
+    const opt = function(list, cur, любой, label){
+      let out = '<option value="">' + любой + '</option>';
+      for (const v of list) {
+        out += '<option value="' + escapeHtml(v) + '"' + (v === cur ? " selected" : "") + '>'
+          + escapeHtml(label ? label(v) : v) + '</option>';
+      }
+      return out;
+    };
+
+    return '<div class="ph-filters">'
+      + '<input type="text" class="ph-f-gid" placeholder="GID или адрес"'
+      +   ' value="' + escapeHtml(f.q || "") + '">'
+      + '<select class="ph-f-own">' + opt(owners, f.owner || "", "Все операторы") + '</select>'
+      + '<select class="ph-f-fmt">' + opt(formats, f.format || "", "Все форматы", fmtLabel) + '</select>'
+      + '<button type="button" class="ph-f-reset">Сбросить</button>'
+      + '<button type="button" class="ph-f-all">Выбрать найденные</button>'
+      + '<span class="ph-n"></span>'
+      + '</div>';
+  }
+
+  function matchesFilter(s, f){
+    if (f.owner  && getOwner(s) !== f.owner) return false;
+    if (f.format && String(s.format || "").trim() !== f.format) return false;
+    const q = String(f.q || "").trim().toLowerCase();
+    if (!q) return true;
+    const hay = (getGid(s) + " " + getAddr(s)).toLowerCase();
+    // Пачку GID-ов вставляют через запятую — так их и разбираем, иначе поиск
+    // по списку из десяти гидов не находит ни одного.
+    const parts = q.split(",").join(" ").split(";").join(" ").split(" ").filter(Boolean);
+    return parts.some(function(p){ return hay.indexOf(p) >= 0; });
+  }
+
+  function pgBtn(role, goto, disabled, label, cur){
+    return "<button type=button data-goto=" + goto
+      + (role ? " data-role=" + role : " aria-current=" + (cur ? "page" : "false"))
+      + (disabled ? " disabled" : "") + ">" + label + "</button>";
+  }
+
+  function pagerHtml(total, page){
+    const pages = Math.max(1, Math.ceil(total / PER_PAGE));
+    let out = pgBtn("prev", page - 1, page === 0, "‹", false);
+    for (let i = 0; i < pages; i++) out += pgBtn("", i, false, String(i + 1), i === page);
+    out += pgBtn("next", page + 1, page >= pages - 1, "›", false);
+    return "<span class='ux-pg'>" + out + "</span>";
+  }
+
+  // Раскладывает найденное по страницам и показывает нужную. Страница -1 —
+  // «не прошло фильтр»: такую карточку не видно ни на одной странице.
+  function applyFilter(section){
+    const regionName = section.dataset.region || "";
+    const regItems = byReg.get(regionName) || [];
+    const f = foldUi.get(regionName) || {};
+    const cards = section.querySelectorAll(".img-card");
+
+    let vis = 0;
+    for (const card of cards) {
+      const s = regItems[Number(card.dataset.idx)];
+      if (s && matchesFilter(s, f)) {
+        card.dataset.page = String(Math.floor(vis / PER_PAGE));
+        vis++;
+      } else {
+        card.dataset.page = "-1";
+      }
+    }
+
+    const pages = Math.max(1, Math.ceil(vis / PER_PAGE));
+    const page = Math.max(0, Math.min(pages - 1, Number(f.page) || 0));
+    f.page = page;
+    foldUi.set(regionName, f);
+    section.dataset.pages = String(pages);
+
+    // Видимость ставим свойством, а не правилом CSS по номеру страницы:
+    // правил там ровно десять, а страниц на большой программе бывает больше.
+    for (const card of cards) card.style.display = (Number(card.dataset.page) === page) ? "" : "none";
+
+    const row = section.querySelector(".img-row");
+    if (row) row.dataset.page = String(page);
+    const head = section.querySelector(".ux-ph-head");
+    if (head) head.innerHTML = (vis > PER_PAGE) ? pagerHtml(vis, page) : "";
+    const nEl = section.querySelector(".ph-n");
+    if (nEl) nEl.textContent = (vis === regItems.length)
+      ? (regItems.length + " шт")
+      : ("найдено " + vis + " из " + regItems.length);
+  }
+
+  let _fTimer = null;
+  function readFilter(node){
+    const section = node.closest("details.img-section");
+    if (!section) return;
+    const r = section.dataset.region || "";
+    const f = foldUi.get(r) || {};
+    const g = section.querySelector(".ph-f-gid");
+    const o = section.querySelector(".ph-f-own");
+    const m = section.querySelector(".ph-f-fmt");
+    f.q = g ? g.value : "";
+    f.owner = o ? o.value : "";
+    f.format = m ? m.value : "";
+    f.page = 0;
+    foldUi.set(r, f);
+    clearTimeout(_fTimer);
+    _fTimer = setTimeout(function(){ applyFilter(section); }, 120);
+  }
+
+  // ── МАССОВЫЙ ВЫБОР ───────────────────────────────────────────────
+  function bulkBarHtml(){
+    if (!picked.size) return "";
+    return '<div class="ph-bulk">'
+      + '<span class="ph-bulk-t">Выбрано экранов: ' + picked.size + '</span>'
+      + '<button type="button" class="ph-bulk-rep">Заменить ▾</button>'
+      + '<button type="button" class="ph-bulk-del">Убрать</button>'
+      + '<button type="button" class="ph-bulk-off">Снять выбор</button>'
+      + '</div>';
+  }
+
+  function syncBulkBar(){
+    const host = el("ph-bulk-host");
+    if (host) host.innerHTML = bulkBarHtml();
+  }
+
+  function setPicked(card, on){
+    const gid = card.dataset.gid;
+    if (!gid) return;
+    if (on) picked.add(gid); else picked.delete(gid);
+    card.classList.toggle("is-picked", on);
+    const cb = card.querySelector(".ph-pick");
+    if (cb) cb.checked = on;
+  }
+
+  // ── ЗАМЕНА ───────────────────────────────────────────────────────
+  // Пересобрать список по текущей адресной программе. Раскрытые каты,
+  // страницы и фильтры остаются на месте — они живут в foldUi, а не в DOM.
+  function refresh(){
+    const chosen = (window.PLANNER && window.PLANNER.state && window.PLANNER.state.lastChosen) || [];
+    lastItems = chosen;
+    renderPerRegion(chosen);
+    window.dispatchEvent(new CustomEvent("planner:screens-edited"));
+  }
+
+  function runReplace(gids, opts){
+    const P = window.PLANNER;
+    if (!P || !P.replaceScreen) return;
+    let ok = 0, fail = 0;
+    for (const gid of gids) {
+      if (P.replaceScreen(gid, opts)) { ok++; picked.delete(gid); }
+      else fail++;
+    }
+    if (P.toast) {
+      if (!ok) P.toast(gids.length > 1
+        ? "Под эти условия не нашлось замены ни для одного экрана."
+        : "Нет подходящего экрана для замены.");
+      else if (fail) P.toast("Заменено " + ok + ", без замены осталось " + fail + ".");
+      else if (gids.length > 1) P.toast("Заменено экранов: " + ok + ".");
+    }
+    if (ok) refresh();
+  }
+
+  function closeMenu(){
+    const m = document.querySelector(".ph-menu");
+    if (m) m.remove();
+    document.removeEventListener("click", onDocClickMenu, true);
+  }
+
+  function onDocClickMenu(e){
+    if (!e.target.closest || !e.target.closest(".ph-menu")) closeMenu();
+  }
+
+  function openReplaceMenu(anchor, gids){
+    closeMenu();
+    if (!gids.length) return;
+    const m = document.createElement("div");
+    m.className = "ph-menu";
+    m.innerHTML =
+        '<button type="button" data-act="any">На любой похожий'
+      +   '<span class="ph-menu-sub">Ближайший свободный экран того же формата</span></button>'
+      + '<button type="button" data-act="pick">На конкретный…'
+      +   '<span class="ph-menu-sub">Оператор, формат, длительность, GID</span></button>';
+    document.body.appendChild(m);
+
+    const r = anchor.getBoundingClientRect();
+    const w = m.offsetWidth || 214, h = m.offsetHeight || 104;
+    m.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left)) + "px";
+    m.style.top = ((r.bottom + h + 8 > window.innerHeight)
+      ? Math.max(8, r.top - h - 6) : r.bottom + 6) + "px";
+
+    m.addEventListener("click", function(e){
+      const b = e.target.closest("button[data-act]");
+      if (!b) return;
+      const act = b.dataset.act;
+      closeMenu();
+      if (act === "any") runReplace(gids, null);
+      else openReplaceDialog(gids);
     });
+    // Слушателя на документ вешаем следующим тиком, иначе этот же клик,
+    // который открыл меню, тут же его и закроет.
+    setTimeout(function(){ document.addEventListener("click", onDocClickMenu, true); }, 0);
+  }
 
-    el("carousel-map-download-btn")?.addEventListener("click", () => {
-      if(window.PLANNER?.downloadMapHtml) window.PLANNER.downloadMapHtml();
+  function openReplaceDialog(gids){
+    const P = window.PLANNER;
+    if (!P || !P.replacementOptions) return;
+    const opts = P.replacementOptions(gids);
+    const ownFmts = new Set(opts.ownFormats || []);
+
+    const overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed; inset:0; background:rgba(0,0,0,.45);"
+      + " z-index:2147483647; display:flex; align-items:center; justify-content:center; padding:20px;";
+    const modal = document.createElement("div");
+    modal.style.cssText = "width:min(560px,100%); max-height:86vh; overflow:auto;"
+      + " background:var(--ux-bg,#fff); border-radius:16px; box-shadow:0 30px 80px rgba(0,0,0,.25);";
+
+    const grp = function(cls, list, checked, label){
+      let out = "";
+      for (const v of list) {
+        out += '<label><input type="checkbox" class="' + cls + '" value="' + escapeHtml(String(v)) + '"'
+          + (checked.has(v) ? " checked" : "") + '>'
+          + '<span>' + escapeHtml(label ? label(v) : String(v)) + '</span></label>';
+      }
+      return out || '<div class="ph-noimg">нет вариантов</div>';
+    };
+    const durLabel = function(ms){ return Math.round(ms / 1000) + " сек"; };
+    const btnCss = "font:inherit; font-size:13px; padding:8px 16px; border-radius:9px; cursor:pointer;";
+
+    const title = (gids.length > 1)
+      ? ("Заменить выбранные экраны (" + gids.length + ")")
+      : ("Заменить экран " + escapeHtml(gids[0]));
+
+    modal.innerHTML =
+        '<div style="display:flex; align-items:center; justify-content:space-between; gap:12px;'
+      +   ' padding:14px 16px; border-bottom:1px solid var(--ux-line,#e2e5ec);">'
+      +   '<div style="font-weight:700; font-size:14px;">' + title + '</div>'
+      +   '<button type="button" id="ph-rep-x" style="' + btnCss
+      +     ' border:1px solid var(--ux-line,#e2e5ec); background:var(--ux-bg,#fff);">✕</button>'
+      + '</div>'
+      + '<div style="padding:14px 16px; display:flex; flex-direction:column; gap:14px;">'
+      +   '<div><div class="ph-rep-lbl">Оператор'
+      +     '<button type="button" data-set="own-all">все</button>'
+      +     '<button type="button" data-set="own-none">никого</button></div>'
+      +     '<div class="ph-rep-grp">' + grp("ph-rep-own", opts.owners, new Set(opts.owners)) + '</div></div>'
+      +   '<div><div class="ph-rep-lbl">Формат'
+      +     '<button type="button" data-set="fmt-all">все</button>'
+      +     '<button type="button" data-set="fmt-none">никого</button></div>'
+      +     '<div class="ph-rep-grp">' + grp("ph-rep-fmt", opts.formats, ownFmts, fmtLabel) + '</div></div>'
+      +   '<div><div class="ph-rep-lbl">Доступная длительность</div>'
+      +     '<div class="ph-rep-grp">' + grp("ph-rep-dur", opts.durations, new Set(), durLabel) + '</div>'
+      +     '<div class="ph-noimg" style="margin-top:5px;">Ничего не отмечено — длительность не важна.'
+      +       ' Отмеченные экран должен крутить все.</div></div>'
+      +   '<div><div class="ph-rep-lbl">Конкретные GID-ы</div>'
+      +     '<input type="text" id="ph-rep-gids" placeholder="через запятую, необязательно"'
+      +       ' style="width:100%; box-sizing:border-box; font:inherit; font-size:13px; padding:8px 10px;'
+      +       ' border:1px solid var(--ux-line,#e2e5ec); border-radius:8px;"></div>'
+      + '</div>'
+      + '<div style="display:flex; align-items:center; gap:10px; padding:12px 16px;'
+      +   ' border-top:1px solid var(--ux-line,#e2e5ec);">'
+      +   '<div id="ph-rep-n" style="font-size:12px; color:var(--ux-text3,#8a90a2);"></div>'
+      +   '<div style="margin-left:auto; display:flex; gap:8px;">'
+      +     '<button type="button" id="ph-rep-cancel" style="' + btnCss
+      +       ' border:1px solid var(--ux-line,#e2e5ec); background:var(--ux-bg,#fff);">Отмена</button>'
+      +     '<button type="button" id="ph-rep-go" style="' + btnCss
+      +       ' border:1px solid var(--ux-accent,#4F2BE8); background:var(--ux-accent,#4F2BE8);'
+      +       ' color:#fff; font-weight:600;">Заменить</button>'
+      +   '</div>'
+      + '</div>';
+
+    const vals = function(cls){
+      const out = [];
+      modal.querySelectorAll("." + cls + ":checked").forEach(function(x){ out.push(x.value); });
+      return out;
+    };
+
+    // Отмечены все варианты — это «любой», а не фильтр: сужать по полному
+    // списку значит отсеять экран с оператором, которого в списке не было.
+    function readOpts(){
+      const o = {};
+      const own = vals("ph-rep-own");
+      if (own.length && own.length < opts.owners.length) o.owners = own;
+      const fmt = vals("ph-rep-fmt");
+      if (fmt.length && fmt.length < opts.formats.length) o.formats = fmt;
+      else if (fmt.length && fmt.length === opts.formats.length) o.sameFormat = false;
+      const dur = vals("ph-rep-dur").map(Number).filter(function(v){ return v > 0; });
+      if (dur.length) o.durations = dur;
+      const raw = (modal.querySelector("#ph-rep-gids").value || "")
+        .split(",").join(" ").split(";").join(" ").split(" ").filter(Boolean);
+      if (raw.length) o.gids = raw;
+      return o;
+    }
+
+    function updateCount(){
+      const nEl = modal.querySelector("#ph-rep-n");
+      if (!nEl) return;
+      if (gids.length > 1) {
+        nEl.textContent = "Будет заменено экранов: " + gids.length;
+        return;
+      }
+      const c = P.replacementCandidates ? P.replacementCandidates(gids[0], readOpts()) : [];
+      nEl.textContent = c.length
+        ? ("Подходит экранов: " + c.length)
+        : "Под эти условия не подходит ни один экран";
+    }
+
+    function close(){
+      document.removeEventListener("keydown", onKey);
+      overlay.remove();
+    }
+    function onKey(e){ if (e.key === "Escape") close(); }
+
+    modal.addEventListener("click", function(e){
+      const set = e.target.closest("button[data-set]");
+      if (set) {
+        const parts = set.dataset.set.split("-");
+        const on = parts[1] === "all";
+        modal.querySelectorAll(".ph-rep-" + parts[0]).forEach(function(x){ x.checked = on; });
+        updateCount();
+        return;
+      }
+      if (e.target.closest("#ph-rep-x") || e.target.closest("#ph-rep-cancel")) { close(); return; }
+      if (e.target.closest("#ph-rep-go")) {
+        const o = readOpts();
+        close();
+        runReplace(gids, o);
+      }
     });
+    modal.addEventListener("change", updateCount);
+    modal.addEventListener("input", updateCount);
+    overlay.addEventListener("click", function(e){ if (e.target === overlay) close(); });
+    document.addEventListener("keydown", onKey);
 
-    box.querySelectorAll(".img-section").forEach(section => {
-      const regionName = section.querySelector(".img-row")?.dataset?.region || "";
-      const regItems = (byReg.get(regionName) || []);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    updateCount();
+  }
 
-      section.querySelectorAll(".img-card").forEach(card => {
-        card.style.scrollSnapAlign = "start";
-        card.addEventListener("click", (e) => {
-          if (e.target.closest("button")) return;
-          const idx = Number(card.dataset.idx || 0);
-          const s = regItems[idx];
+  // ── ОБРАБОТЧИКИ (делегированные) ─────────────────────────────────
+  function onBoxToggle(e){
+    const d = e.target;
+    if (!d || !d.matches || !d.matches("details.img-section")) return;
+    const r = d.dataset.region || "";
+    const f = foldUi.get(r) || {};
+    f.open = d.open;
+    foldUi.set(r, f);
+    if (d.open) applyFilter(d);
+  }
 
-          if (window.PLANNER?.focusScreenOnMap) window.PLANNER.focusScreenOnMap(s);
-          window.dispatchEvent(new CustomEvent("planner:focus-screen", { detail: { screen: s } }));
+  function onBoxChange(e){
+    const t = e.target;
+    if (!t.classList) return;
+    if (t.classList.contains("ph-pick")) {
+      const card = t.closest(".img-card");
+      if (card) setPicked(card, t.checked);
+      syncBulkBar();
+      return;
+    }
+    if (t.classList.contains("ph-f-own") || t.classList.contains("ph-f-fmt")) readFilter(t);
+  }
 
-          openLightbox(regItems, idx);
-        });
+  function onBoxInput(e){
+    if (e.target.classList && e.target.classList.contains("ph-f-gid")) readFilter(e.target);
+  }
+
+  function onBoxClick(e){
+    const t = e.target;
+    if (!t.closest) return;
+
+    const pg = t.closest(".ux-pg button[data-goto]");
+    if (pg) {
+      const section = pg.closest("details.img-section");
+      if (!section) return;
+      const r = section.dataset.region || "";
+      const f = foldUi.get(r) || {};
+      f.page = Number(pg.dataset.goto) || 0;
+      foldUi.set(r, f);
+      applyFilter(section);
+      section.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      return;
+    }
+
+    const reset = t.closest(".ph-f-reset");
+    if (reset) {
+      const section = reset.closest("details.img-section");
+      if (!section) return;
+      const g = section.querySelector(".ph-f-gid");
+      const o = section.querySelector(".ph-f-own");
+      const m = section.querySelector(".ph-f-fmt");
+      if (g) g.value = "";
+      if (o) o.value = "";
+      if (m) m.value = "";
+      readFilter(g || o || m);
+      return;
+    }
+
+    const all = t.closest(".ph-f-all");
+    if (all) {
+      const section = all.closest("details.img-section");
+      if (!section) return;
+      // Берём всё, что прошло фильтр, а не только текущую страницу: иначе
+      // «выбрать найденные» на десяти страницах выбирает двадцать четыре.
+      section.querySelectorAll(".img-card").forEach(function(card){
+        if (Number(card.dataset.page) >= 0) setPicked(card, true);
       });
+      syncBulkBar();
+      return;
+    }
 
-      section.querySelectorAll(".card-remove-btn").forEach(btn => {
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const gid = btn.dataset.gid;
-          if (window.PLANNER?.removeScreen) window.PLANNER.removeScreen(gid);
-          const chosen = window.PLANNER?.state?.lastChosen || [];
-          lastItems = chosen;
-          renderPerRegion(chosen);
-          window.dispatchEvent(new CustomEvent("planner:screens-edited"));
-        });
+    if (t.closest(".ph-bulk-off")) {
+      picked.clear();
+      const box = el("img-carousel");
+      if (box) box.querySelectorAll(".img-card.is-picked").forEach(function(card){
+        setPicked(card, false);
       });
+      syncBulkBar();
+      return;
+    }
 
-      section.querySelectorAll(".card-replace-btn").forEach(btn => {
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const gid = btn.dataset.gid;
-          if (window.PLANNER?.replaceScreen) {
-            const newScreen = window.PLANNER.replaceScreen(gid);
-            if (newScreen) {
-              const chosen = window.PLANNER?.state?.lastChosen || [];
-              lastItems = chosen;
-              renderPerRegion(chosen);
-              window.dispatchEvent(new CustomEvent("planner:screens-edited"));
-            } else {
-              btn.textContent = "Нет замены";
-              btn.disabled = true;
-              btn.style.opacity = "0.5";
-            }
-          }
-        });
-      });
+    const bulkRep = t.closest(".ph-bulk-rep");
+    if (bulkRep) { openReplaceMenu(bulkRep, [...picked]); return; }
+
+    if (t.closest(".ph-bulk-del")) {
+      const gids = [...picked];
+      if (!gids.length) return;
+      if (!window.confirm("Убрать из программы экранов: " + gids.length + "?")) return;
+      const P = window.PLANNER;
+      let ok = 0;
+      for (const gid of gids) {
+        if (P && P.removeScreen && P.removeScreen(gid)) ok++;
+        picked.delete(gid);
+      }
+      if (ok) refresh(); else syncBulkBar();
+      return;
+    }
+
+    const rem = t.closest(".card-remove-btn");
+    if (rem) {
+      e.stopPropagation();
+      const card = rem.closest(".img-card");
+      if (!card) return;
+      const gid = card.dataset.gid;
+      if (window.PLANNER && window.PLANNER.removeScreen) window.PLANNER.removeScreen(gid);
+      picked.delete(gid);
+      refresh();
+      return;
+    }
+
+    const rep = t.closest(".card-replace-btn");
+    if (rep) {
+      e.stopPropagation();
+      const card = rep.closest(".img-card");
+      if (card) openReplaceMenu(rep, [card.dataset.gid]);
+      return;
+    }
+
+    if (t.closest("button") || t.closest("input") || t.closest("select")) return;
+
+    const card = t.closest(".img-card");
+    if (!card) return;
+    const regItems = byReg.get(card.dataset.region || "") || [];
+    const s = regItems[Number(card.dataset.idx)];
+    if (!s) return;
+
+    if (window.PLANNER && window.PLANNER.focusScreenOnMap) window.PLANNER.focusScreenOnMap(s);
+    window.dispatchEvent(new CustomEvent("planner:focus-screen", { detail: { screen: s } }));
+
+    // В просмотр отдаём только найденное фильтром: листать стрелками сквозь
+    // отфильтрованное — не то, чего ждёшь, отфильтровав список.
+    const section = card.closest("details.img-section");
+    const vis = [];
+    let pos = 0;
+    (section ? section.querySelectorAll(".img-card") : [card]).forEach(function(c){
+      if (Number(c.dataset.page) < 0) return;
+      if (c === card) pos = vis.length;
+      const sv = regItems[Number(c.dataset.idx)];
+      if (sv) vis.push(sv);
     });
+    openLightbox(vis.length ? vis : [s], vis.length ? pos : 0);
   }
 
   function init(){
@@ -7356,10 +7893,14 @@ window.PLANNER_ASSET_BASE = (function () {
       renderPerRegion(lastItems);
     });
 
+    // Программу правят и из просмотра, и из попапа на карте. Раньше здесь
+    // только запоминался новый состав, а сетка карточек оставалась старой до
+    // следующего расчёта.
     window.addEventListener("planner:screens-edited", () => {
-      if(!allowed) return;
+      if(!allowed || _selfEdit) return;
       const chosen = window.PLANNER?.state?.lastChosen || [];
       lastItems = chosen;
+      renderPerRegion(chosen);
     });
   }
 
@@ -8791,20 +9332,46 @@ window.PLANNER_ASSET_BASE = (function () {
   // «ролик на ноль секунд», а «без привязки»: экран берётся по базовой ставке.
   function fmtSec(ms){ return ms > 0 ? Math.round(ms / 1000) + " сек" : "Любая"; }
 
+  // Длительности, которые правда есть у экранов текущего пула (регионы либо
+  // список GID-ов + выбранные форматы). Ноль добавляем всегда: «Любая» — это
+  // не слот, а отказ от привязки, и он доступен на любом экране.
+  function poolDurations(){
+    var pool = window.PLANNER && typeof window.PLANNER.planningPoolScreens === "function"
+      ? window.PLANNER.planningPoolScreens() : null;
+    if (!Array.isArray(pool) || !pool.length) return null;
+    var set = new Set();
+    pool.forEach(function(s){
+      if (!Array.isArray(s.durationBidInfo)) return;
+      s.durationBidInfo.forEach(function(d){ if (Number.isFinite(d.duration)) set.add(d.duration); });
+    });
+    if (!set.size) return null;
+    return set;
+  }
+
   function collectDurations(){
     var st = window.PLANNER && window.PLANNER.state;
     // Канонический список с /inventories/available-durations — не зависит от того,
     // что уже успело подгрузиться в screensAll. Фолбэк — union из текущего инвентаря.
+    var all;
     if (st && Array.isArray(st.availableDurationsMs) && st.availableDurationsMs.length) {
-      return st.availableDurationsMs.slice().sort(function(a,b){ return a - b; });
+      all = st.availableDurationsMs.slice();
+    } else {
+      var screens = (st && Array.isArray(st.screensAll)) ? st.screensAll : [];
+      var set = new Set();
+      screens.forEach(function(s){
+        if (!Array.isArray(s.durationBidInfo)) return;
+        s.durationBidInfo.forEach(function(d){ if (Number.isFinite(d.duration)) set.add(d.duration); });
+      });
+      all = [...set];
     }
-    var screens = (st && Array.isArray(st.screensAll)) ? st.screensAll : [];
-    var set = new Set();
-    screens.forEach(function(s){
-      if (!Array.isArray(s.durationBidInfo)) return;
-      s.durationBidInfo.forEach(function(d){ if (Number.isFinite(d.duration)) set.add(d.duration); });
-    });
-    return [...set].sort(function(a,b){ return a - b; });
+    // Сужаем до пула. Если пул пуст (инвентарь ещё грузится, регион не выбран) —
+    // оставляем полный список: пустой блок хуже лишнего чипа.
+    var есть = poolDurations();
+    if (есть) {
+      var сужено = all.filter(function(ms){ return ms === 0 || есть.has(ms); });
+      if (сужено.length) all = сужено;
+    }
+    return all.sort(function(a,b){ return a - b; });
   }
 
   function renderDurationChips(){
@@ -8865,10 +9432,19 @@ window.PLANNER_ASSET_BASE = (function () {
   // Общий выбор задаёт длительность всем; здесь её можно переопределить
   // отдельному формату. Строка рисуется только для форматов, которые есть
   // в пуле, и только с теми длительностями, которые у них правда бывают.
-  function durationsOfFormat(fmt){
+  // Пул, из которого собирается план: те же экраны, что уйдут в расчёт.
+  // Фолбэк на весь инвентарь — пока регион не выбран и пул пуст.
+  function poolScreens(){
     const st = window.PLANNER?.state;
-    const all = Array.isArray(st?.screensAll) && st.screensAll.length
+    const pool = (window.PLANNER && typeof window.PLANNER.planningPoolScreens === "function")
+      ? window.PLANNER.planningPoolScreens() : null;
+    if (Array.isArray(pool) && pool.length) return pool;
+    return Array.isArray(st?.screensAll) && st.screensAll.length
       ? st.screensAll : (Array.isArray(st?.screens) ? st.screens : []);
+  }
+
+  function durationsOfFormat(fmt, pool){
+    const all = pool || poolScreens();
     const set = new Set();
     for (const s of all){
       if (String(s.format||"").trim() !== fmt) continue;
@@ -8883,13 +9459,17 @@ window.PLANNER_ASSET_BASE = (function () {
     const block = el("duration-by-format");
     if (!wrap || !block) return;
     const st = window.PLANNER?.state;
-    const all = (Array.isArray(st?.formatsAll) ? st.formatsAll : [])
+    // Форматы берём из пула, а не из selectedFormats: в GID-режиме галок
+    // форматов нет вовсе, а сузить список всё равно надо — до форматов
+    // выбранных гидов. В обычном режиме пул уже отфильтрован по галкам,
+    // так что результат тот же, только заодно отсекает форматы, которых
+    // в выбранных регионах не оказалось.
+    const pool = poolScreens();
+    const order = (Array.isArray(st?.formatsAll) ? st.formatsAll : [])
       .map(x => String(x||"").trim()).filter(Boolean);
-    // Пустой выбор означает «берём все», поэтому и список тогда полный.
-    const picked = st?.selectedFormats;
-    const fmts = (picked && picked.size)
-      ? all.filter(f => picked.has(f))
-      : all;
+    const вПуле = new Set(pool.map(s => String(s.format||"").trim()).filter(Boolean));
+    const fmts = order.filter(f => вПуле.has(f))
+      .concat([...вПуле].filter(f => !order.includes(f)));
     if (!fmts.length){ block.style.display = "none"; return; }
     block.style.display = "";
     if (wrap.style.display === "none") return;
@@ -8898,7 +9478,7 @@ window.PLANNER_ASSET_BASE = (function () {
     wrap.innerHTML = "";
 
     for (const fmt of fmts){
-      const durs = durationsOfFormat(fmt);
+      const durs = durationsOfFormat(fmt, pool);
       if (durs.length < 2) continue;   // выбирать не из чего
 
       const row = document.createElement("div");

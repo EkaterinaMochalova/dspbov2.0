@@ -2315,8 +2315,119 @@ function _screenIdOf(s) {
   return (s?.screen_id ?? s?.gid ?? s?.GID ?? s?.id ?? "").toString().trim();
 }
 
+// Экраны, от которых пользователь уже ушёл заменой. Предлагать их обратно
+// нельзя: без этого повторный клик «Заменить» возвращает к тому, от чего
+// только что ушли — ближайший кандидат к новому экрану это, как правило,
+// старый. Живёт до следующего расчёта.
+const _replacedAway = new Set();
+window.addEventListener("planner:calc-done", () => _replacedAway.clear());
+
+function _filterSet(list) {
+  if (!Array.isArray(list) || !list.length) return null;
+  const out = new Set(list.map(v => String(v ?? "").trim()).filter(Boolean));
+  return out.size ? out : null;
+}
+
+// Кандидаты на замену экрана, по возрастанию расстояния от него.
+// opts (всё необязательно):
+//   owners     — только эти операторы
+//   formats    — только эти форматы (задан хоть один — правило «свой формат» снято)
+//   gids       — только эти GID-ы
+//   durations  — экран должен крутить КАЖДУЮ из этих длительностей (мс)
+//   sameFormat — false, чтобы посмотреть кандидатов во всех форматах
+function replacementCandidates(screenId, opts) {
+  const chosen = state.lastChosen;
+  if (!chosen || !chosen.length) return [];
+  const idx = chosen.findIndex(s => _screenIdOf(s) === String(screenId));
+  if (idx < 0) return [];
+  const old = chosen[idx];
+
+  const flt = opts || {};
+  const owners  = _filterSet(flt.owners);
+  const formats = _filterSet(flt.formats);
+  const gids    = _filterSet(flt.gids);
+  const durs = Array.isArray(flt.durations)
+    ? flt.durations.map(Number).filter(v => Number.isFinite(v) && v > 0) : [];
+  const свойФормат = flt.sameFormat !== false && !formats;
+  const безФильтров = !owners && !formats && !gids && !durs.length;
+
+  const allScreens = state.screensAll || [];
+  const chosenIds = new Set(chosen.map(s => _screenIdOf(s)));
+  const excluded = state.manuallyExcluded || new Set();
+
+  const годен = (s) => {
+    const sid = _screenIdOf(s);
+    if (!sid || chosenIds.has(sid)) return false;
+    // Убранный вручную экран не должен возвращаться заменой соседа —
+    // это ровно тот экран, который пользователь уже отверг.
+    if (excluded.has(sid) || _replacedAway.has(sid)) return false;
+    if (s.region && old.region && s.region !== old.region) return false;
+    return !!getLatLon(s);
+  };
+  const подФильтр = (s) => {
+    if (owners  && !owners.has(String(s.owner  || "").trim())) return false;
+    if (formats && !formats.has(String(s.format || "").trim())) return false;
+    if (gids    && !gids.has(_screenIdOf(s))) return false;
+    // Длительность нужна ровно такая: _resolveDurationMatch берёт ближайший
+    // слот и подошёл бы любой экран, а «доступная длительность» — про то,
+    // что экран эту длительность правда крутит.
+    if (durs.length) {
+      const слоты = Array.isArray(s.durationBidInfo) ? s.durationBidInfo : [];
+      if (!durs.every(ms => слоты.some(d => d.duration === ms))) return false;
+    }
+    return true;
+  };
+
+  let candidates = allScreens.filter(s => годен(s) && подФильтр(s)
+    && (свойФормат ? s.format === old.format : true));
+
+  // Фолбэк «любой формат» — только когда фильтров не задавали. Иначе замена
+  // молча подставила бы то, что пользователь как раз исключил.
+  if (!candidates.length && безФильтров) candidates = allScreens.filter(годен);
+
+  const oldLoc = getLatLon(old);
+  const dist = window.GeoUtils?.haversineMeters;
+  if (oldLoc && dist) {
+    candidates.sort((a, b) => {
+      const la = getLatLon(a), lb = getLatLon(b);
+      return dist(oldLoc.lat, oldLoc.lon, la.lat, la.lon)
+           - dist(oldLoc.lat, oldLoc.lon, lb.lat, lb.lon);
+    });
+  }
+  return candidates;
+}
+
+// Из чего вообще можно выбирать замену для набора экранов: операторы,
+// форматы и длительности их регионов. Один проход по инвентарю — при
+// массовой замене список строится для сотни экранов сразу.
+function replacementOptions(screenIds) {
+  const ids = new Set((Array.isArray(screenIds) ? screenIds : [screenIds]).map(String));
+  const chosen = Array.isArray(state.lastChosen) ? state.lastChosen : [];
+  const выбранные = chosen.filter(s => ids.has(_screenIdOf(s)));
+  const регионы = new Set(выбранные.map(s => s.region).filter(Boolean));
+  const свои = new Set(выбранные.map(s => String(s.format || "").trim()).filter(Boolean));
+
+  const owners = new Set(), formats = new Set(), durations = new Set();
+  for (const s of (state.screensAll || [])) {
+    if (регионы.size && s.region && !регионы.has(s.region)) continue;
+    const o = String(s.owner || "").trim();  if (o) owners.add(o);
+    const f = String(s.format || "").trim(); if (f) formats.add(f);
+    if (Array.isArray(s.durationBidInfo)) {
+      for (const d of s.durationBidInfo) {
+        if (Number.isFinite(d.duration) && d.duration > 0) durations.add(d.duration);
+      }
+    }
+  }
+  return {
+    owners:    [...owners].sort((a, b) => a.localeCompare(b, "ru")),
+    formats:   [...formats].sort((a, b) => a.localeCompare(b, "ru")),
+    durations: [...durations].sort((a, b) => a - b),
+    ownFormats: [...свои],
+  };
+}
+
 // Replace a chosen screen with nearest similar one from the pool
-function replaceScreen(screenId) {
+function replaceScreen(screenId, opts) {
   const chosen = state.lastChosen;
   if (!chosen || !chosen.length) return null;
 
@@ -2324,47 +2435,12 @@ function replaceScreen(screenId) {
   if (idx < 0) return null;
 
   const old = chosen[idx];
-  const oldLoc = getLatLon(old);
-  const dist = window.GeoUtils?.haversineMeters;
-
-  const allScreens = state.screensAll || [];
-  const chosenIds = new Set(chosen.map(s => _screenIdOf(s)));
-
-  // Candidates: same format, same region, not chosen, has coordinates
-  let candidates = allScreens.filter(s => {
-    const sid = _screenIdOf(s);
-    if (!sid || chosenIds.has(sid)) return false;
-    if (s.format !== old.format) return false;
-    if (s.region && old.region && s.region !== old.region) return false;
-    const loc = getLatLon(s);
-    if (!loc) return false;
-    return true;
-  });
-
-  // Fallback: any format, same region
-  if (!candidates.length) {
-    candidates = allScreens.filter(s => {
-      const sid = _screenIdOf(s);
-      if (!sid || chosenIds.has(sid)) return false;
-      if (s.region && old.region && s.region !== old.region) return false;
-      return !!getLatLon(s);
-    });
-  }
-
+  const candidates = replacementCandidates(screenId, opts);
   if (!candidates.length) return null;
-
-  // Sort by distance to old screen (if we have old coords and haversine)
-  if (oldLoc && dist) {
-    candidates.sort((a, b) => {
-      const la = getLatLon(a), lb = getLatLon(b);
-      const da = dist(oldLoc.lat, oldLoc.lon, la.lat, la.lon);
-      const db = dist(oldLoc.lat, oldLoc.lon, lb.lat, lb.lon);
-      return da - db;
-    });
-  }
 
   const replacement = candidates[0];
   chosen.splice(idx, 1, replacement);
+  _replacedAway.add(_screenIdOf(old));
 
   // Замена вручную — единственный законный способ пополнить замороженную
   // программу: иначе следующий пересчёт выкинет подставленный экран.
@@ -2870,9 +2946,9 @@ async function buildMediaPlanBlob() {
   for (let i = 0; i < Math.max(maxFmts, 2); i++) ws.getColumn(5 + i).width = 18;
 
   // ── Rows 1-5: meta header ────────────────────────────────────────
-  // Длительность дописываем к строке "Формат" (а не отдельной строкой), чтобы не
-  // сдвигать нумерацию строк ниже — она жёстко привязана к текущему количеству
-  // metaRows (см. hdr7 на строке 7, SUMMARY_START=8 и т.д.).
+  // Длительность дописываем к строке "Формат" (а не отдельной строкой), чтобы
+  // шапка не разрасталась. Нумерация строк ниже считается от metaRows.length,
+  // так что сама по себе лишняя строка шапки ничего не сломает.
   // Длительностей может быть несколько — перечисляем все, иначе в плане
   // окажется одна цифра, а посчитано будет по нескольким роликам.
   const durList = (Array.isArray(brief.duration?.msList) && brief.duration.msList.length)
@@ -2895,6 +2971,9 @@ async function buildMediaPlanBlob() {
   // Номер строки берём из таблицы: на него ссылается формула частоты, и
   // вписанное число разъехалось бы при первой же перестановке шапки.
   const hoursRowNum = metaRows.findIndex(x => x[0] === "Часов вещания за период") + 1;
+  // Между шапкой и сводом по городам — пустая строка: без неё заголовки
+  // таблицы упираются в последнюю строку шапки и читаются как её часть.
+  const HDR_ROW = metaRows.length + 2;
   for (let i = 0; i < metaRows.length; i++) {
     const r = i + 1;
     const [label, value] = metaRows[i];
@@ -2911,7 +2990,7 @@ async function buildMediaPlanBlob() {
   sc(ws, 2, 6, "Ссылка на Карту", { fill: C_HDR, h: "center", v: "center" });
 
   // ── Row 7: table column headers ─────────────────────────────────
-  ws.getRow(7).height = 30;
+  ws.getRow(HDR_ROW).height = 30;
   let hdrE = "", hdrF = "";
   if (commOn && commRate > 0 && vatOn) {
     hdrE = `Прогноз бюджета + комиссия ${commRatePct}%`;
@@ -2927,12 +3006,12 @@ async function buildMediaPlanBlob() {
     // красил такую ячейку заливкой и рамкой, и в выгрузке оставался пустой
     // синий прямоугольник справа от «Прогноза бюджета», который приходилось
     // удалять руками. Теперь просто пропускаем.
-    if (!h) { ws.getCell(7, i + 1).border = NO_B; return; }
-    sc(ws, 7, i + 1, h, { bold: true, fill: C_HDR, h: "center", v: "center", wrap: true });
+    if (!h) { ws.getCell(HDR_ROW, i + 1).border = NO_B; return; }
+    sc(ws, HDR_ROW, i + 1, h, { bold: true, fill: C_HDR, h: "center", v: "center", wrap: true });
   });
 
   // ── Layout: block positions (one block per city) ────────────────
-  const SUMMARY_START = 8;
+  const SUMMARY_START = HDR_ROW + 1;
   const nCities  = cities.length;
   const totalRow = SUMMARY_START + nCities;
   // 9 строк: девятая — частота выходов. Сноска про OTS и разрывы считаются от
@@ -3278,6 +3357,11 @@ async function buildMediaPlanBlob() {
 
   // ── Sheet 2: АП ─────────────────────────────────────────────────
   const ws2 = wb.addWorksheet("АП");
+  // Ставка в колонке — та самая, по которой посчитан план (screenBid), а
+  // заголовок называет её режим: иначе цифру нечем поверить.
+  const _upl = Number(brief.bidUpliftPct) > 0 ? " + " + brief.bidUpliftPct + "%" : "";
+  const AP_BID_HDR = (brief.bidMode === "min" ? "Мин. ставка" : "Рекомендованная ставка")
+    + _upl + ", ₽";
   const AP_COLS = [
     { h: "GID",                w: 25, fn: s => s.gid ?? s.screen_id ?? "" },
     { h: "Город",              w: 22, fn: s => s.city       ?? "" },
@@ -3314,6 +3398,12 @@ async function buildMediaPlanBlob() {
         }
         return matched.size ? секунды([...matched]) : "";
       } },
+    // Ставка стоит рядом с длительностью не случайно: она от неё и зависит —
+    // applySelectedDurations уже перезаписал minBid/recoBid под выбранный ролик.
+    { h: AP_BID_HDR, w: 22, numFmt: '#,##0.00', fn: s => {
+        const b = screenBid(s, brief);
+        return Number.isFinite(b) && b > 0 ? b : "";
+      } },
     { h: "Вид. разрешение",    w: 20, fn: s => s.resolution ?? "" },
     { h: "Соотношение сторон", w: 20, fn: s => s.aspectRatio ?? "" },
     { h: "Широта",             w: 14, fn: s => Number.isFinite(s.lat) ? s.lat : "" },
@@ -3336,6 +3426,7 @@ async function buildMediaPlanBlob() {
         cell.font  = { size: 11, name: "Calibri", color: { argb: "FF2563EB" }, underline: true };
       } else {
         cell.value = v;
+        if (col.numFmt && typeof v === "number") cell.numFmt = col.numFmt;
       }
     });
   });
@@ -6242,6 +6333,53 @@ function renderBudgetHints() {
 }
 
 // ===== POOL PREVIEW =====
+// Экраны, из которых сейчас будет собираться план: по регионам либо по
+// списку GID-ов, с учётом ручного выбора форматов. Дальше по фильтрам
+// (ставки, зона, операторы) не сужаем — для выбора длительности важно, какие
+// поверхности вообще в игре, а не сколько их останется.
+function planningPoolScreens() {
+  const source = (Array.isArray(state.screensAll) && state.screensAll.length)
+    ? state.screensAll : (Array.isArray(state.screens) ? state.screens : []);
+  if (!source.length) return [];
+  let brief;
+  try { brief = buildBrief(); } catch { return source; }
+
+  const gidSet = (brief.selection?.mode === "manual_screens" && brief.selection.manual_gids)
+    ? brief.selection.manual_gids : null;
+  if (gidSet && gidSet.size) {
+    // Под одним GID-ом бывает несколько экранов — берём ровно те, что возьмёт
+    // расчёт: выбранный вариант, иначе не технический аккаунт.
+    const real = gidsWithRealOwner(gidSet);
+    const picks = state.gidPicks || {};
+    const seen = new Set();
+    const out = [];
+    for (const sc of source) {
+      const id = _screenIdOf(sc);
+      if (!gidSet.has(id) || seen.has(id)) continue;
+      if (isTechnicalOwner(sc) && real.has(id)) continue;
+      const выбран = picks[id];
+      if (выбран && gidVariantKey(sc) !== выбран) continue;
+      seen.add(id);
+      out.push(sc);
+    }
+    return out;
+  }
+
+  const regions = Array.isArray(brief.geo?.regions) ? brief.geo.regions : [];
+  let pool = regions.length
+    ? source.filter(s => regions.some(r => screenMatchesGeoChoice(s, r)))
+    : source;
+  const manual = (brief.formats?.mode === "manual" && Array.isArray(brief.formats.selected))
+    ? brief.formats.selected : [];
+  if (manual.length) {
+    const fset = new Set(manual);
+    pool = pool.filter(s => fset.has(s.format));
+  }
+  return pool;
+}
+window.PLANNER = window.PLANNER || {};
+window.PLANNER.planningPoolScreens = planningPoolScreens;
+
 function computePoolPreview() {
   // Приоритет — screensAll (весь инвентарь DSP), чтобы совпадать с форматными
   // карточками и не показывать стейл с прошлого Calculate. В CSV-режиме
@@ -6340,6 +6478,8 @@ function computePoolPreview() {
 window.PLANNER = window.PLANNER || {};
 window.PLANNER.computePoolPreview = computePoolPreview;
 window.PLANNER.removeScreen = removeScreen;
+window.PLANNER.replacementCandidates = replacementCandidates;
+window.PLANNER.replacementOptions = replacementOptions;
 window.PLANNER.clearManualExclusions = clearManualExclusions;
 
 // ===== BIND UI =====
