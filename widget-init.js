@@ -3463,11 +3463,13 @@ window.PLANNER_ASSET_BASE = (function () {
         </div>
         <!-- Сюда раскладка переносит блоки этого шага (см. STEP_LAYOUT) -->
         <div id="wiz-step-3-body"></div>
+        <!-- Тумблер фиксации адрески. Показывается только когда собранная
+             программа есть, то есть после первого расчёта: до него сохранять
+             нечего. Стоит перед кнопкой — решение принимается прямо перед
+             расчётом, читать его под кнопкой поздно. -->
+        <div id="ap-frozen-note" style="display:none;"></div>
         <button id="calc-btn" class="ux-primary" disabled>Рассчитать</button>
         <div id="calc-blocked-hint" role="alert" style="display:none; margin-top:8px; font-size:12px; color:#c62828; padding:6px 10px; background:#fff5f5; border-radius:8px;"></div>
-        <!-- Пока адреска зафиксирована, расчёт идёт внутри неё: новые регионы
-             и форматы в неё не попадут, пока её не пересоберут. -->
-        <div id="ap-frozen-note" style="display:none;"></div>
         <div id="status" class="planner-status"></div>
         <div class="wiz-nav" style="margin-top:12px;">
           <button type="button" class="wiz-btn ghost" id="wiz-back-3">← Адреска</button>
@@ -5839,32 +5841,95 @@ window.PLANNER_ASSET_BASE = (function () {
     renderApFrozenNote();
   }
 
-  // Фиксация адрески — состояние неочевидное: расчёт молча идёт внутри
-  // отобранных экранов, и добавленный в брифе регион в него не попадёт.
-  // Поэтому говорим об этом прямо и рядом даём способ отпустить.
+  // Тумблер фиксации адрески. Состояние неочевидное: пока программа
+  // зафиксирована, расчёт идёт внутри отобранных экранов, и добавленный в
+  // брифе регион или адрес в него не попадёт. Поэтому это не подсказка, а
+  // переключатель — видно и состояние, и чем оно обернётся.
+  //
+  // Выключение снимает фиксацию сразу, а не к расчёту: иначе уровни бюджета
+  // считались бы по ёмкости прежней программы, а собирать её обещали заново.
+  // Прежний состав при этом откладываем — включить обратно можно без потерь.
+  function apKeepAvailable(){
+    const st = window.PLANNER?.state;
+    if (!st) return 0;
+    return (st.apFrozenIds?.size || 0) || (st._apStashedIds?.size || 0);
+  }
+
   function renderApFrozenNote(){
     const box = el("ap-frozen-note");
     if (!box) return;
-    const size = window.PLANNER?.state?.apFrozenIds?.size || 0;
-    if (!size){ box.style.display = "none"; box.innerHTML = ""; return; }
+    const st = window.PLANNER?.state;
+    const size = apKeepAvailable();
+    // Сохранять нечего — до первого расчёта тумблеру взяться неоткуда.
+    if (!st || !size){ box.style.display = "none"; box.innerHTML = ""; return; }
+
+    // Условия отбора правили после сборки. Один раз на каждый такой набор
+    // условий выключаем фиксацию сами: держать её значит считать внутри
+    // прежних экранов, и правка просто не подействует. Пользователь может
+    // включить обратно — тогда на этом же наборе больше не переспрашиваем.
+    const sig = window.PLANNER.apSelectionSig ? window.PLANNER.apSelectionSig() : null;
+    if (window.PLANNER.apSelectionChanged && window.PLANNER.apSelectionChanged()
+        && st._apAutoOffSig !== sig) {
+      st._apAutoOffSig = sig;
+      apSetKeep(false, false);
+      // Уровни считаются от ёмкости базы, а база только что сменилась.
+      // Считаем их вне этого прохода: renderProgress сам зовёт нас сюда.
+      if (typeof window.renderBudgetTiers === "function") setTimeout(window.renderBudgetTiers, 0);
+    }
+
+    const on = !!(st.apFrozenIds?.size);
     box.style.display = "block";
-    box.innerHTML = "<div class='ap-frozen'><span>Адреска зафиксирована: <b>"
-      + size + "</b> экр. Смена бюджета и частоты считается внутри неё —"
-      + " состав экранов не пересобирается. Правка условий отбора (регионы,"
-      + " адреса, радиус, форматы, фильтры) соберёт программу заново сама.</span>"
-      + "<button type='button' class='ap-refreeze' id='ap-refreeze-btn'>"
-      + "Пересобрать адреску</button></div>";
+    box.innerHTML =
+        '<div class="cns-chip' + (on ? " active" : "") + '" id="ap-keep-chip"'
+      +   ' role="switch" aria-checked="' + (on ? "true" : "false") + '"'
+      +   ' tabindex="0" data-kbd-click>'
+      +   '<span class="cns-chip-ico">📌</span>'
+      +   '<div class="cns-chip-body">'
+      +     '<div class="str-chip-title">Сохранить собранную адреску</div>'
+      +     '<div class="str-chip-desc">' + (on
+            ? "Пересчёт пойдёт внутри этих экранов — состав не изменится."
+            : "Соберём программу заново по текущим условиям, прежние "
+              + size + " экр. отбросим.") + '</div>'
+      +   '</div>'
+      +   '<span class="cns-chip-badge" data-val="' + size + '">' + size + ' экр.</span>'
+      + '</div>'
+      + (on && window.PLANNER.apSelectionChanged && window.PLANNER.apSelectionChanged()
+          ? '<div class="ap-frozen">Условия отбора изменились, но адреска сохранена —'
+            + ' на состав экранов эти правки не подействуют.</div>'
+          : "");
   }
   window.renderApFrozenNote = renderApFrozenNote;
 
+  // Одно место, где фиксация включается и выключается: и по клику, и когда
+  // интерфейс сам замечает правку условий.
+  function apSetKeep(on, перерисовать){
+    const st = window.PLANNER?.state;
+    if (!st) return;
+    if (on) {
+      if (st._apStashedIds?.size) st.apFrozenIds = new Set(st._apStashedIds);
+      st.apKeepFrozen = true;
+    } else {
+      if (st.apFrozenIds?.size) st._apStashedIds = new Set(st.apFrozenIds);
+      window.PLANNER?.unfreezeAp?.();
+      st.apKeepFrozen = false;
+    }
+    if (перерисовать) {
+      renderApFrozenNote();
+      // Уровни считаются долей от ёмкости базы, а база только что сменилась.
+      if (typeof window.renderBudgetTiers === "function") window.renderBudgetTiers();
+      if (typeof window.renderResultControls === "function") window.renderResultControls();
+      renderProgress();
+    }
+  }
+
   document.addEventListener("click", (e) => {
-    if (!e.target.closest || !e.target.closest("#ap-refreeze-btn")) return;
-    window.PLANNER?.unfreezeAp?.();
-    renderApFrozenNote();
-    // Уровни считаются долей от ёмкости базы, а база только что сменилась.
-    if (typeof window.renderBudgetTiers === "function") window.renderBudgetTiers();
-    if (typeof window.renderResultControls === "function") window.renderResultControls();
-    renderProgress();
+    if (!e.target.closest || !e.target.closest("#ap-keep-chip")) return;
+    const st = window.PLANNER?.state;
+    if (!st) return;
+    const включено = !!(st.apFrozenIds?.size);
+    // Решение приняли руками — на этом наборе условий больше не переспрашиваем.
+    st._apAutoOffSig = window.PLANNER.apSelectionSig ? window.PLANNER.apSelectionSig() : null;
+    apSetKeep(!включено, true);
   });
 
   // делаем доступным другим скриптам (formats/и т.п.)

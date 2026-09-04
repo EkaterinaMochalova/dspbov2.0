@@ -2620,6 +2620,19 @@ function selectionSignature(brief) {
 window.PLANNER = window.PLANNER || {};
 window.PLANNER.selectionSignature = selectionSignature;
 
+// Подпись текущего состояния брифа — по ней интерфейс понимает, что
+// условия отбора правили после сборки программы.
+function apSelectionSig() {
+  try { return selectionSignature(buildBrief()); } catch { return null; }
+}
+function apSelectionChanged() {
+  if (!isApFrozen() || !state.apFrozenSig) return false;
+  const sig = apSelectionSig();
+  return sig != null && sig !== state.apFrozenSig;
+}
+window.PLANNER.apSelectionSig = apSelectionSig;
+window.PLANNER.apSelectionChanged = apSelectionChanged;
+
 function freezeAp() {
   // Уже зафиксирована — не перезаписываем. Пересчёт на минимуме отбирает
   // меньше экранов, и повторная заморозка по его результату сделала бы
@@ -2629,9 +2642,13 @@ function freezeAp() {
   const ids = chosen.map(_screenIdOf).filter(Boolean);
   if (!ids.length) return false;
   state.apFrozenIds = new Set(ids);
-  // Основание, на котором эта программа собрана. По нему в следующем
-  // расчёте видно, правил ли пользователь бриф.
-  try { state.apFrozenSig = selectionSignature(buildBrief()); } catch { state.apFrozenSig = null; }
+  // Основание, на котором эта программа собрана. По нему видно, правил ли
+  // пользователь бриф после сборки.
+  state.apFrozenSig = apSelectionSig();
+  // Решение по тумблеру относилось к прежней программе — эта собрана заново.
+  state.apKeepFrozen = undefined;
+  state._apStashedIds = null;
+  state._apAutoOffSig = null;
   return true;
 }
 
@@ -4834,14 +4851,18 @@ async function onCalcClick() {
   if (!brief.dates.start) return void fieldError("date-start", "Укажите дату начала размещения.", { step: 2 });
   if (!brief.dates.end)   return void fieldError("date-end",   "Укажите дату окончания размещения.", { step: 2 });
 
-  // Бриф правили после прошлого расчёта — фиксацию отпускаем и собираем
-  // программу заново. Держать её дальше значит считать внутри прежнего
-  // набора экранов: добавленный адрес или регион в него не попадёт, и
-  // регион выйдет с нулём при непустом счётчике у адреса.
+  // Фиксация адрески. На экране результата она обязательна: пересчёт там
+  // идёт внутри собранной программы — за этим туда и приходят, и смена
+  // уровня бюджета не должна пересобирать состав. На брифе решает тумблер
+  // «Сохранить собранную адреску»: он же снимает фиксацию сразу при
+  // выключении, так что здесь остаётся только страховка на пути, которые
+  // тумблер не успел заметить (правка состояния мимо интерфейса).
   let _apReleased = false;
   {
+    const наБрифе = document.getElementById("planner-widget")?.dataset.phase !== "result";
     const sig = selectionSignature(brief);
-    if (isApFrozen() && state.apFrozenSig && state.apFrozenSig !== sig) {
+    if (наБрифе && isApFrozen() && state.apKeepFrozen !== true
+        && state.apFrozenSig && state.apFrozenSig !== sig) {
       unfreezeAp();
       _apReleased = true;
     }
@@ -7360,9 +7381,6 @@ async function dspFetchForecastBids(screens, brief) {
   const dateStart = _fmtDate(_d90) + "T00:00:00";
   const dateEnd   = _fmtDate(new Date(_today.getTime() - 86400000)) + "T23:59:59";
 
-  const markup = getDspAgencyMarkup();
-  const additionalCharge = markup.additionalCharge ?? 0;
-
   const BATCH = 50;
   const batches = [];
   for (let i = 0; i < toFetch.length; i += BATCH) batches.push(toFetch.slice(i, i + BATCH));
@@ -7371,7 +7389,6 @@ async function dspFetchForecastBids(screens, brief) {
     const body = {
       inventoryList: batch.map(s => ({ inventory: s._dspId, timeSettings })),
       statisticPeriod: { start: dateStart, end: dateEnd },
-      additionalCharge,
     };
     const r = await fetch(`${DSP_API}/api/v1.0/clients/analytics/forecast-price-by-inventory`, {
       method: "POST",
@@ -8020,15 +8037,6 @@ window.PLANNER.gidVariantKey = gidVariantKey;
 window.PLANNER._parseManualGids = _parseManualGids;
 function getDspAgencyId() { return sessionStorage.getItem("dsp_agency_id") || ""; }
 function setDspAgencyId(id) { id ? sessionStorage.setItem("dsp_agency_id", String(id)) : sessionStorage.removeItem("dsp_agency_id"); }
-// additionalCharge — множитель надбавки агентства (напр. 0.15 = +15%), platformFee — фиксированная надбавка платформы (в той же валюте что и ставка)
-function getDspAgencyMarkup() {
-  try { return JSON.parse(sessionStorage.getItem("dsp_agency_markup") || "null") || {}; } catch { return {}; }
-}
-function setDspAgencyMarkup(obj) {
-  if (obj) sessionStorage.setItem("dsp_agency_markup", JSON.stringify(obj));
-  else sessionStorage.removeItem("dsp_agency_markup");
-}
-
 function renderDspUserBar() {
   const bar = document.getElementById("dsp-user-bar");
   if (!bar || !window.DSP_AUTH_ENABLED || !getDspToken()) return;
@@ -8095,7 +8103,6 @@ function dspLogout() {
   setDspToken("");
   setDspUserEmail("");
   setDspAgencyId("");
-  setDspAgencyMarkup(null);
   localStorage.removeItem(getDspCacheKey());
   // Очищаем старые ключи предыдущих версий кэша
   localStorage.removeItem("dsp_inv_v2");
@@ -8117,12 +8124,9 @@ async function dspLogin(email, password) {
   setDspToken(token);
   const user = json.user || {};
   setDspUserEmail(user.email || user.login || user.username || "");
-  const agencyId = user.agency?.id || user.agencyId || "";
-  setDspAgencyId(agencyId);
-  if (agencyId) {
-    // Фоново подгружаем надбавки агентства; не блокируем интерфейс
-    dspFetchAgencyMarkup(agencyId).catch(() => {});
-  }
+  // agencyId нужен только как ключ кэша инвентаря: у разных агентств
+  // разный доступный инвентарь, и мешать их в одном хранилище нельзя.
+  setDspAgencyId(user.agency?.id || user.agencyId || "");
   return user;
 }
 
@@ -8143,26 +8147,6 @@ async function dspFetchCurrentUserAgency() {
     }
   } catch (e) {
     console.warn("[DSP] agency fetch failed:", e.message);
-  }
-}
-
-async function dspFetchAgencyMarkup(agencyId) {
-  const token = getDspToken();
-  if (!token || !agencyId) return;
-  try {
-    const r = await fetch(`${DSP_API}/api/v1.0/clients/agencies/${agencyId}`, {
-      headers: { "Authorization": "Bearer " + token }
-    });
-    if (!r.ok) return;
-    const agency = await r.json();
-    const markup = {
-      additionalCharge: agency.additionalCharge ?? 0,  // доп. надбавка агентства (доля, напр. 0.15)
-      platformFee:      agency.platformFee      ?? 0,  // фиксированная надбавка платформы
-    };
-    setDspAgencyMarkup(markup);
-    console.log("[DSP] agency markup loaded:", markup);
-  } catch (e) {
-    console.warn("[DSP] agency markup fetch failed:", e.message);
   }
 }
 
@@ -8705,52 +8689,6 @@ async function dspFetchAvailableDurations() {
 }
 window.PLANNER.dspFetchAvailableDurations = dspFetchAvailableDurations;
 
-// Нормализует массив сырых инвентарей в state.screens
-function dspApplyInventories(raw) {
-  state.screens = raw.map(inv => {
-    const s = mapDspInventory(inv);
-    s.minBid = Number.isFinite(Number(s.minBid)) ? Number(s.minBid) : NaN;
-    s.ots    = Number.isFinite(Number(s.ots))    ? Number(s.ots)    : NaN;
-    s.grp    = Number.isFinite(Number(s.grp))    ? Number(s.grp)    : NaN;
-    s.lat    = Number.isFinite(Number(s.lat))    ? Number(s.lat)    : NaN;
-    s.lon    = Number.isFinite(Number(s.lon))    ? Number(s.lon)    : NaN;
-    return s;
-  });
-
-  // OTS interpolation по формату
-  const otsByFormat = {};
-  for (const s of state.screens) {
-    if (Number.isFinite(s.ots) && s.ots > 0 && s.format) {
-      if (!otsByFormat[s.format]) otsByFormat[s.format] = { sum: 0, cnt: 0 };
-      otsByFormat[s.format].sum += s.ots;
-      otsByFormat[s.format].cnt++;
-    }
-  }
-  for (const s of state.screens) {
-    if (!(Number.isFinite(s.ots) && s.ots > 0) && s.format && otsByFormat[s.format]) {
-      s.ots = otsByFormat[s.format].sum / otsByFormat[s.format].cnt;
-    }
-  }
-
-  // OTS cap (те же пороги, что и для CSV-инвентаря)
-  const OTS_CAPS_DSP = { BILLBOARD: 150, SUPERSITE: 200, OTHER: 100, MEDIAFACADE: 2000 };
-  for (const s of state.screens) {
-    const cap = OTS_CAPS_DSP[s.format];
-    if (cap && Number.isFinite(s.ots) && s.ots > cap) s.ots = cap;
-  }
-
-  state.formatsAll = [...new Set(state.screens.map(s => s.format).filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b));
-  for (const s of state.screens) {
-    s.region = s.city || "Не назначено";
-  }
-
-  window.dispatchEvent(new CustomEvent("planner:screens-ready", { detail: { count: state.screens.length } }));
-  renderFormats();
-  renderSelectedRegions();
-  renderOwners();
-}
-
 // ---- IndexedDB-кэш инвентаря (нет лимита размера, переживает Shift+R) ----
 // Ставки и OTS в инвентаре меняются, а кэш жил 7 суток — отсюда жалобы на
 // неактуальные данные. Сутки: старт по-прежнему мгновенный, но данные не
@@ -9042,8 +8980,6 @@ async function startPlanner() {
     // подтягиваем профиль ДО чтения кэша, чтобы не попадать в default-cache.
     if (!getDspAgencyId()) {
       await dspFetchCurrentUserAgency().catch(() => {});
-    } else if (!getDspAgencyMarkup().additionalCharge) {
-      dspFetchAgencyMarkup(getDspAgencyId()).catch(() => {});
     }
     try {
       await loadScreensFromDSP();
