@@ -2648,6 +2648,7 @@ function freezeAp() {
   // Решение по тумблеру относилось к прежней программе — эта собрана заново.
   state.apKeepFrozen = undefined;
   state._apStashedIds = null;
+  state._apStashedSig = null;
   state._apAutoOffSig = null;
   return true;
 }

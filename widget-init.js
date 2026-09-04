@@ -5907,9 +5907,13 @@ window.PLANNER_ASSET_BASE = (function () {
     if (!st) return;
     if (on) {
       if (st._apStashedIds?.size) st.apFrozenIds = new Set(st._apStashedIds);
+      if (st._apStashedSig) st.apFrozenSig = st._apStashedSig;
       st.apKeepFrozen = true;
     } else {
-      if (st.apFrozenIds?.size) st._apStashedIds = new Set(st.apFrozenIds);
+      if (st.apFrozenIds?.size) {
+        st._apStashedIds = new Set(st.apFrozenIds);
+        st._apStashedSig = st.apFrozenSig;
+      }
       window.PLANNER?.unfreezeAp?.();
       st.apKeepFrozen = false;
     }
