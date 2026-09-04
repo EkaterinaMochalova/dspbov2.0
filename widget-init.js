@@ -5849,8 +5849,9 @@ window.PLANNER_ASSET_BASE = (function () {
     if (!size){ box.style.display = "none"; box.innerHTML = ""; return; }
     box.style.display = "block";
     box.innerHTML = "<div class='ap-frozen'><span>Адреска зафиксирована: <b>"
-      + size + "</b> экр. Пересчёт идёт внутри неё, новые регионы и форматы"
-      + " в неё не попадут.</span>"
+      + size + "</b> экр. Смена бюджета и частоты считается внутри неё —"
+      + " состав экранов не пересобирается. Правка условий отбора (регионы,"
+      + " адреса, радиус, форматы, фильтры) соберёт программу заново сама.</span>"
       + "<button type='button' class='ap-refreeze' id='ap-refreeze-btn'>"
       + "Пересобрать адреску</button></div>";
   }

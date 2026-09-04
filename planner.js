@@ -2590,6 +2590,36 @@ if (!state.manuallyExcluded || !state.manuallyExcluded.size) {
 // пересобирала бы программу с нуля: цель уезжала быстрее, чем до неё
 // доходишь (максимум считается по ёмкости отобранной АП, а АП растёт
 // вместе с бюджетом), да и просто подменять экраны под пользователем нельзя.
+// Всё, что определяет, какие экраны ВООБЩЕ могут попасть в программу.
+// Сравниваем подпись между расчётами: разошлась — фиксацию отпускаем.
+// Через подпись, а не через слушатели на каждое поле: полей десяток, и
+// любой новый фильтр иначе тихо выпадет из этой логики.
+function selectionSignature(brief) {
+  const j = (v) => JSON.stringify(v ?? null);
+  const сорт = (v) => j((Array.isArray(v) ? v.slice() : [...(v || [])]).map(String).sort());
+  const addrs = (brief?.selection?.addresses && brief.selection.addresses.length)
+    ? brief.selection.addresses
+    : (brief?.selection?.address ? [brief.selection.address] : []);
+  return [
+    brief?.selection?.mode || "",
+    сорт(brief?.geo?.regions || []),
+    сорт(addrs.map(a => String(a).trim().toLowerCase())),
+    brief?.selection?.radius_m ?? "",
+    сорт(brief?.selection?.manual_gids || []),
+    brief?.formats?.mode === "manual" ? сорт(brief.formats.selected || []) : "auto",
+    j(state.polygonFilter || null),
+    сорт(state.selectedOwners || []),
+    сорт(state.selectedSides || []),
+    сорт(state.selectedPhotoReport || []),
+    brief?.onlyActiveBids ? 1 : 0,
+    brief?.grp?.enabled ? [1, brief.grp.min, brief.grp.max].join(":") : 0,
+    brief?.audience?.enabled
+      ? [1, сорт(brief.audience.segments || []), brief.audience.topPct].join(":") : 0,
+  ].join("|");
+}
+window.PLANNER = window.PLANNER || {};
+window.PLANNER.selectionSignature = selectionSignature;
+
 function freezeAp() {
   // Уже зафиксирована — не перезаписываем. Пересчёт на минимуме отбирает
   // меньше экранов, и повторная заморозка по его результату сделала бы
@@ -2599,11 +2629,15 @@ function freezeAp() {
   const ids = chosen.map(_screenIdOf).filter(Boolean);
   if (!ids.length) return false;
   state.apFrozenIds = new Set(ids);
+  // Основание, на котором эта программа собрана. По нему в следующем
+  // расчёте видно, правил ли пользователь бриф.
+  try { state.apFrozenSig = selectionSignature(buildBrief()); } catch { state.apFrozenSig = null; }
   return true;
 }
 
 function unfreezeAp() {
   state.apFrozenIds = null;
+  state.apFrozenSig = null;
 }
 
 function isApFrozen() {
@@ -4800,6 +4834,19 @@ async function onCalcClick() {
   if (!brief.dates.start) return void fieldError("date-start", "Укажите дату начала размещения.", { step: 2 });
   if (!brief.dates.end)   return void fieldError("date-end",   "Укажите дату окончания размещения.", { step: 2 });
 
+  // Бриф правили после прошлого расчёта — фиксацию отпускаем и собираем
+  // программу заново. Держать её дальше значит считать внутри прежнего
+  // набора экранов: добавленный адрес или регион в него не попадёт, и
+  // регион выйдет с нулём при непустом счётчике у адреса.
+  let _apReleased = false;
+  {
+    const sig = selectionSignature(brief);
+    if (isApFrozen() && state.apFrozenSig && state.apFrozenSig !== sig) {
+      unfreezeAp();
+      _apReleased = true;
+    }
+  }
+
   const _selModeForRegions = brief?.selection?.mode;
   let regions = Array.isArray(brief?.geo?.regions) && brief.geo.regions.length
     ? brief.geo.regions.map(x => String(x || "").trim()).filter(Boolean)
@@ -4874,6 +4921,9 @@ async function onCalcClick() {
   let hasOts = true;
 
   let warnings = [];
+  if (_apReleased) {
+    warnings.push("Условия отбора изменились — адресная программа собрана заново, а не внутри прежней.");
+  }
   let anyPOIs = [];
   let perRegionRows = [];
 
