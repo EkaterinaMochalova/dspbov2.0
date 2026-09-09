@@ -604,9 +604,6 @@ function ownerPriority(screen) {
   return PREFERRED_OWNER_KEYWORDS.length + 1; // все остальные — ниже
 }
 
-// Russ Outdoor screens use OTS-based (CPM) pricing instead of per-play
-const isRussScreen = s => String(s.owner ?? s.Owner ?? "").toLowerCase().includes("russ");
-
 // Целевая частота на экран задаёт, на сколько экранов размажется бюджет:
 // экранов ≈ (выходы / дни / часы) / порог. Чем ниже порог, тем шире адресная
 // программа при тех же деньгах.
@@ -800,7 +797,7 @@ function hoursPerDay(schedule) {
 
   if (schedule?.type === "custom") {
     const a = _timeToMin(schedule.from || "07:00");
-    const b = _timeToMin(schedule.to || "22:00");
+    const b = _endOfDayMin(schedule.to || "22:00");
     if (a == null || b == null) return 0;
 
     // allow overnight
@@ -851,13 +848,21 @@ function _timeToMin(t) {
   return hh * 60 + mm;
 }
 
+// Конец интервала. «23:59» в графике означает конец суток, а не 23 ч 59 мин:
+// полночь баром выбора времени иначе не выразить. Без этого круглосуточный
+// график давал 23,98 ч/сутки и 479,67 ч за период вместо 24 и 480.
+function _endOfDayMin(t) {
+  const m = _timeToMin(t);
+  return m === 1439 ? 1440 : m;
+}
+
 function _hoursForWeekdayIntervals(intervals) {
   if (!Array.isArray(intervals) || !intervals.length) return 0;
 
   let minutes = 0;
   for (const it of intervals) {
     const a = _timeToMin(it?.from);
-    const b = _timeToMin(it?.to);
+    const b = _endOfDayMin(it?.to);
     if (a == null || b == null) continue;
     // allow overnight
     if (b >= a) minutes += (b - a);
@@ -3235,27 +3240,29 @@ async function buildMediaPlanBlob() {
     // Раньше выходы и OTS делились по числу экранов, а бюджет — по ставкам, из-за
     // чего «выходы × ставка» в выгрузке не давало бюджет и формулы было не поставить.
     const fmtKeys = Object.keys(cfStats[city]);
-    const bidWeightSum = fmtKeys.reduce((s, f) => {
-      const st = cfStats[city][f];
-      return s + st.cnt * st.avgBid;
-    }, 0);
-    const capWeightSum = fmtKeys.reduce((s, f) => s + (cfStats[city][f]._cap || 0), 0);
+    const capWeightSum = fmtKeys.reduce((sum, f) => sum + (cfStats[city][f]._cap || 0), 0);
+    // Выходы — по ёмкости формата: медиафасад крутит 8 раз в час против 40 у
+    // щита, и делёж по числу экранов печатал в плане одинаковую частоту обоим.
     for (const f of fmtKeys) {
       const st = cfStats[city][f];
-      if (capWeightSum > 0) {
-        // Выходы — по ёмкости, деньги — из выходов и ставки формата. Сумма по
-        // форматам сходится с бюджетом города: тот считается по той же
-        // взвешенной по выходам ставке.
-        st.plays  = regPlays * st._cap / capWeightSum;
-        st.budget = st.plays * st.avgBid;
-      } else if (bidWeightSum > 0 && st.avgBid > 0) {
-        st.budget = regBudget * (st.cnt * st.avgBid) / bidWeightSum;
-        st.plays  = st.budget / st.avgBid;
-      } else {
-        // Ни у одного формата нет ставки — делим поровну по экранам, как раньше.
-        st.budget = regBudget * st._w;
-        st.plays  = regPlays  * st._w;
-      }
+      st.plays = capWeightSum > 0 ? regPlays * st._cap / capWeightSum : regPlays * st._w;
+    }
+    // Деньги берём из бюджета города, а не считаем заново по средней ставке.
+    // Расчёт платит по ставке КАЖДОГО экрана, взвешенной его выходами, а
+    // средняя по экранам от неё отличается — и файл показывал 938 580 ₽ там,
+    // где на странице стояло 819 579 ₽. Пропорция — по деньгам формата
+    // (его выходы × его ставка), так что доли форматов сохраняются, а сумма
+    // сходится с городом до копейки.
+    const moneyW = fmtKeys.reduce((sum, f) => {
+      const st = cfStats[city][f];
+      return sum + st.plays * st.avgBid;
+    }, 0);
+    for (const f of fmtKeys) {
+      const st = cfStats[city][f];
+      st.budget = moneyW > 0 ? regBudget * st.plays * st.avgBid / moneyW : regBudget * st._w;
+      // Ставка в плане — цена одного показа: бюджет ÷ выходы. Именно из неё
+      // формула «выходы × ставка» в файле даёт бюджет, показанный на странице.
+      st.rate = st.plays > 0 ? st.budget / st.plays : st.avgBid;
       // OTS формата = его выходы × средний OTS экрана этого формата. Если по
       // формату данных ВК/OTS нет (частый случай у мелких форматов), берём долю
       // городского OTS по числу экранов — иначе колонка молча схлопывается в 0.
@@ -3353,11 +3360,9 @@ async function buildMediaPlanBlob() {
     // Порядок колонок — от меньшего формата к большему, одинаковый во всех городах.
     const fmts      = sortFormats(Object.keys(rfMap[city] || {}));
 
-    // Средневзвешенная ставка для колонки B. Средний OTS считается ниже —
-    // по тем же числам, что реально попадут в ячейки строки.
-    const wtAvgBid = regCnt > 0
-      ? fmts.reduce((a, f) => a + (cfStats[city][f]?.avgBid || 0) * (cfStats[city][f]?.cnt || 0), 0) / regCnt
-      : 0;
+    // Ставка города — цена одного показа: бюджет ÷ выходы. Средний OTS
+    // считается ниже — по тем же числам, что реально попадут в ячейки строки.
+    const wtAvgBid = regPlays > 0 ? regBudget / regPlays : 0;
 
     // ── Header row: merge A:C = city, D = spacer, E+= format labels ──
     ws.mergeCells(base, 1, base, 3);
@@ -3385,26 +3390,22 @@ async function buildMediaPlanBlob() {
       sc(ws, base + 1, 5 + fi, cfStats[city][fmt_]?.cnt ?? null, { fill: C_GREEN, numFmt: "#,##0" });
     });
 
-    // ── base+2: Средняя ставка за показ (or CPM for all-Russ cities) ──
-    const isRussCity = rd.russOts === true;
-    const rateLabel = isRussCity ? "Ставка за 1000 OTS" : "Средняя ставка за показ";
+    // ── base+2: Средняя ставка за показ ───────────────────────────
     // Ставку кладём НЕокруглённой: показывает её numFmt "0.00", а по значению
     // считает формула бюджета «выходы x ставка». Раньше в ячейке лежало
     // округлённое до копеек число, а бюджет был посчитан по полному — Excel
     // при пересчёте давал другой итог. На плане по Владивостоку это +5 878 ₽.
-    const wtRateD = isRussCity
-      ? (rd.avgCpm != null ? rd.avgCpm : null)
-      : (wtAvgBid > 0 ? wtAvgBid : null);
-    sc(ws, base + 2, 1, rateLabel, { bold: true, fill: C_LIGHT });
-    // Средневзвешенная по количеству экранов. SUMPRODUCT, а не ручная сумма
-    // произведений: в рукописных планах такую формулу писали под фиксированное
-    // число колонок, и при добавлении формата она молча переставала их учитывать.
-    sc(ws, base + 2, 2, fx(`IFERROR(SUMPRODUCT(${rng(rRate)},${rng(rCnt)})/B${rCnt},0)`, wtRateD),
+    const wtRateD = wtAvgBid > 0 ? wtAvgBid : null;
+    sc(ws, base + 2, 1, "Средняя ставка за показ", { bold: true, fill: C_LIGHT });
+    // Средневзвешенная по ВЫХОДАМ, а не по экранам: по экранам она не сходилась
+    // с бюджетом города, и «выходы × ставка» в файле давало другую сумму.
+    // SUMPRODUCT, а не ручная сумма произведений: в рукописных планах такую
+    // формулу писали под фиксированное число колонок, и при добавлении формата
+    // она молча переставала их учитывать.
+    sc(ws, base + 2, 2, fx(`IFERROR(SUMPRODUCT(${rng(rRate)},${rng(rPlay)})/B${rPlay},0)`, wtRateD),
       { fill: C_GREEN, numFmt: "0.00" });
     fmts.forEach((fmt_, fi) => {
-      const r = isRussCity
-        ? (rd.avgCpm != null ? rd.avgCpm : null)
-        : (cfStats[city][fmt_]?.avgBid > 0 ? cfStats[city][fmt_].avgBid : null);
+      const r = cfStats[city][fmt_]?.rate > 0 ? cfStats[city][fmt_].rate : null;
       sc(ws, base + 2, 5 + fi, r, { fill: C_GREEN, numFmt: "0.00" });
     });
 
@@ -6032,40 +6033,12 @@ async function onCalcClick() {
       }
     }
 
-    // Russ Outdoor: when ALL chosen screens are Russ and have CPM (otsBid),
-    // pricing is per 1000 OTS: OTS = budget / cpm × 1000; plays = OTS / avgOts
-    let russOtsBased = false;
-    let avgChosenCpm = null;
-    let avgOtsForRuss = null;
-    if (chosen.length > 0 && chosen.every(s => isRussScreen(s))) {
-      const cpms = chosen.map(s => s.otsBid).filter(v => Number.isFinite(v) && v > 0);
-      if (cpms.length > 0) {
-        avgChosenCpm = cpms.reduce((a, b) => a + b, 0) / cpms.length;
-        avgOtsForRuss = avgNumberNonZero(chosen.map(s => s.ots));
-        if (avgOtsForRuss != null && avgOtsForRuss > 0) {
-          if (_goalIsTarget) {
-            // Цель задана в показах или OTS — она и остаётся целью. У Russ цена
-            // за 1000 OTS, поэтому из цели выводим сумму, а не наоборот: иначе
-            // цель подменялась бюджетом, который сам из неё же и посчитан, и
-            // заказанные 150 000 показов превращались в 327 000.
-            russOtsBased = true;
-          } else if (budget > 0) {
-            const otsByBudget = Math.floor(budget / avgChosenCpm * 1000);
-            totalPlaysEffective = Math.round(otsByBudget / avgOtsForRuss);
-            russOtsBased = true;
-          }
-        }
-      }
-    }
-
     totalPlaysEffectiveAll += totalPlaysEffective;
 
-    const actualBudget = !russOtsBased
-      ? Math.ceil(totalPlaysEffective * effectiveChosenBid)
-      : (_goalIsTarget
-          // Цена за 1000 OTS: сумма = показы x OTS одного выхода / 1000 x CPM.
-          ? Math.ceil(totalPlaysEffective * avgOtsForRuss / 1000 * avgChosenCpm)
-          : budget);
+    // Сумма региона = выходы x ставка, взвешенная выходами каждого экрана.
+    // Из неё же выгрузка раскладывает деньги по форматам, поэтому файл и
+    // страница показывают одно число.
+    const actualBudget = Math.ceil(totalPlaysEffective * effectiveChosenBid);
     totalBudgetFinal += actualBudget;
 
     if (brief.budget.mode !== "goal_ots" && brief.budget.mode !== "goal_plays") {
@@ -6099,8 +6072,6 @@ async function onCalcClick() {
       poolSize: pool.length,
       plays: totalPlaysEffective,
       ots: otsTotal,
-      avgCpm: avgChosenCpm,
-      russOts: russOtsBased,
       note: ""
     });
   }
