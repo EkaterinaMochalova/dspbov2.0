@@ -241,10 +241,20 @@ window.PLANNER.bidUpliftFactor = bidUpliftFactor;
 const MF_MAX_PPH = 8;
 
 // Per-screen plays-per-hour cap based on format
-function getScreenPphCap(s) {
+// Планка частоты, с которой работает расчёт. Плановые 30 вых/час — столько
+// планировщик закладывает сам; физически носитель отдаёт больше (SC_MAX),
+// но подниматься выше планки он вправе только если частоту задал человек:
+// слайдер «выходов в час на экран» или ручной ввод по городу. У медиафасада
+// 8 — это физика, её не поднимает никто.
+function pphCeiling(manualPph) {
+  const m = Number(manualPph);
+  return (Number.isFinite(m) && m > CAPACITY_PPH_DEFAULT)
+    ? Math.min(m, SC_MAX) : CAPACITY_PPH_DEFAULT;
+}
+function getScreenPphCap(s, manualPph) {
   const fmt = String(s?.format || "").toUpperCase();
   if (fmt === "MEDIAFACADE" || fmt === "MF") return MF_MAX_PPH;
-  return SC_MAX;
+  return pphCeiling(manualPph);
 }
 const RECO_HOURS_PER_DAY = 12; // для режима "нужна рекомендация"
 
@@ -310,8 +320,9 @@ function markSuspiciousScreens(screens, brief) {
 // Ёмкость по показам = часы размещения за период × Σ коэффициента формата.
 // Коэффициенты заданы бизнесом: 8 выходов/час для медиафасадов, 30 для остальных
 // форматов. Для остальных форматов это НЕ физический потолок экрана
-// (getScreenPphCap — 60), а плановая планка: выше неё нельзя ни рекомендовать
+// (тот — SC_MAX, 60), а плановая планка: выше неё нельзя ни рекомендовать
 // «максимальный» бюджет, ни молча принять цель клиента по бюджету/показам/OTS.
+// Её же отдаёт getScreenPphCap, пока частоту не задали вручную.
 // У медиафасадов оба числа совпадают: 8 — и планка, и физический предел.
 const CAPACITY_PPH_MF = 8;
 const CAPACITY_PPH_DEFAULT = 30;
@@ -2573,6 +2584,10 @@ function replaceScreen(screenId, opts) {
 
 // ── Manual exclusions: persisted in sessionStorage for the tab lifetime ──
 const _EXCL_KEY = "planner_excluded_screens";
+// Условия, при которых экраны убирали. Экран убирают из конкретной собранной
+// программы; сменилось основание отбора — программы больше нет, и помнить
+// эти экраны незачем. Иначе они молча тянутся в следующий, уже другой бриф.
+const _EXCL_SIG_KEY = "planner_excluded_sig";
 
 function _loadExcluded() {
   try {
@@ -2582,12 +2597,19 @@ function _loadExcluded() {
 }
 
 function _saveExcluded(set) {
-  try { sessionStorage.setItem(_EXCL_KEY, JSON.stringify([...set])); } catch {}
+  try {
+    sessionStorage.setItem(_EXCL_KEY, JSON.stringify([...set]));
+    const sig = set.size ? apSelectionSig() : null;
+    state._excludedSig = sig;
+    if (sig) sessionStorage.setItem(_EXCL_SIG_KEY, sig);
+    else sessionStorage.removeItem(_EXCL_SIG_KEY);
+  } catch {}
 }
 
 // Restore on load so recalc after page refresh still respects exclusions
 if (!state.manuallyExcluded || !state.manuallyExcluded.size) {
   state.manuallyExcluded = _loadExcluded();
+  try { state._excludedSig = sessionStorage.getItem(_EXCL_SIG_KEY) || null; } catch {}
 }
 
 // ===== ЗАМОРОЗКА АДРЕСНОЙ ПРОГРАММЫ =====
@@ -2722,15 +2744,19 @@ function gridStepKmForCount(n) {
   return 2;
 }
 
-function computeScreensNeededForPlays(totalPlaysTheory, days, hpd, pphTarget, budgetMode) {
-  const maxPlaysPerScreenForPeriod = Math.floor(SC_MAX * days * hpd);
+function computeScreensNeededForPlays(totalPlaysTheory, days, hpd, pphTarget, budgetMode, manualPph) {
+  // Сколько выходов экран вывозит за период — по плановой планке, а не по
+  // физическому пределу: иначе расчёт закладывал 60 вых/час и сажал план на
+  // вдвое меньшее число экранов, чем нужно.
+  const _ceil = pphCeiling(manualPph);
+  const maxPlaysPerScreenForPeriod = Math.floor(_ceil * days * hpd);
   let screensNeeded = Math.ceil(totalPlaysTheory / Math.max(1, maxPlaysPerScreenForPeriod));
   screensNeeded = Math.max(1, screensNeeded);
 
   if (budgetMode !== "goal_ots") {
     const playsPerHourTotalTheory = totalPlaysTheory / days / hpd;
     const byStrategy = Math.max(1, Math.ceil(playsPerHourTotalTheory / Math.max(1, pphTarget)));
-    const byHardCap = Math.max(1, Math.ceil(playsPerHourTotalTheory / Math.max(1, SC_MAX)));
+    const byHardCap = Math.max(1, Math.ceil(playsPerHourTotalTheory / Math.max(1, _ceil)));
     screensNeeded = Math.max(screensNeeded, byStrategy, byHardCap);
   }
 
@@ -2787,7 +2813,14 @@ function pickScreensUniformByGrid(pool, count, stepKm = 2, perCellMax = 2, fmtOr
       });
     }
   }
-  cells.sort(() => Math.random() - 0.5);
+  // Порядок ячеек — по числу экранов, при равенстве по GID первого. Раньше
+  // здесь стоял cells.sort(() => Math.random() - 0.5), и один и тот же бриф
+  // при каждом пересчёте давал другую программу: набор экранов менялся, за
+  // ним средняя ставка, за ней число экранов, которое влезает в бюджет.
+  // Раскладка по ячейкам всё равно круговая, так что порядок решает только
+  // судьбу остатка слотов — отдаём его районам с большим выбором.
+  cells.sort((a, b) => (b.length - a.length)
+    || String(a[0]?.screen_id || "").localeCompare(String(b[0]?.screen_id || "")));
 
   const result = [];
   const takenPerCell = new Map();
@@ -4860,6 +4893,7 @@ async function onCalcClick() {
   // выключении, так что здесь остаётся только страховка на пути, которые
   // тумблер не успел заметить (правка состояния мимо интерфейса).
   let _apReleased = false;
+  let _exclDropped = 0;
   {
     const наБрифе = document.getElementById("planner-widget")?.dataset.phase !== "result";
     const sig = selectionSignature(brief);
@@ -4867,6 +4901,12 @@ async function onCalcClick() {
         && state.apFrozenSig && state.apFrozenSig !== sig) {
       unfreezeAp();
       _apReleased = true;
+    }
+    // Убранные вручную экраны — часть той же прежней программы.
+    if (наБрифе && state.manuallyExcluded?.size
+        && state._excludedSig && state._excludedSig !== sig) {
+      _exclDropped = state.manuallyExcluded.size;
+      clearManualExclusions();
     }
   }
 
@@ -4946,6 +4986,10 @@ async function onCalcClick() {
   let warnings = [];
   if (_apReleased) {
     warnings.push("Условия отбора изменились — адресная программа собрана заново, а не внутри прежней.");
+  }
+  if (_exclDropped) {
+    warnings.push(`ℹ️ Условия отбора изменились — ${_exclDropped} экр., убранных вручную ` +
+      "в прежней программе, снова участвуют в отборе.");
   }
   let anyPOIs = [];
   let perRegionRows = [];
@@ -5345,7 +5389,10 @@ async function onCalcClick() {
     // screens with ots=0 (no data) so they don't pull the average down.
     const avgOts = avgNumberNonZero(pool.map(s => s.ots));
 
-    const capPlaysAbs = Math.floor(pool.reduce((sum, s) => sum + getScreenPphCap(s), 0) * days * hpd);
+    const _ppmHumanPrep = Number(brief.constructions?.perRegionPpm?.[region] || 0)
+      || Number(brief.constructions?.playsPerHour || 0);
+    const capPlaysAbs = Math.floor(
+      pool.reduce((sum, s) => sum + getScreenPphCap(s, _ppmHumanPrep), 0) * days * hpd);
     const capBudgetAbs = Math.floor(capPlaysAbs * bidPlus20);
     const capBudgetAbsMin = Math.floor(capPlaysAbs * avgBid);
     const capOtsAbs = (avgOts == null) ? null : (capPlaysAbs * avgOts);
@@ -5527,7 +5574,7 @@ async function onCalcClick() {
         const totalBudget = Math.round(hpdFixed * days * allGidScreens.reduce((sum, s) => {
           const bid = screenBid(s, brief);
           if (!Number.isFinite(bid) || bid <= 0) return sum;
-          return sum + Math.min(_gidPpmGlobal, getScreenPphCap(s)) * bid;
+          return sum + Math.min(_gidPpmGlobal, getScreenPphCap(s, _gidPpmGlobal)) * bid;
         }, 0));
         const alloc = allocateBudgetAcrossRegions(
           totalBudget,
@@ -5753,6 +5800,10 @@ async function onCalcClick() {
     const regionKey = pr.regionKey || region; // original key, e.g. "__gid_mode__"
     const _isGidRegion = regionKey === "__gid_mode__";
     const regionDisplay = _isGidRegion ? "По GID-списку" : region;
+    // Частота, заданная человеком: ручной ввод по городу или общий слайдер.
+    // Только она разрешает расчёту подняться выше плановых 30 вых/час.
+    const _ppmHuman = Number(brief.constructions?.perRegionPpm?.[region] || 0)
+      || Number(brief.constructions?.playsPerHour || 0);
     const tier = pr.tier;
     const pool = pr.pool;
     const effectiveBid = brief.bidMode === "min" ? pr.avgBid : pr.bidPlus20;
@@ -5790,7 +5841,8 @@ async function onCalcClick() {
       days,
       hpd,
       pphTarget,
-      brief.budget.mode
+      brief.budget.mode,
+      _ppmHuman
     );
 
     // Если пользователь задал кол-во конструкций — распределяем пропорционально по регионам.
@@ -5855,7 +5907,8 @@ async function onCalcClick() {
           days,
           hpd,
           pphTarget,
-          brief.budget.mode
+          brief.budget.mode,
+          _ppmHuman
         )
       );
 
@@ -5896,7 +5949,7 @@ async function onCalcClick() {
     //   Исключение: явный per-region PPM override (perRegionPpm) остаётся жёстким капом.
     // Конструкции без бюджета / рекомендация: слайдер или стратегия.
     const ppmRegionOverride = Number(brief.constructions?.perRegionPpm?.[region] || 0);
-    const ppmManual = ppmRegionOverride > 0 ? ppmRegionOverride : Number(brief.constructions?.playsPerHour || 0);
+    const ppmManual = _ppmHuman;
     const hasBudget = Number.isFinite(budget) && budget > 0;
     // Когда бюджет выводится из частоты («подскажите бюджет»), частота — цель, и
     // обнулять её нельзя: в GID-режиме бюджет по региону есть всегда, hasBudget
@@ -5912,7 +5965,7 @@ async function onCalcClick() {
           : (ppmManual > 0 ? ppmManual : pphTarget))
       : (_isManualMode && ppmManual > 0 ? ppmManual : null);
     const _poolPphCap = pool.length > 0
-      ? Math.round(pool.reduce((sum, s) => sum + getScreenPphCap(s), 0) / pool.length)
+      ? Math.round(pool.reduce((sum, s) => sum + getScreenPphCap(s, _ppmHuman), 0) / pool.length)
       : SC_MAX;
     // Запрошенную частоту режем только физическим потолком носителя.
     // _poolPphCap — СРЕДНЕЕ по пулу, и как потолок «на экран» он врал: в
@@ -5927,7 +5980,7 @@ async function onCalcClick() {
     // делились между форматами поровну по числу экранов, и в файле стояло 24
     // вых/час и у щита, и у фасада вместо 40 и 8.
     const tagPph = (list) => {
-      for (const sc_ of list) sc_._pphUsed = Math.min(effectivePPH, getScreenPphCap(sc_));
+      for (const sc_ of list) sc_._pphUsed = Math.min(effectivePPH, getScreenPphCap(sc_, _ppmHuman));
     };
     tagPph(chosen);
     // Ставку пересчитываем уже с этими весами: выше она считалась до того, как
@@ -5949,12 +6002,12 @@ async function onCalcClick() {
     // значение заново, и на const присваивание падало с TypeError — весь путь
     // «выбранных не хватает по ёмкости, добираем из пула» валил расчёт.
     let capPlaysByChosen = Math.floor(
-      chosen.reduce((sum, s) => sum + Math.min(effectivePPH, getScreenPphCap(s)), 0) * days * hpd
+      chosen.reduce((sum, s) => sum + Math.min(effectivePPH, getScreenPphCap(s, _ppmHuman)), 0) * days * hpd
     );
     // Срезанную частоту нельзя оставлять молча: пользователь ставит 40, видит в
     // плане 8 на фасадах и читает это как ошибку расчёта.
     if (ppmOverride !== null) {
-      const capped = chosen.filter(s => getScreenPphCap(s) < ppmOverride);
+      const capped = chosen.filter(s => getScreenPphCap(s, _ppmHuman) < ppmOverride);
       if (capped.length > 0) {
         warnings.push(
           `ℹ️ Регион «${regionDisplay}»: на ${capped.length} экр. частота срезана до ` +
@@ -6045,7 +6098,7 @@ async function onCalcClick() {
         effectiveChosenBid = (Number.isFinite(_pw) && _pw > 0) ? _pw
           : avgEffectiveBid(chosen, brief.bidMode, avgChosenBid * BID_MULTIPLIER, bidUpliftFactor(brief));
 
-        capPlaysByChosen = Math.floor(chosen.reduce((sum, s) => sum + getScreenPphCap(s), 0) * days * hpd);
+        capPlaysByChosen = Math.floor(chosen.reduce((sum, s) => sum + getScreenPphCap(s, _ppmHuman), 0) * days * hpd);
         const budgetCap = (effectiveChosenBid > 0) ? Math.floor(budget / effectiveChosenBid) : Infinity;
         totalPlaysEffective = Math.min(totalPlaysTheory, capPlaysByChosen, budgetCap);
       }
@@ -7692,7 +7745,12 @@ function restoreBriefToUI(brief) {
         }
       }
       if (groups.length) state.weeklyGroups = groups;
-      if (typeof window.renderWeeklyDays === "function") window.renderWeeklyDays();
+      // Раньше здесь звали window.renderWeeklyDays — такой функции нет, и
+      // блок расписания оставался от прошлого брифа: считалось по
+      // восстановленным 00:00–23:59, а в полях висело «Пн–Пт 07:00–22:00».
+      if (typeof window.PLANNER_UI?.renderWeeklyUI === "function") {
+        window.PLANNER_UI.renderWeeklyUI();
+      }
     }
   }
 
@@ -7944,7 +8002,8 @@ function computeFreqBudget() {
     for (const s of список) {
       const bid = s._bidEstimated ? средняяСтавка(s) : screenBid(s, brief);
       if (!Number.isFinite(bid) || bid <= 0) continue;
-      const own = Math.min(pph, getScreenPphCap(s));
+      // Частоту здесь задал человек, поэтому планка носителя — физическая.
+      const own = Math.min(pph, getScreenPphCap(s, pph));
       if (own < pph) capped++;
       sum += own * bid * hours;
       screens++;
