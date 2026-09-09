@@ -1644,16 +1644,34 @@ function normalizeGeoName(s) {
   return normalizeKey(String(s || "").replace(_MUNICIPAL_PREFIXES, ""));
 }
 
+// Сходятся ли два географических названия. Сравниваем по СЛОВАМ: у подстроки
+// «Томск» родня «Омск», и выбранный Томск тянул в программу 318 омских
+// экранов. Слово считаем тем же, если оно совпало целиком или одно —
+// начало другого при длине не меньше пяти букв: так «Ханты-Мансийск»
+// по-прежнему сходится с «Ханты-Мансийским округом», а «Омск» с «Томском» —
+// нет. Меньший набор слов должен целиком лежать в большем, поэтому
+// «Москва г» = «Москва», а «Республика Хакасия» = «Хакасия».
+function _geoWords(v) {
+  return String(v || "").split(/[^0-9a-zа-я]+/).filter(Boolean);
+}
+function _geoWordSame(a, b) {
+  if (a === b) return true;
+  const [к, д] = a.length <= b.length ? [a, b] : [b, a];
+  return к.length >= 5 && д.startsWith(к);
+}
+function geoNamesMatch(a, b) {
+  const na = normalizeGeoName(a), nb = normalizeGeoName(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const wa = _geoWords(na), wb = _geoWords(nb);
+  if (!wa.length || !wb.length) return false;
+  const [меньше, больше] = wa.length <= wb.length ? [wa, wb] : [wb, wa];
+  return меньше.every(w => больше.some(x => _geoWordSame(w, x)));
+}
+
 function screenMatchesGeoChoice(screen, choice) {
-  const pick = normalizeGeoName(choice);
-  if (!pick) return false;
-  const r = normalizeGeoName(screen?.region || "");
-  const c = normalizeGeoName(screen?.city || "");
-  return (
-    r === pick || c === pick ||
-    (r && (r.includes(pick) || pick.includes(r))) ||
-    (c && (c.includes(pick) || pick.includes(c)))
-  );
+  if (!normalizeGeoName(choice)) return false;
+  return geoNamesMatch(screen?.region, choice) || geoNamesMatch(screen?.city, choice);
 }
 
 function getRegionForCity(city) {
@@ -3022,15 +3040,11 @@ async function buildMediaPlanBlob() {
     if (_isGidMode) return gidRegionKey(s);
     const sReg  = String(s.region || "").trim();
     const sCity = String(s.city   || "").trim();
+    // Точное совпадение — первым проходом по всем городам: иначе экран Омска
+    // мог осесть в блоке Томска только потому, что тот стоит в списке раньше.
+    for (const r of _perRegKeys) if (sReg === r || sCity === r) return r;
     for (const r of _perRegKeys) {
-      if (sReg === r || sCity === r) return r;
-      const rn = normalizeGeoName(r);
-      if (!rn) continue;
-      const srn = normalizeGeoName(sReg);
-      const scn = normalizeGeoName(sCity);
-      if (srn === rn || scn === rn) return r;
-      if ((srn && (srn.includes(rn) || rn.includes(srn))) ||
-          (scn && (scn.includes(rn) || rn.includes(scn)))) return r;
+      if (geoNamesMatch(sReg, r) || geoNamesMatch(sCity, r)) return r;
     }
     return sReg || sCity || "—";
   }
@@ -3710,13 +3724,10 @@ async function buildSberMediaPlanBlob() {
     if (_isGidMode) return gidRegionKey(s);
     const sReg = String(s.region || "").trim();
     const sCity = String(s.city  || "").trim();
+    // По словам, а не по подстроке: см. geoNamesMatch.
+    for (const r of _perRegKeys) if (sReg === r || sCity === r) return r;
     for (const r of _perRegKeys) {
-      if (sReg === r || sCity === r) return r;
-      const rn = normalizeGeoName(r); if (!rn) continue;
-      const srn = normalizeGeoName(sReg), scn = normalizeGeoName(sCity);
-      if (srn === rn || scn === rn) return r;
-      if ((srn && (srn.includes(rn) || rn.includes(srn))) ||
-          (scn && (scn.includes(rn) || rn.includes(scn)))) return r;
+      if (geoNamesMatch(sReg, r) || geoNamesMatch(sCity, r)) return r;
     }
     return sReg || sCity || "—";
   }
@@ -4603,7 +4614,13 @@ function _tierWeight(t) {
 }
 
 function allocateBudgetAcrossRegions(totalBudget, regions, opts) {
-  const cfg = Object.assign({ minShare: 0.10, maxShare: 0.70 }, (opts || {}));
+  // Явный вес (weight) отменяет пол и потолок доли: он уже говорит, сколько
+  // денег регион способен освоить, а пол в 10 % насильно вливал сумму в город
+  // с тремя экранами — те и крутили по 60 вых/час.
+  const _явныйВес = (regions || []).some(r => Number.isFinite(r?.weight) && r.weight > 0);
+  const cfg = Object.assign(
+    _явныйВес ? { minShare: 0, maxShare: 1 } : { minShare: 0.10, maxShare: 0.70 },
+    (opts || {}));
   const n = (regions || []).length;
   if (!Number.isFinite(totalBudget) || totalBudget <= 0 || n === 0) return [];
   if (n === 1) return [{ region: regions[0].key, budget: Math.floor(totalBudget) }];
@@ -4614,7 +4631,7 @@ function allocateBudgetAcrossRegions(totalBudget, regions, opts) {
   const maxShare = Math.max(minShare, cfg.maxShare);
 
   const items = regions.map(r => {
-    const w = _tierWeight(r.tier);
+    const w = (Number.isFinite(r?.weight) && r.weight > 0) ? r.weight : _tierWeight(r.tier);
     return { region: r.key, tier: r.tier, w, share: 0, locked: false };
   });
 
@@ -5084,14 +5101,9 @@ async function onCalcClick() {
           const c = String(s.city || "").trim();
           if (r === region || c === region) return true;
           if (!selectedNorm) return false;
-          const rn = normalizeGeoName(r);
-          const cn = normalizeGeoName(c);
-          if (rn === selectedNorm || cn === selectedNorm) return true;
-          // Fuzzy fallback for suffix/prefix variants in API city labels.
-          return (
-            (rn && (rn.includes(selectedNorm) || selectedNorm.includes(rn))) ||
-            (cn && (cn.includes(selectedNorm) || selectedNorm.includes(cn)))
-          );
+          // По словам, а не по подстроке: см. geoNamesMatch. Иначе выбранный
+          // Томск забирал в пул все экраны Омска.
+          return geoNamesMatch(r, region) || geoNamesMatch(c, region);
         });
 
     // Тир считаем по всему инвентарю региона — до фильтров по форматам,
@@ -5468,6 +5480,16 @@ async function onCalcClick() {
   // =========================
   // 2) INITIAL BUDGETS
   // =========================
+  // Сколько стоит прокрутить весь инвентарь региона на плановой частоте.
+  // По этой мере и делим бюджет: каждый регион получает одинаковую ДОЛЮ
+  // своей ёмкости, а значит одинаковую частоту на экран. Делёж по тиру давал
+  // 26 вых/час в Кемерово (29 экр.) против 5 в Томске (344 экр.) — та же
+  // сумма на несопоставимый инвентарь.
+  const _весРегиона = (r) => {
+    const w = brief.bidMode === "min" ? r.capBudgetAbsMin : r.capBudgetAbs;
+    return Number.isFinite(w) && w > 0 ? w : 0;
+  };
+
   const budgets = {};
   let goalPlan = null;
   let goalPlanUnmet = 0;
@@ -5482,8 +5504,7 @@ async function onCalcClick() {
       const totalBudget = Number(brief.budget.amount);
       const fixedAllocation = allocateBudgetAcrossRegions(
         totalBudget,
-        prepared.map(r => ({ key: r.region, tier: r.tier })),
-        { minShare: 0.10, maxShare: 0.70 }
+        prepared.map(r => ({ key: r.region, tier: r.tier, weight: _весРегиона(r) }))
       );
       for (const r of prepared) {
         const found = fixedAllocation?.find(x => x.region === r.region);
@@ -5552,8 +5573,7 @@ async function onCalcClick() {
 
       const alloc = allocateBudgetAcrossRegions(
         totalBudget,
-        prepared.map(r => ({ key: r.region, tier: r.tier })),
-        { minShare: 0.10, maxShare: 0.70 }
+        prepared.map(r => ({ key: r.region, tier: r.tier, weight: _весРегиона(r) }))
       );
       for (const r of prepared) {
         const found = alloc?.find(x => x.region === r.region);
@@ -5578,8 +5598,7 @@ async function onCalcClick() {
         }, 0));
         const alloc = allocateBudgetAcrossRegions(
           totalBudget,
-          prepared.map(r => ({ key: r.region, tier: r.tier })),
-          { minShare: 0.10, maxShare: 0.70 }
+          prepared.map(r => ({ key: r.region, tier: r.tier, weight: _весРегиона(r) }))
         );
         for (const r of prepared) {
           const found = alloc?.find(x => x.region === r.region);
@@ -5712,8 +5731,7 @@ async function onCalcClick() {
         const totalBudget = Number(brief.budget.amount);
         const newAlloc = allocateBudgetAcrossRegions(
           totalBudget,
-          prepared.map(r => ({ key: r.region, tier: r.tier })),
-          { minShare: 0.10, maxShare: 0.70 }
+          prepared.map(r => ({ key: r.region, tier: r.tier, weight: _весРегиона(r) }))
         );
         for (const r of prepared) {
           const found = newAlloc?.find(x => x.region === r.region);
@@ -5744,8 +5762,7 @@ async function onCalcClick() {
           const totalBudget = Math.round(N * _pph2 * days * hpdFixed * overallAvgReco);
           const alloc = allocateBudgetAcrossRegions(
             totalBudget,
-            prepared.map(r => ({ key: r.region, tier: r.tier })),
-            { minShare: 0.10, maxShare: 0.70 }
+            prepared.map(r => ({ key: r.region, tier: r.tier, weight: _весРегиона(r) }))
           );
           for (const r of prepared) {
             const found = alloc?.find(x => x.region === r.region);
