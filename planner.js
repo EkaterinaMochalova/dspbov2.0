@@ -6085,9 +6085,15 @@ async function onCalcClick() {
       let guardCount = 0;
       while (capPlaysByChosen < totalPlaysTheory && extraPool.length > 0 && guardCount++ < 20) {
         const shortfall = totalPlaysTheory - capPlaysByChosen;
-        // Используем pphTarget, а не SC_MAX — это сохраняет порядок стратегий:
-        // max_reach (pphTarget=10) добирает больше экранов, max_freq (pphTarget=60) — меньше
-        const playsPerExtraScreen = Math.max(1, Math.floor(pphTarget * days * hpd));
+        // Сколько выходов реально добавляет один экран — по его планке, а не по
+        // цели стратегии. С max_reach (pphTarget=2) шаг выходил в 15 раз меньше
+        // настоящей ёмкости, и цикл добирал сотни экранов там, где хватало
+        // десятков: Москва раздувалась с 27 экранов до 424. Ширину программы
+        // задаёт стратегия при первом отборе (screensNeeded), а этот цикл лишь
+        // докупает ёмкость под выходы, которые иначе некому открутить.
+        const _capСредняя = extraPool.reduce((a, sc_) =>
+          a + Math.min(effectivePPH, getScreenPphCap(sc_, _ppmHuman)), 0) / extraPool.length;
+        const playsPerExtraScreen = Math.max(1, Math.floor(_capСредняя * days * hpd));
         const extraNeeded = Math.ceil(shortfall / playsPerExtraScreen);
         const toAdd = extraPool.splice(0, Math.min(extraNeeded, extraPool.length));
         chosen = [...chosen, ...toAdd];
