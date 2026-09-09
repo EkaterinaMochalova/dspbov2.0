@@ -4952,6 +4952,9 @@ async function onCalcClick() {
 
   // Трекинг ненайденных GID (для кнопки «скачать не найденные»)
   const _isManualMode = brief.selection?.mode === "manual_screens";
+  // Какие из убранных вручную экранов реально встретились в пулах регионов —
+  // по ним считается предупреждение после прохода по регионам.
+  const _excludedHit = new Set();
   const _manualGidSet = _isManualMode ? (brief.selection.manual_gids || new Set()) : new Set();
   const _foundGids    = new Set(); // GID-ы, которые реально попали в расчёт
 
@@ -5057,6 +5060,21 @@ async function onCalcClick() {
     // упал бы вместе с размером отобранной программы.
     if (state.apFrozenIds && state.apFrozenIds.size) {
       pool = pool.filter(s => state.apFrozenIds.has(_screenIdOf(s)));
+    }
+
+    // Убранные вручную экраны выкидываем ДО отбора, а не после. Раньше они
+    // попадали в chosen, получали свою долю выходов и денег, и только потом
+    // вырезались из адресной программы: в плане оставалось 49 экранов с
+    // выходами и бюджетом шестидесяти пяти. Отсюда и расхождение страницы с
+    // выгрузкой — та пересчитывала деньги по ставкам оставшихся экранов.
+    // В GID-режиме не режем: пользователь сам назвал экраны.
+    if (!_isManualMode && state.manuallyExcluded && state.manuallyExcluded.size) {
+      pool = pool.filter(s => {
+        const sid = _screenIdOf(s);
+        if (!state.manuallyExcluded.has(sid)) return true;
+        _excludedHit.add(sid);
+        return false;
+      });
     }
 
     if (!pool.length) {
@@ -6119,14 +6137,9 @@ async function onCalcClick() {
     }
   }
 
-  // Apply manual exclusions — screens the user removed from the map.
-  // Skip in GID mode: the user explicitly specified which screens they want.
-  if (!_isManualMode && state.manuallyExcluded && state.manuallyExcluded.size) {
-    const before = chosenAll.length;
-    chosenAll = chosenAll.filter(s => !state.manuallyExcluded.has(_screenIdOf(s)));
-    if (chosenAll.length < before) {
-      warnings.push(`ℹ️ ${before - chosenAll.length} экр. исключено вручную (кнопка "Вернуть все" внизу).`);
-    }
+  // Сами экраны уже не пустили в пул выше — здесь только говорим об этом.
+  if (_excludedHit.size) {
+    warnings.push(`ℹ️ ${_excludedHit.size} экр. исключено вручную (кнопка "Вернуть все" внизу).`);
   }
 
   // Сомнительные экраны: помечаем перед отдачей в UI, чтобы карусель могла их
