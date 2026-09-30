@@ -3319,6 +3319,29 @@ window.PLANNER_ASSET_BASE = (function () {
           <div class="wiz-step-title">Считаем бюджет</div>
           <div class="wiz-step-sub">Сумма, цель по охвату или показам — и во что это обойдётся с комиссией и НДС.</div>
         </div>
+        <!-- Тип закупки. «За 1000 OTS» берёт только экраны, где OTS передаёт сам
+             экран, — как РК по OTS в DSP; ставка за 1000 OTS — теми же режимами
+             (мин./реко + надбавка). -->
+        <div class="planner-block" id="step-bid-type-block">
+          <div class="planner-label">Тип закупки</div>
+          <div class="strategy-chips">
+            <label class="str-chip">
+              <input type="radio" name="bid_type" value="plays" checked>
+              <div class="str-chip-body">
+                <div class="str-chip-title">▶ За выходы</div>
+                <div class="str-chip-desc">Ставка за выход, весь инвентарь</div>
+              </div>
+            </label>
+            <label class="str-chip">
+              <input type="radio" name="bid_type" value="ots">
+              <div class="str-chip-body">
+                <div class="str-chip-title">👁 За 1000 OTS</div>
+                <div class="str-chip-desc">Только экраны с OTS от экрана</div>
+              </div>
+            </label>
+          </div>
+          <div class="planner-note" id="bid-type-note" style="display:none; margin-top:8px;"></div>
+        </div>
         <div class="planner-block">
           <div class="planner-label">Бюджет</div>
 <div class="strategy-chips" style="flex-direction:column;gap:6px;">
@@ -4173,6 +4196,8 @@ window.PLANNER_ASSET_BASE = (function () {
 
     const bid = document.querySelector('input[name="bid_mode"]:checked');
     if (bid) main.push(chip(5, "Ставка", bid.value === "min" ? "Минимальная" : "Рекомендованная"));
+    const bidType = document.querySelector('input[name="bid_type"]:checked');
+    if (bidType && bidType.value === "ots") main.push(chip(5, "Закупка", "за 1000 OTS"));
 
     main.push('<button type="button" class="brief-chip edit" data-step="1">Править бриф</button>');
     main.push('<button type="button" class="brief-chip reset" data-reset="1"' +
@@ -9898,7 +9923,7 @@ window.PLANNER_ASSET_BASE = (function () {
        id === "constructions-enabled" || id === "constructions-count" ||
        id === "audience-enabled" || id === "audience-min-affinity" ||
        id === "manual-gids" ||
-       name === "reach_mode" || name === "bid_mode" ||
+       name === "reach_mode" || name === "bid_mode" || name === "bid_type" ||
        t.closest?.("#owner-wrap") || t.closest?.("#formats-wrap") ||
        t.closest?.("#audience-segment-wrap")){
       setTimeout(renderPoolPreview, 50);
@@ -10553,6 +10578,7 @@ window.PLANNER_ASSET_BASE = (function () {
       formats:        formats,
       selection_mode: brief.selection?.mode || "",
       bid_mode:       brief.bidMode || "",
+      bid_type:       brief.bidType || "plays",
       bid_uplift_pct: Number(brief.bidUpliftPct || 0),
       duration_sec:   Number.isFinite(Number(brief.duration?.ms)) && Number(brief.duration?.ms) > 0
                         ? Math.round(Number(brief.duration.ms) / 1000)
@@ -11143,6 +11169,7 @@ window.PLANNER_ASSET_BASE = (function () {
       el("date-end")?.value || "",
       el("formats-auto")?.checked ? "auto" : fmts,
       document.querySelector('input[name="bid_mode"]:checked')?.value || "",
+      document.querySelector('input[name="bid_type"]:checked')?.value || "",
       el("bid-uplift-enabled")?.checked ? (el("bid-uplift-pct")?.value || "") : "",
       el("only-active-bids")?.checked ? "1" : "0",
       st.screensAll?.length || 0,
@@ -11235,7 +11262,7 @@ window.PLANNER_ASSET_BASE = (function () {
     n.addEventListener("input", schedule);
     n.addEventListener("change", schedule);
   });
-  document.querySelectorAll('input[name="bid_mode"]').forEach(r =>
+  document.querySelectorAll('input[name="bid_mode"], input[name="bid_type"]').forEach(r =>
     r.addEventListener("change", schedule));
 
   // Смена режима бюджета показывает/прячет блок — считаем сразу, без дебаунса.

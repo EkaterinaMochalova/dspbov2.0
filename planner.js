@@ -220,7 +220,29 @@ function bidUpliftFactor(brief) {
 // В рекомендованном режиме у экрана без recoBid ставка = minBid × BID_MULTIPLIER:
 // это та же оценка «рекомендованной», что используется во всём остальном коде.
 // Раньше здесь для таких экранов бралась голая minBid, и медиаплан их недооценивал.
+// Ставка за 1000 OTS — теми же режимами, что и за выход. Минимальная — из
+// тарифа экрана: minBid за выход ÷ OTS тарифа × 1000 (так её показывает DSP;
+// под выбранную длительность — minCpm из applySelectedDurations). Рекомендованная —
+// поле cpm прогноза цены (dspFetchForecastBids). Надбавка — та же.
+function screenOtsBid(s, brief) {
+  const base = s?.otsBid > 0 && Number.isFinite(s?.minBid) ? s.minBid * 1000 / s.otsBid : NaN;
+  const minCpm = s?.minCpm > 0 ? s.minCpm : base;
+  let cpm;
+  if (brief?.bidMode === "min") cpm = minCpm;
+  else if (s?.recoCpm > 0) cpm = s.recoCpm;
+  else cpm = minCpm * BID_MULTIPLIER;
+  return cpm * bidUpliftFactor(brief);
+}
+window.PLANNER.screenOtsBid = screenOtsBid;
+
 function screenBid(s, brief) {
+  // За 1000 OTS платим за контакты: выход стоит ставка × OTS выхода / 1000.
+  // Раскладка, ёмкость, комиссия и цели дальше считают от цены выхода — так
+  // режим и живёт одной веткой, а не второй копией расчёта.
+  if ((brief?.bidType || getBidType()) === "ots") {
+    const cpm = screenOtsBid(s, brief);
+    return s?.ots > 0 && Number.isFinite(cpm) ? cpm * s.ots / 1000 : NaN;
+  }
   const uplift = bidUpliftFactor(brief);
   if (brief?.bidMode === "min") {
     return Number.isFinite(s?.minBid) ? s.minBid * uplift : s?.minBid;
@@ -479,6 +501,52 @@ const state = {
 };
 
 window.PLANNER.state = state;
+
+// ── Тип закупки: за выходы или за 1000 OTS ─────────────────────────────────
+// За 1000 OTS покупаются только экраны, которые DSP отдаёт на РК по OTS
+// (withOts=true): OTS передаёт сам экран (otsSource SCREEN) и у него есть
+// OTS-прайс (interpolatedOts). Правило сверено 30.09 по id на всём каталоге:
+// 9 769 экранов бэкенда, совпадение полное. Одного «OTS есть» мало — так
+// набиралось 11 557, все лишние без прайса.
+//
+// Каталог хранится целиком, а state.screensAll в режиме OTS отдаёт только
+// такие экраны. К каталогу обращаются из двух десятков мест — фильтр в каждом
+// разошёлся бы с соседним при первой же правке. Вид пересобирается, только
+// когда каталог заменили целиком.
+function getBidType() {
+  return document.querySelector('input[name="bid_type"]:checked')?.value === "ots" ? "ots" : "plays";
+}
+function isOtsBuyable(s) {
+  return s?.otsSource === "SCREEN" && s?.otsPriced === true && s?.otsBid > 0;
+}
+let _catalogue = [], _otsView = [], _otsViewOf = null;
+Object.defineProperty(state, "screensAll", {
+  enumerable: true,
+  get() {
+    if (getBidType() !== "ots") return _catalogue;
+    if (_otsViewOf !== _catalogue) { _otsView = _catalogue.filter(isOtsBuyable); _otsViewOf = _catalogue; }
+    return _otsView;
+  },
+  set(v) { _catalogue = Array.isArray(v) ? v : []; },
+});
+// Весь каталог — для того, что от типа закупки не зависит: списки городов и
+// форматов, пересчёт ставок под длительность (иначе при возврате к выходам у
+// части экранов осталась бы ставка от прошлой длительности).
+function catalogueAll() { return _catalogue; }
+window.PLANNER.getBidType = getBidType;
+window.PLANNER.isOtsBuyable = isOtsBuyable;
+
+// Подпись под выбором типа закупки: сколько экранов каталога можно взять.
+function renderBidTypeNote() {
+  const note = el("bid-type-note");
+  if (!note) return;
+  const all = catalogueAll();
+  if (getBidType() !== "ots" || !all.length) { note.style.display = "none"; return; }
+  const n = all.filter(isOtsBuyable).length;
+  note.style.display = "block";
+  note.textContent = "Для закупки за 1000 OTS доступно " + n.toLocaleString("ru-RU") + " из " +
+    all.length.toLocaleString("ru-RU") + " экранов каталога — те же, что DSP берёт в РК по OTS.";
+}
 
 // ===== VK AFFINITY =====
 const AFFINITY_SKIP_COLS = new Set([
@@ -1570,9 +1638,10 @@ function renderSelectionExtra() {
           statusEl.style.color = "#666";
           return;
         }
-        const allScreens = state.screens || [];
+        const otsBuy = getBidType() === "ots";
+        const allScreens = otsBuy ? (state.screens || []).filter(isOtsBuyable) : (state.screens || []);
         const matched = allScreens.filter(s => ids.has(_screenIdOf(s)));
-        statusEl.textContent = `Найдено в инвентаре: ${matched.length} из ${ids.size} указанных GID-ов`;
+        statusEl.textContent = `${otsBuy ? "Найдено для закупки за 1000 OTS" : "Найдено в инвентаре"}: ${matched.length} из ${ids.size} указанных GID-ов`;
         statusEl.style.color = matched.length > 0 ? "#5b3ef5" : "#dc2626";
       });
     }
@@ -2107,6 +2176,7 @@ const globalIntervals = (scheduleType === "weekly" && typeof getGlobalScheduleFr
     onlyActiveBids: !!el("only-active-bids")?.checked,
     recoTier: document.querySelector('input[name="reco_tier"]:checked')?.value || "optimal",
     bidMode: el("bid-mode-min")?.checked ? "min" : "recommended",
+    bidType: getBidType(),
     bidUpliftPct: (el("bid-uplift-enabled")?.checked)
       ? Math.max(0, Number(el("bid-uplift-pct")?.value || 0))
       : 0,
@@ -2657,6 +2727,7 @@ function selectionSignature(brief) {
     сорт(state.selectedSides || []),
     сорт(state.selectedPhotoReport || []),
     brief?.onlyActiveBids ? 1 : 0,
+    brief?.bidType === "ots" ? "ots" : "plays",
     brief?.grp?.enabled ? [1, brief.grp.min, brief.grp.max].join(":") : 0,
     brief?.audience?.enabled
       ? [1, сорт(brief.audience.segments || []), brief.audience.topPct].join(":") : 0,
@@ -3393,6 +3464,12 @@ async function buildMediaPlanBlob() {
     ws.getCell(totalRow, 6).border = NO_B;
   }
 
+  // За 1000 OTS: строка ставки — за 1000 OTS, бюджет — OTS × ставка / 1000,
+  // как в ручных расчётах по OTS. Сноски «не все экраны передают OTS» нет:
+  // в этом режиме экраны без своего OTS в программу не попадают.
+  const otsBuy = brief.bidType === "ots";
+  const otsMark = otsBuy ? "" : "*";
+
   // ── Detail blocks — one per city, format sub-columns at E, F, G… ─
   for (const city of cities) {
     const base     = blockStarts[city];
@@ -3437,26 +3514,6 @@ async function buildMediaPlanBlob() {
       sc(ws, base + 1, 5 + fi, cfStats[city][fmt_]?.cnt ?? null, { fill: C_GREEN, numFmt: "#,##0" });
     });
 
-    // ── base+2: Средняя ставка за показ ───────────────────────────
-    // Ставку кладём НЕокруглённой: показывает её numFmt "0.00", а по значению
-    // считает формула бюджета «выходы x ставка». Раньше в ячейке лежало
-    // округлённое до копеек число, а бюджет был посчитан по полному — Excel
-    // при пересчёте давал другой итог. На плане по Владивостоку это +5 878 ₽.
-    const wtRateD = wtAvgBid > 0 ? wtAvgBid : null;
-    sc(ws, base + 2, 1, "Средняя ставка за показ", { bold: true, fill: C_LIGHT });
-    // Средневзвешенная по ВЫХОДАМ, а не по экранам: по экранам она не сходилась
-    // с бюджетом города, и «выходы × ставка» в файле давало другую сумму.
-    // SUMPRODUCT, а не ручная сумма произведений: в рукописных планах такую
-    // формулу писали под фиксированное число колонок, и при добавлении формата
-    // она молча переставала их учитывать.
-    sc(ws, base + 2, 2, fx(`IFERROR(SUMPRODUCT(${rng(rRate)},${rng(rPlay)})/B${rPlay},0)`, wtRateD),
-      { fill: C_GREEN, numFmt: "0.00" });
-    fmts.forEach((fmt_, fi) => {
-      const r = cfStats[city][fmt_]?.rate > 0 ? cfStats[city][fmt_].rate : null;
-      sc(ws, base + 2, 5 + fi, r, { fill: C_GREEN, numFmt: "0.00" });
-    });
-
-    // ── base+3: Средний OTS* ─────────────────────────────────────
     // Средний OTS одного экрана формата — исходная величина, из которой формулой
     // считается строка «Прогноз кол-ва OTS». Если по формату данных нет,
     // подставляем то, что заложил расчёт (ots/plays): иначе колонка молча
@@ -3467,11 +3524,49 @@ async function buildMediaPlanBlob() {
       if (st?.plays > 0 && st?.ots > 0) return st.ots / st.plays;
       return null;
     });
+    // Ставка за 1000 OTS формата — от тех OTS, что формула положит в ячейку
+    // (выходы × средний OTS), иначе «OTS × ставка / 1000» в Excel разойдётся
+    // с бюджетом расчёта.
+    const cpmPerFmt = fmts.map((fmt_, fi) => {
+      const st = cfStats[city][fmt_];
+      const otsCell = (st?.plays || 0) * (otsPerFmt[fi] || 0);
+      return otsCell > 0 && st?.budget > 0 ? st.budget * 1000 / otsCell : null;
+    });
+
+    // ── base+2: Средняя ставка за показ ───────────────────────────
+    // Ставку кладём НЕокруглённой: показывает её numFmt "0.00", а по значению
+    // считает формула бюджета «выходы x ставка». Раньше в ячейке лежало
+    // округлённое до копеек число, а бюджет был посчитан по полному — Excel
+    // при пересчёте давал другой итог. На плане по Владивостоку это +5 878 ₽.
+    const wtRateD = otsBuy
+      ? (s0.ots > 0 && s0.budget > 0 ? s0.budget * 1000 / s0.ots : null)
+      : (wtAvgBid > 0 ? wtAvgBid : null);
+    sc(ws, base + 2, 1, otsBuy ? "Средняя ставка за 1000 OTS" : "Средняя ставка за показ",
+      { bold: true, fill: C_LIGHT });
+    // Средневзвешенная по ВЫХОДАМ, а не по экранам: по экранам она не сходилась
+    // с бюджетом города, и «выходы × ставка» в файле давало другую сумму.
+    // SUMPRODUCT, а не ручная сумма произведений: в рукописных планах такую
+    // формулу писали под фиксированное число колонок, и при добавлении формата
+    // она молча переставала их учитывать.
+    // За 1000 OTS средняя взвешивается по OTS, а не по выходам: ровно так
+    // складывается бюджет «OTS × ставка / 1000».
+    const rOtsTot = base + BR.otsTot;
+    sc(ws, base + 2, 2, fx(otsBuy
+        ? `IFERROR(SUMPRODUCT(${rng(rRate)},${rng(rOtsTot)})/B${rOtsTot},0)`
+        : `IFERROR(SUMPRODUCT(${rng(rRate)},${rng(rPlay)})/B${rPlay},0)`, wtRateD),
+      { fill: C_GREEN, numFmt: "0.00" });
+    fmts.forEach((fmt_, fi) => {
+      const r = otsBuy ? cpmPerFmt[fi]
+        : (cfStats[city][fmt_]?.rate > 0 ? cfStats[city][fmt_].rate : null);
+      sc(ws, base + 2, 5 + fi, r, { fill: C_GREEN, numFmt: "0.00" });
+    });
+
+    // ── base+3: Средний OTS* ─────────────────────────────────────
     // Итог считаем ровно по тем числам, что легли в ячейки, иначе формула
     // SUMPRODUCT в файле разойдётся с показанным значением.
     const _otsNum = otsPerFmt.reduce((a, o, i) => a + (o || 0) * (cfStats[city][fmts[i]]?.cnt || 0), 0);
     const wtOtsD = regCnt > 0 && _otsNum > 0 ? +(_otsNum / regCnt).toFixed(2) : null;
-    sc(ws, base + 3, 1, "Средний OTS*",     { bold: true, fill: C_LIGHT });
+    sc(ws, base + 3, 1, "Средний OTS" + otsMark, { bold: true, fill: C_LIGHT });
     sc(ws, base + 3, 2, fx(`IFERROR(SUMPRODUCT(${rng(rOts)},${rng(rCnt)})/B${rCnt},0)`, wtOtsD),
       { fill: C_GREEN, numFmt: decFmt(wtOtsD) });
     otsPerFmt.forEach((o, fi) => {
@@ -3504,7 +3599,7 @@ async function buildMediaPlanBlob() {
 
     // ── base+6: Прогноз кол-ва OTS* ──────────────────────────────
     ws.getRow(base + 6).height = 24.75;
-    sc(ws, base + 6, 1, "Прогноз кол-ва OTS*", { bold: true, fill: C_LIGHT });
+    sc(ws, base + 6, 1, "Прогноз кол-ва OTS" + otsMark, { bold: true, fill: C_LIGHT });
     // Ноль показываем как «–», а не как «0»: у формата просто нет данных OTS,
     // и голый ноль читался бы как проверенный ноль охвата.
     const OTS_NUMFMT = '#,##0;-#,##0;"–"';
@@ -3524,8 +3619,10 @@ async function buildMediaPlanBlob() {
       { bold: true, fill: C_GREEN, numFmt: '#,##0.00 "₽"' });
     fmts.forEach((fmt_, fi) => {
       const col = colLetter(5 + fi);
-      // Бюджет = выходы × ставка
-      sc(ws, base + 7, 5 + fi, fx(`${col}${rPlay}*${col}${rRate}`, r2(cfStats[city][fmt_]?.budget || 0)),
+      // Бюджет = выходы × ставка; за 1000 OTS — OTS × ставка / 1000
+      sc(ws, base + 7, 5 + fi, fx(otsBuy
+          ? `${col}${base + BR.otsTot}*${col}${rRate}/1000`
+          : `${col}${rPlay}*${col}${rRate}`, r2(cfStats[city][fmt_]?.budget || 0)),
         { bold: true, fill: C_GREEN, numFmt: '#,##0.00 "₽"' });
     });
 
@@ -3554,7 +3651,7 @@ async function buildMediaPlanBlob() {
     const noteLastCol = fmts.length > 1 ? 5 + fmts.length - 1 : 5;
     if (noteLastCol > 5) ws.mergeCells(noteRow, 5, noteRow, noteLastCol);
     const noteCell = ws.getCell(noteRow, 5);
-    noteCell.value = "*не все экраны передают OTS";
+    noteCell.value = otsBuy ? null : "*не все экраны передают OTS";
     noteCell.font  = { italic: true, size: 9, name: "Calibri", color: { argb: "FF555555" } };
 
     // Col C (base+1..base+7): full border
@@ -3572,8 +3669,9 @@ async function buildMediaPlanBlob() {
   // Ставка в колонке — та самая, по которой посчитан план (screenBid), а
   // заголовок называет её режим: иначе цифру нечем поверить.
   const _upl = Number(brief.bidUpliftPct) > 0 ? " + " + brief.bidUpliftPct + "%" : "";
+  const isOtsBuy = brief.bidType === "ots";
   const AP_BID_HDR = (brief.bidMode === "min" ? "Мин. ставка" : "Рекомендованная ставка")
-    + _upl + ", ₽";
+    + (isOtsBuy ? " за 1000 OTS" : "") + _upl + ", ₽";
   const AP_COLS = [
     { h: "GID",                w: 25, fn: s => s.gid ?? s.screen_id ?? "" },
     { h: "Город",              w: 22, fn: s => s.city       ?? "" },
@@ -3613,7 +3711,7 @@ async function buildMediaPlanBlob() {
     // Ставка стоит рядом с длительностью не случайно: она от неё и зависит —
     // applySelectedDurations уже перезаписал minBid/recoBid под выбранный ролик.
     { h: AP_BID_HDR, w: 22, numFmt: '#,##0.00', fn: s => {
-        const b = screenBid(s, brief);
+        const b = isOtsBuy ? screenOtsBid(s, brief) : screenBid(s, brief);
         return Number.isFinite(b) && b > 0 ? b : "";
       } },
     { h: "Вид. разрешение",    w: 20, fn: s => s.resolution ?? "" },
@@ -5080,9 +5178,13 @@ async function onCalcClick() {
   // 1) PREPARE POOLS PER REGION
   // =========================
   const prepared = [];
-  const sourceScreens = (Array.isArray(state.screens) && state.screens.length)
+  const sourceScreensAll = (Array.isArray(state.screens) && state.screens.length)
     ? state.screens
     : (Array.isArray(state.screensAll) ? state.screensAll : []);
+  // state.screens собирает dspEnsureInventoryForRegions из кэша по городам,
+  // мимо state.screensAll, — отбор «за 1000 OTS» повторяем здесь. Без него на
+  // брифе из 11 городов в программу попало 253 экрана с OTS-оценкой платформы.
+  const sourceScreens = brief.bidType === "ots" ? sourceScreensAll.filter(isOtsBuyable) : sourceScreensAll;
 
   // Счётчики пробелов в данных ВК — копятся по всем регионам и выдаются одним
   // предупреждением после цикла, чтобы при полусотне регионов не завалить
@@ -6921,6 +7023,17 @@ document.querySelectorAll('input[name="weekly_mode"]').forEach(r => {
     r.addEventListener("change", renderProgress);
   });
 
+  // Тип закупки меняет сам пул (см. state.screensAll) — перерисовываем всё,
+  // что от него считается.
+  document.querySelectorAll('input[name="bid_type"]').forEach(r => {
+    r.addEventListener("change", () => {
+      renderBidTypeNote();
+      renderFormats();
+      renderBudgetHints();
+      renderProgress();
+    });
+  });
+
   // ppm range slider label sync (only when not disabled by constructions)
   const ppmRange = el("constructions-ppm");
   if (ppmRange) {
@@ -7426,6 +7539,10 @@ async function dspFetchForecastBids(screens, brief) {
       // currently selected duration the same way a fresh fetch would (see below).
       s._baseRecoBid = cached.recoBid;
       s.recoBid = cached.recoBid * _durationRatioForScreen(s, state.selectedDurationMs);
+      if (Number.isFinite(cached.recoCpm)) {
+        s._baseRecoCpm = cached.recoCpm;
+        s.recoCpm = cached.recoCpm * _cpmDurationRatio(s);
+      }
     } else {
       toFetch.push(s);
     }
@@ -7472,13 +7589,22 @@ async function dspFetchForecastBids(screens, brief) {
       // INVENTORY и FORMAT_CITY — реальные/статистические данные, берём как есть
       const method = elem?.referenceData?.method;
       if (method === "MIN_BID") price = price * BID_MULTIPLIER;
-      _recoBidCache.set(dspId, { recoBid: price, ts: now, method });
+      // Рекомендованная за 1000 OTS — своё поле прогноза, с тем же правилом
+      // для MIN_BID: аукционов не было, это минимум, а не рекомендация.
+      let cpm = Number(elem?.statistic?.cpm);
+      if (!(cpm > 0)) cpm = NaN;
+      else if (method === "MIN_BID") cpm = cpm * BID_MULTIPLIER;
+      _recoBidCache.set(dspId, { recoBid: price, recoCpm: cpm, ts: now, method });
       const s = idToScreen.get(dspId);
       if (s) {
         // price is duration-agnostic (this forecast endpoint has no duration concept) —
         // scale it by the currently selected duration's ratio, same as the cache-hit path.
         s._baseRecoBid = price;
         s.recoBid = price * _durationRatioForScreen(s, state.selectedDurationMs);
+        if (Number.isFinite(cpm)) {
+          s._baseRecoCpm = cpm;
+          s.recoCpm = cpm * _cpmDurationRatio(s);
+        }
         // Forecast API OTS is always preferred — period-specific traffic data
         // beats both the inventory's static value and format-average interpolation.
         const avgOts = elem?.statistic?.averageOts;
@@ -7852,6 +7978,7 @@ function restoreBriefToUI(brief) {
 
   // 10. Ставка: режим + ручная надбавка
   _check(brief.bidMode === "min" ? "bid-mode-min" : "bid-mode-recommended", true);
+  _radio("bid_type", brief.bidType === "ots" ? "ots" : "plays");
   const upliftPct = Number(brief.bidUpliftPct || 0);
   _check("bid-uplift-enabled", upliftPct > 0);
   _chip("bid-uplift-chip", upliftPct > 0);
@@ -8374,16 +8501,17 @@ function dspHydrateCityState(cityCache) {
   state.regionsAll = [...new Set(Object.values(state.regionsByCity).filter(r => r && r !== "Не назначено"))]
     .sort((a, b) => a.localeCompare(b, "ru"));
 
-  state.formatsAll = [...new Set(state.screensAll.map(s => s.format).filter(Boolean))]
+  state.formatsAll = [...new Set(catalogueAll().map(s => s.format).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b));
 
   state.ownersAll = [...new Set(
-    state.screensAll
+    catalogueAll()
       .map(s => String(s.owner ?? s.Owner ?? "").trim())
       .filter(Boolean)
   )].sort((a, b) => a.localeCompare(b, "ru"));
 
   setRegionsUIReady(true);
+  renderBidTypeNote();
   renderFormats();
   renderOwners();
   renderSelectedRegions();
@@ -8574,11 +8702,15 @@ function mapDspInventory(inv) {
   // etc. Normalize everything down to plain "A"/"B" so filtering/display is simple.
   const side = normalizeSide(meta.side || "");
 
-  // OTS per play: minBidInfo.ots is the canonical per-play OTS used in bidding
-  const ots = mbInfo.ots
-    ?? meta.otsInfo?.otsValue
-    ?? meta.otsInfo?.estimatedOts
-    ?? NaN;
+  // OTS per play: minBidInfo.ots is the canonical per-play OTS used in bidding.
+  // Ноль там значит «нет данных», а не ноль: через ?? он не пускал к otsValue,
+  // и у экрана с otsValue 123 OTS в расчёте выходил нулём (сверено 30.09 на
+  // 19 экранах, которые DSP отдаёт на РК по OTS).
+  const ots = [mbInfo.ots, meta.otsInfo?.otsValue, meta.otsInfo?.estimatedOts]
+    .map(Number).find(v => v > 0) ?? NaN;
+  // OTS тарифа — от него минимальная ставка за 1000 OTS. Та же подмена нуля,
+  // но без оценки платформы: у оценки тарифа нет.
+  const otsTariff = [mbInfo.ots, meta.otsInfo?.otsValue].map(Number).find(v => v > 0) ?? NaN;
 
   // Per-duration bid breakdown (e.g. 5s/10s/15s spots at different rates).
   // Base .minBid above already equals the shortest duration's entry — kept as the
@@ -8586,7 +8718,7 @@ function mapDspInventory(inv) {
   // once the user picks a duration in step 4; screens without the array are untouched.
   const durationBidInfo = Array.isArray(mbInfo.durationBidInfo)
     ? mbInfo.durationBidInfo
-        .map(d => ({ duration: Number(d.duration), minBid: Number(d.minBidCharged ?? d.minBid) }))
+        .map(d => ({ duration: Number(d.duration), minBid: Number(d.minBidCharged ?? d.minBid), ots: Number(d.ots) }))
         .filter(d => Number.isFinite(d.duration) && Number.isFinite(d.minBid))
         .sort((a, b) => a.duration - b.duration)
     : [];
@@ -8622,6 +8754,12 @@ function mapDspInventory(inv) {
     size_wh,
     side,
     durationBidInfo,
+    // Закупка за 1000 OTS: источник OTS и OTS тарифа — того, от которого
+    // посчитана минимальная ставка. Прогноз потом заменит s.ots средним за
+    // период, а минимум за 1000 OTS от этого меняться не должен.
+    otsSource:   String(meta.otsInfo?.otsSource || ""),
+    otsBid:      otsTariff,
+    otsPriced:   Number(meta.otsInfo?.interpolatedOts) > 0,
     slotCountPerDay: Number.isFinite(slotCountPerDay) ? slotCountPerDay : NaN,
     requestHourlyAvg: Number.isFinite(requestHourlyAvg) ? requestHourlyAvg : NaN,
     // Передача фотоотчёта и дата последнего фото — на них строится фильтр ФО.
@@ -8644,6 +8782,15 @@ function _resolveDurationMatch(s, durationMs) {
 // Используется и для .minBid (точное значение из durationBidInfo), и для .recoBid
 // (который приходит из отдельного forecast-price API, не знающего о длительности —
 // поэтому его масштабируем тем же коэффициентом, а не берём отдельное значение).
+// Во сколько раз ставка за 1000 OTS выбранной длительности выше базовой —
+// этим множителем масштабируется рекомендованная из прогноза (он о
+// длительности не знает), как recoBid — через _durationRatioForScreen.
+function _cpmDurationRatio(s) {
+  const b = Number.isFinite(s._baseMinBid) ? s._baseMinBid : s.minBid;
+  const base = s.otsBid > 0 && Number.isFinite(b) ? b * 1000 / s.otsBid : NaN;
+  return base > 0 && s.minCpm > 0 ? s.minCpm / base : 1;
+}
+
 function _durationRatioForScreen(s, durationMs) {
   const base = Number.isFinite(s._baseMinBid) ? s._baseMinBid : s.minBid;
   if (!Number.isFinite(base) || base <= 0) return 1;
@@ -8670,7 +8817,7 @@ function applySelectedDurations(durationsMs) {
   // (подпись в медиаплане, восстановление черновика): берём самую длинную.
   state.selectedDurationMs = globalList.length ? globalList[globalList.length - 1] : null;
 
-  for (const arr of [state.screensAll, state.screens]) {
+  for (const arr of [catalogueAll(), state.screens]) {
     if (!Array.isArray(arr)) continue;
     for (const s of arr) {
       if (!Array.isArray(s.durationBidInfo) || !s.durationBidInfo.length) continue;
@@ -8685,6 +8832,8 @@ function applySelectedDurations(durationsMs) {
       if (!list.length) {
         s.minBid = s._baseMinBid;
         if (Number.isFinite(s._baseRecoBid)) s.recoBid = s._baseRecoBid;
+        s.minCpm = NaN;
+        if (Number.isFinite(s._baseRecoCpm)) s.recoCpm = s._baseRecoCpm;
         s._durSlots = 1;
         continue;
       }
@@ -8694,15 +8843,23 @@ function applySelectedDurations(durationsMs) {
       const matched = new Map();
       for (const ms of list) {
         const m = _resolveDurationMatch(s, ms);
-        if (m && Number.isFinite(m.minBid) && m.minBid > 0) matched.set(m.duration, m.minBid);
+        if (m && Number.isFinite(m.minBid) && m.minBid > 0) matched.set(m.duration, m);
       }
-      const bids = [...matched.values()];
+      const bids = [...matched.values()].map(m => m.minBid);
       if (!bids.length) {
         s.minBid = s._baseMinBid;
         if (Number.isFinite(s._baseRecoBid)) s.recoBid = s._baseRecoBid;
+        s.minCpm = NaN;
+        if (Number.isFinite(s._baseRecoCpm)) s.recoCpm = s._baseRecoCpm;
         s._durSlots = 1;
         continue;
       }
+      // За 1000 OTS у каждой длительности своя ставка (у ролика подлиннее и
+      // выход дороже, и OTS больше) — усредняем ставки за 1000, а не
+      // пересчитываем среднюю ставку за выход.
+      const cpms = [...matched.values()].filter(m => m.ots > 0).map(m => m.minBid * 1000 / m.ots);
+      s.minCpm = cpms.length ? cpms.reduce((a, b) => a + b, 0) / cpms.length : NaN;
+      if (Number.isFinite(s._baseRecoCpm)) s.recoCpm = s._baseRecoCpm * _cpmDurationRatio(s);
       const avg = bids.reduce((a, b) => a + b, 0) / bids.length;
       s.minBid = avg;
       s._durSlots = bids.length;
@@ -8767,7 +8924,7 @@ const DSP_IDB_VER    = 1;
 // Версия формата экрана в кэше. Добавили поле — подняли номер, и запись
 // прошлого формата выбрасывается вместо того, чтобы сутки отдавать экраны
 // без нового поля и молча ломать фильтр по нему.
-const DSP_CACHE_SCHEMA = 2;
+const DSP_CACHE_SCHEMA = 5; // 5: поля закупки за 1000 OTS (otsSource, otsBid, otsPriced)
 
 // v7: mapDspInventory теперь тащит requestHourlyAvg, и без него фильтр «только
 // активные» работать не может — старые записи кэша (v6 и раньше) надо перечитать.
