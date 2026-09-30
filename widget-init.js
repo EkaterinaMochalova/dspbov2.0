@@ -3103,6 +3103,30 @@ window.PLANNER_ASSET_BASE = (function () {
         <div class="wiz-step-title">Выбираем географию</div>
         <div class="wiz-step-sub">Города и регионы размещения — или готовый список GID-ов, если экраны уже отобраны.</div>
       </div>
+      <!-- Тип закупки — первым: от него зависит весь пул, и счётчики шагов 1–4
+           должны считаться уже под него. «За 1000 OTS» — те же экраны, что DSP
+           даёт на РК по OTS; ставка за 1000 OTS — теми же режимами (мин./реко +
+           надбавка). -->
+      <div class="planner-block" id="step-bid-type-block">
+        <div class="planner-label">Тип закупки</div>
+        <div class="strategy-chips">
+          <label class="str-chip">
+            <input type="radio" name="bid_type" value="plays" checked>
+            <div class="str-chip-body">
+              <div class="str-chip-title">▶ За выходы</div>
+              <div class="str-chip-desc">Ставка за выход, весь инвентарь</div>
+            </div>
+          </label>
+          <label class="str-chip">
+            <input type="radio" name="bid_type" value="ots">
+            <div class="str-chip-body">
+              <div class="str-chip-title">👁 За 1000 OTS</div>
+              <div class="str-chip-desc">Только экраны с OTS от экрана</div>
+            </div>
+          </label>
+        </div>
+        <div class="planner-note" id="bid-type-note" style="display:none; margin-top:8px;"></div>
+      </div>
       <!-- Geo mode tabs -->
       <div id="geo-mode-tabs" style="display:flex; gap:8px; margin-bottom:14px;">
         <button type="button" id="geo-tab-cities"
@@ -3318,29 +3342,6 @@ window.PLANNER_ASSET_BASE = (function () {
         <div class="wiz-step-head">
           <div class="wiz-step-title">Считаем бюджет</div>
           <div class="wiz-step-sub">Сумма, цель по охвату или показам — и во что это обойдётся с комиссией и НДС.</div>
-        </div>
-        <!-- Тип закупки. «За 1000 OTS» берёт только экраны, где OTS передаёт сам
-             экран, — как РК по OTS в DSP; ставка за 1000 OTS — теми же режимами
-             (мин./реко + надбавка). -->
-        <div class="planner-block" id="step-bid-type-block">
-          <div class="planner-label">Тип закупки</div>
-          <div class="strategy-chips">
-            <label class="str-chip">
-              <input type="radio" name="bid_type" value="plays" checked>
-              <div class="str-chip-body">
-                <div class="str-chip-title">▶ За выходы</div>
-                <div class="str-chip-desc">Ставка за выход, весь инвентарь</div>
-              </div>
-            </label>
-            <label class="str-chip">
-              <input type="radio" name="bid_type" value="ots">
-              <div class="str-chip-body">
-                <div class="str-chip-title">👁 За 1000 OTS</div>
-                <div class="str-chip-desc">Только экраны с OTS от экрана</div>
-              </div>
-            </label>
-          </div>
-          <div class="planner-note" id="bid-type-note" style="display:none; margin-top:8px;"></div>
         </div>
         <div class="planner-block">
           <div class="planner-label">Бюджет</div>
@@ -4197,7 +4198,7 @@ window.PLANNER_ASSET_BASE = (function () {
     const bid = document.querySelector('input[name="bid_mode"]:checked');
     if (bid) main.push(chip(5, "Ставка", bid.value === "min" ? "Минимальная" : "Рекомендованная"));
     const bidType = document.querySelector('input[name="bid_type"]:checked');
-    if (bidType && bidType.value === "ots") main.push(chip(5, "Закупка", "за 1000 OTS"));
+    if (bidType && bidType.value === "ots") main.push(chip(1, "Закупка", "за 1000 OTS"));
 
     main.push('<button type="button" class="brief-chip edit" data-step="1">Править бриф</button>');
     main.push('<button type="button" class="brief-chip reset" data-reset="1"' +
