@@ -3334,7 +3334,7 @@ window.PLANNER_ASSET_BASE = (function () {
   </div>
   <div class="wiz-nav">
     <button type="button" class="wiz-btn ghost" id="wiz-back-2">← География</button>
-    <button type="button" class="wiz-btn" id="wiz-next-2">Настройки →</button>
+    <button type="button" class="wiz-btn" id="wiz-next-2">Экраны →</button>
   </div>
 </div>
       <!-- STEP 3 -->
@@ -4192,7 +4192,9 @@ window.PLANNER_ASSET_BASE = (function () {
     if (budget > 0) main.push(chip(5, "Бюджет", RU(budget) + " \u20BD"));
 
     const reach = document.querySelector('input[name="reach_mode"]:checked');
-    const reachMap = { reach:"Охват", balance:"Баланс", frequency:"Частота" };
+    // Значения радиокнопок — max_reach/balanced/max_freq; с короткими ключами
+    // чип «Стратегия» не находил ни одного и не показывался никогда.
+    const reachMap = { max_reach:"Охват", balanced:"Баланс", max_freq:"Частота" };
     if (reach && reachMap[reach.value]) main.push(chip(4, "Стратегия", reachMap[reach.value]));
 
     const bid = document.querySelector('input[name="bid_mode"]:checked');
@@ -5317,7 +5319,12 @@ window.PLANNER_ASSET_BASE = (function () {
   // Используем делегирование событий -- работает даже после перерисовки
   document.getElementById("wiz-steps")?.addEventListener("click", e => {
     const chip = e.target.closest(".wiz-chip");
-    if (chip) window.setStep(Number(chip.dataset.step || 1));
+    if (!chip) return;
+    // На результате форма скрыта: без возврата в бриф шаг переключался
+    // невидимо — так же, как чипы строки брифа, сначала открываем форму.
+    const w = document.getElementById("planner-widget");
+    if (w && w.dataset.phase === "result" && window.PLANNER_UI && window.PLANNER_UI.setPhase) window.PLANNER_UI.setPhase("brief");
+    window.setStep(Number(chip.dataset.step || 1));
   });
 
   // ===== СПОРНЫЕ GID-Ы =====
